@@ -1,4 +1,4 @@
-import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from '@kubohiroya/turbowarp-plus-editor-layout/sprite-properties';
+import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from '@kubohiroya/turbowarp-plus-editor-sprite-panes/sprite-properties';
 
 declare const React: typeof import('react');
 declare const ReactDOM: typeof import('react-dom/client');

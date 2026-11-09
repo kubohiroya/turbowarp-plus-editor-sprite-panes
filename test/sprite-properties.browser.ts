@@ -6,7 +6,7 @@ import path from 'node:path';
 import {chromium} from '@playwright/test';
 
 const require = createRequire(import.meta.url);
-const origin = 'http://layout.test';
+const origin = 'http://sprite-panes.test';
 const files = new Map([
     ['/example/sprite-properties.html', new URL('../example/sprite-properties.html', import.meta.url)],
     ['/example/.build/sprite-properties.js', new URL('../example/.build/sprite-properties.js', import.meta.url)],
