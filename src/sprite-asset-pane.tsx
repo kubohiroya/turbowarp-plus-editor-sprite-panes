@@ -137,6 +137,7 @@ export interface SpriteVariable {
     value: string | number;
     scope?: 'local' | 'global';
     isCloud?: boolean;
+    accesses?: {read: number; write: number; open(access: 'read' | 'write'): void};
 }
 
 interface PaneProps {
@@ -171,7 +172,8 @@ const english = {
     local: 'Sprite', global: 'Project', cloudVariable: 'Cloud variable', emptyCostumes: 'No costumes', emptySounds: 'No sounds',
     emptyVariables: 'No variables', selectCostume: 'Select a costume', selectSound: 'Select a sound',
     imageUnavailable: 'Image unavailable', waveformUnavailable: 'Waveform unavailable', waveform: 'Waveform',
-    seconds: 's', actions: 'Actions', create: 'Create variable', rename: 'Rename variable', delete: 'Delete variable',
+    seconds: 's', accesses: 'References', read: 'Read', write: 'Write',
+    actions: 'Actions', create: 'Create variable', rename: 'Rename variable', delete: 'Delete variable',
     cancel: 'Cancel', ok: 'OK', close: 'Close', confirmDelete: 'Delete', createTitle: 'New Variable',
     renameTitle: 'Rename Variable', deleteTitle: 'Delete Variable', newName: 'New variable name:',
     deletePrompt: 'Delete variable “%1”?', emptyName: 'Enter a variable name.',
@@ -184,7 +186,8 @@ const japanese: typeof english = {
     local: 'スプライト', global: '作品', cloudVariable: 'クラウド変数', emptyCostumes: 'コスチュームがありません', emptySounds: '音がありません',
     emptyVariables: '変数がありません', selectCostume: 'コスチュームを選択してください', selectSound: '音を選択してください',
     imageUnavailable: '画像を表示できません', waveformUnavailable: '波形を表示できません', waveform: '波形',
-    seconds: '秒', actions: '操作', create: '変数を作る', rename: '変数名を変更', delete: '変数を削除',
+    seconds: '秒', accesses: '参照箇所', read: '読み取り', write: '変更',
+    actions: '操作', create: '変数を作る', rename: '変数名を変更', delete: '変数を削除',
     cancel: 'キャンセル', ok: 'OK', close: '閉じる', confirmDelete: '削除', createTitle: '新しい変数',
     renameTitle: '変数名を変更', deleteTitle: '変数を削除', newName: '新しい変数名:',
     deletePrompt: '変数「%1」を削除しますか？', emptyName: '変数名を入力してください。',
@@ -401,6 +404,7 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
         else start(null);
     };
     const selected = action && action.type !== 'create' ? variables.find(variable => variable.id === action.id) : undefined;
+    const showAccesses = variables.some(variable => variable.accesses);
     return <section className="tw-sprite-variables" aria-label={labels.variables}>
         <div className={onEdit ? 'tw-sprite-variables__scroll tw-sprite-variables__scroll--with-add' : 'tw-sprite-variables__scroll'}>
             {properties && targetId && onWriteProperties &&
@@ -408,6 +412,7 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                     disabled={!editable} onChange={onWriteProperties} />}
             {variables.length ? <table className="tw-sprite-variables__table">
                 <thead><tr><th scope="col">{labels.name}</th><th scope="col">{labels.value}</th>
+                    {showAccesses && <th scope="col">{labels.accesses}</th>}
                     {onEdit && <th scope="col" className="tw-sprite-variables__actions-cell">{labels.actions}</th>}
                 </tr></thead>
                 <tbody>{variables.map(variable => <tr key={variable.id}>
@@ -419,6 +424,16 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                         {variable.scope && <span className="tw-sprite-variables__scope">{labels[variable.scope]}</span>}
                     </th>
                     <td><VariableField variable={variable} editable={editable} onWrite={onWrite} /></td>
+                    {showAccesses && <td>
+                        {variable.accesses && <div className="tw-sprite-variables__actions">
+                            {(['read', 'write'] as const).map(access => {
+                                const caption = `${labels[access]} ${variable.accesses[access]}`;
+                                return <button key={access} type="button" className="tw-sprite-variables__action"
+                                    aria-label={`${variableName(variable)}: ${caption}`} disabled={!editable}
+                                    onClick={() => variable.accesses.open(access)}>{caption}</button>;
+                            })}
+                        </div>}
+                    </td>}
                     {onEdit && <td className="tw-sprite-variables__actions-cell">
                         <div className="tw-sprite-variables__actions">
                             <button type="button" className="tw-sprite-variables__action" disabled={!editable}
