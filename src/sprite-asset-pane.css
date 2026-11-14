@@ -558,42 +558,200 @@
 }
 
 .tw-sprite-messages__diagram {
+    --message-columns: minmax(7rem, 1fr) minmax(8rem, 1.4fr) minmax(7rem, 1fr);
+    --message-line: var(--text-primary-transparent, #575e75);
+    --message-accent: var(--looks-secondary, #855cd6);
+    --message-branch: 1rem;
     margin: 0;
+    overflow-x: auto;
 }
 
 .tw-sprite-messages__diagram figcaption {
-    margin-block-end: .35rem;
-    font-size: .9rem;
+    margin-block-end: .5rem;
     font-weight: bold;
 }
 
-.tw-sprite-messages__diagram svg {
-    inline-size: 100%;
-    block-size: auto;
-    overflow: visible;
+.tw-sprite-messages__connections {
+    min-inline-size: 22rem;
 }
 
-.tw-sprite-messages__column {
-    fill: var(--text-primary-transparent, #575e75);
-    font-size: 11px;
+.tw-sprite-messages__headings,
+.tw-sprite-messages__connection {
+    display: grid;
+    grid-template-columns: var(--message-columns);
+    align-items: center;
+}
+
+.tw-sprite-messages__headings {
+    color: var(--message-line);
+    text-align: center;
+}
+
+.tw-sprite-messages__headings > :last-child {
+    grid-column: 3;
+}
+
+.tw-sprite-messages__connections-list,
+.tw-sprite-messages__endpoints {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tw-sprite-messages__connection {
+    padding: .65rem .25rem;
+}
+
+.tw-sprite-messages__connection + .tw-sprite-messages__connection {
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
+}
+
+.tw-sprite-messages__endpoints li {
+    position: relative;
+    padding-block: .2rem;
+}
+
+.tw-sprite-messages__endpoints[data-direction="send"] li {
+    padding-inline-end: var(--message-branch);
+}
+
+.tw-sprite-messages__endpoints[data-direction="receive"] li {
+    padding-inline-start: var(--message-branch);
+}
+
+/* Branches connect every endpoint of a broadcast to the same labelled arrow. */
+.tw-sprite-messages__endpoints li::before,
+.tw-sprite-messages__endpoints li::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+}
+
+.tw-sprite-messages__endpoints li::before {
+    inset-block: 0;
+    border-inline-end: 1px solid var(--message-line);
+}
+
+.tw-sprite-messages__endpoints li:first-child::before {
+    inset-block-start: 50%;
+}
+
+.tw-sprite-messages__endpoints li:last-child::before {
+    inset-block-end: 50%;
+}
+
+.tw-sprite-messages__endpoints li::after {
+    inset-block-start: 50%;
+    inline-size: var(--message-branch);
+    border-block-start: 1px solid var(--message-line);
+}
+
+.tw-sprite-messages__endpoints[data-direction="send"] li::before,
+.tw-sprite-messages__endpoints[data-direction="send"] li::after {
+    inset-inline-end: 0;
+}
+
+.tw-sprite-messages__endpoints[data-direction="receive"] li::before,
+.tw-sprite-messages__endpoints[data-direction="receive"] li::after {
+    inset-inline-start: 0;
+}
+
+.tw-sprite-messages__node {
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    inline-size: 100%;
+    min-block-size: 2.65rem;
+    padding: .2rem .35rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .4rem;
+    color: inherit;
+    background: var(--input-background, #fff);
+    font: inherit;
+    overflow-wrap: anywhere;
+    text-align: start;
+}
+
+.tw-sprite-messages__node[aria-current="true"] {
+    border: 3px solid var(--message-accent);
+    padding: calc(.2rem - 2px) calc(.35rem - 2px);
+}
+
+button.tw-sprite-messages__node {
+    cursor: pointer;
+}
+
+button.tw-sprite-messages__node:hover,
+button.tw-sprite-messages__node:focus-visible {
+    border-color: var(--message-accent);
+}
+
+.tw-sprite-messages__node img {
+    flex: none;
+    inline-size: 1.9rem;
+    block-size: 1.9rem;
+    object-fit: contain;
 }
 
 .tw-sprite-messages__edge {
+    display: grid;
+    grid-template-rows: 1fr 0 1fr;
+    align-self: stretch;
+}
+
+.tw-sprite-messages__edge::after {
+    content: "";
+    grid-row: 2;
+    border-block-start: 1px solid var(--message-line);
+}
+
+.tw-sprite-messages__edge[data-status="sendOnly"]::after,
+.tw-sprite-messages__edge[data-status="receiveOnly"]::after {
+    border-block-start-style: dashed;
+}
+
+.tw-sprite-messages__endpoints[data-direction="receive"] .tw-sprite-messages__node::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: 100%;
+    inline-size: 0;
+    border-block: .25em solid transparent;
+    border-inline-start: .45em solid var(--message-line);
+    transform: translateY(-50%);
+}
+
+.tw-sprite-messages__edge-label {
+    grid-row: 1;
+    align-self: end;
+    justify-self: center;
+    display: flex;
+    align-items: start;
+    gap: .3em;
+    min-inline-size: 0;
+    padding: .05rem .45rem .2rem;
+    overflow-wrap: anywhere;
+}
+
+.tw-sprite-messages__edge-label svg {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    margin-block-start: .12em;
     fill: none;
-    stroke: var(--text-primary-transparent, #575e75);
-    stroke-width: 1.2;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
 }
 
-.tw-sprite-messages__node rect {
-    fill: var(--input-background, #fff);
-    stroke: var(--ui-black-transparent, #ccd5e2);
+.tw-sprite-messages__missing {
+    margin: 0;
+    padding-inline: .25rem;
+    color: var(--message-line);
 }
 
-.tw-sprite-messages__node text {
-    fill: var(--text-primary, #273146);
-    font-size: 12px;
-}
-
-.tw-sprite-messages__node[role="button"] {
-    cursor: pointer;
+.tw-sprite-messages__connection > .tw-sprite-messages__missing {
+    text-align: center;
 }
