@@ -459,8 +459,9 @@ function ListValueDialog({name, value, labels, onSave, onClose}: {
     onSave(items: SpriteListItem[]): void;
     onClose(): void;
 }) {
-    const [items, setItems] = React.useState(() => value.map((original, id) => ({id, original, text: String(original)})));
-    const nextId = React.useRef(items.length);
+    const [initial] = React.useState(() => value.map((original, id) => ({id, original, text: String(original)})));
+    const [items, setItems] = React.useState(initial);
+    const nextId = React.useRef(initial.length);
     const focusId = React.useRef<number | null>(null);
     const form = React.useRef<HTMLFormElement>(null);
     React.useLayoutEffect(() => {
@@ -488,7 +489,10 @@ function ListValueDialog({name, value, labels, onSave, onClose}: {
     return <VariableModal list title={labels.editListTitle.replace('%1', name)} labels={labels} onClose={onClose}>
         <form ref={form} className="tw-sprite-variables__list-form" onSubmit={event => {
             event.preventDefault();
-            onSave(items.map(listItemValue));
+            const next = items.map(listItemValue);
+            if (next.length !== initial.length || next.some((item, i) => !Object.is(item, initial[i].original))) {
+                onSave(next);
+            } else onClose();
         }}>
             <div className="tw-sprite-variables__list-scroll">
                 {!items.length && <p>{labels.emptyList}</p>}
@@ -597,6 +601,7 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
     const [sort, setSort] = React.useState<Sort | null>(null);
     const collator = React.useMemo(() => new Intl.Collator(locale || undefined, {numeric: true, sensitivity: 'base'}), [locale]);
     const activeList = variables.find(variable => variable.id === listId && isList(variable.value));
+    const listValue = activeList && isList(activeList.value) ? activeList.value : undefined;
     const start = (next: SpriteVariableEdit | null) => {
         setError(undefined);
         setAction(next);
@@ -604,7 +609,7 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
     React.useLayoutEffect(() => {
         if (!editable) start(null);
         if (!editable || !activeList) setListId(null);
-    }, [editable, activeList]);
+    }, [editable, activeList?.id]);
     const submit = (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!onEdit || !editable || !action) return;
@@ -676,7 +681,7 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                         <td>{list ? <ListPreview id={variable.id} value={value} editable={editable} labels={labels}
                             onEdit={() => setListId(variable.id)} /> :
                             <VariableField variable={{...variable, value}} editable={editable} onWrite={onWrite} />}</td>
-                        {showAccesses && <td>
+                        {showAccesses && <td className="tw-sprite-variables__references">
                             {variable.accesses && <div className="tw-sprite-variables__actions">
                                 {(['read', 'write'] as const).map(access => {
                                     const caption = `${labels[access]} ${variable.accesses[access]}`;
@@ -711,10 +716,12 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
         {editable && action && <VariableDialog key={action.type === 'create' ? 'create' : action.type + action.id}
             action={action} labels={labels} error={error} clone={clone} global={global} onSubmit={submit} onClose={() => start(null)}
             targetName={selected ? variableName(selected) : ''} />}
-        {editable && activeList && isList(activeList.value) &&
-            <ListValueDialog key={activeList.id} name={variableName(activeList)} value={activeList.value} labels={labels}
-                onClose={() => setListId(null)} onSave={value => {
-                    onWrite(activeList.id, value);
+        {editable && activeList && listValue &&
+            <ListValueDialog key={activeList.id} name={variableName(activeList)} value={listValue} labels={labels}
+                onClose={() => setListId(null)} onSave={items => {
+                    if (items.length !== listValue.length || items.some((item, index) => !Object.is(item, listValue[index]))) {
+                        onWrite(activeList.id, items);
+                    }
                     setListId(null);
                 }} />}
     </section>;

@@ -318,6 +318,10 @@
     }
 }
 
+.tw-sprite-variables__references button {
+    white-space: nowrap;
+}
+
 .tw-sprite-variables__action {
     display: inline-flex;
     align-items: center;
@@ -435,6 +439,7 @@
 
 .tw-sprite-variables__dialog--list {
     inline-size: min(38rem, calc(100vw - 2rem));
+    max-block-size: calc(100dvh - 2rem);
 }
 
 .tw-sprite-variables__dialog--list[open],
@@ -490,6 +495,7 @@
 
 .tw-sprite-variables__list-footer {
     display: flex;
+    flex-shrink: 0;
     flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
