@@ -107,6 +107,10 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
         variables: propertiesInVariables ? '変数など' : '変数', messages: 'メッセージ'} :
         {code: 'Code', costumes: isStage ? 'Backdrops' : 'Costumes', sounds: 'Sounds',
             variables: propertiesInVariables ? 'Properties & Variables' : 'Variables', messages: 'Messages'};
+    const heading = section === 'code' ? undefined : section === 'variables' ?
+        (isStage ? (japanese ? 'グローバル変数' : 'Global Variables') :
+            propertiesInVariables ? (japanese ? 'スプライトのプロパティと変数' : 'Sprite Properties and Variables') :
+                labels.variables) : labels[section];
 
     function showTooltip(button: HTMLButtonElement, id: SpriteEditorSection) {
         const tab = button.getBoundingClientRect();
@@ -154,7 +158,8 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
         </div>
         {tooltip && <span className="tw-plus-sprite-toolbar-tooltip" aria-hidden="true"
             style={{top: tooltip.y}}>{labels[tooltip.id]}</span>}
-        {(search || actions) && <div className="tw-plus-sprite-toolbar-tools">
+        {(heading || search || actions) && <div className="tw-plus-sprite-toolbar-tools">
+            {heading && <h2 className="tw-plus-sprite-toolbar-heading">{heading}</h2>}
             {actions}
             {search && <SearchBox {...{viewId, section, japanese, search}} />}
         </div>}

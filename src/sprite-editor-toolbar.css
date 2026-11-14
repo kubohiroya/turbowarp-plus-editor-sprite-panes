@@ -147,6 +147,16 @@
     background: var(--tw-plus-toolbar-background);
 }
 
+.tw-plus-sprite-toolbar-heading {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    padding-block: .35rem;
+    font-size: inherit;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
 .tw-plus-sprite-search {
     position: relative;
     inline-size: 132px;

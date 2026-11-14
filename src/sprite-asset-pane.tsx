@@ -373,10 +373,11 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: 
                     autoComplete="off" spellCheck={false} data-initial-focus="" />
             </>}
             {error && <p role="alert" className="tw-sprite-variables__dialog-error">{labels[error]}</p>}
-            <div className="tw-sprite-variables__dialog-buttons">
+            <div className="tw-sprite-variables__dialog-buttons tw-plus-dialog-actions">
                 <button type="button" className="tw-sprite-variables__dialog-button" onClick={onClose}
-                    data-initial-focus={isDelete ? '' : undefined}>{labels.cancel}</button>
-                <button type="submit" className="tw-sprite-variables__dialog-button tw-sprite-variables__dialog-button--ok">
+                    data-dialog-action="cancel" data-initial-focus={isDelete ? '' : undefined}>{labels.cancel}</button>
+                <button type="submit" className="tw-sprite-variables__dialog-button tw-sprite-variables__dialog-button--ok"
+                    data-dialog-action={isDelete ? 'delete' : 'confirm'}>
                     {isDelete ? labels.confirmDelete : labels.ok}
                 </button>
             </div>
