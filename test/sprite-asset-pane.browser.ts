@@ -164,7 +164,7 @@ test('variable create, rename and delete open a Scratch-style modal dialog', asy
     await dialog.waitFor();
     const name = dialog.getByLabel('新しい変数名:');
     assert.equal(await name.evaluate(node => node === document.activeElement), true);
-    await dialog.getByRole('button', {name: 'OK'}).click();
+    await dialog.getByRole('button', {name: '作成'}).click();
     await dialog.getByRole('alert').waitFor();
     await name.fill('score');
     await name.press('Enter');
