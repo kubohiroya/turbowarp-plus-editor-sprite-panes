@@ -71,6 +71,7 @@ async function openPage(t) {
     t.after(() => browser.close());
     const page = await browser.newPage({viewport: {width: 640, height: 480}});
     const routes = new Map([
+        ['/pen-icon.js', new URL('../dist/pen-icon.js', import.meta.url)],
         ['/sprite-asset-pane.js', new URL('../dist/sprite-asset-pane.js', import.meta.url)],
         ['/sprite-variable-edit.js', require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit')],
         ['/native-tile-title.js', new URL('../dist/native-tile-title.js', import.meta.url)],
@@ -151,30 +152,42 @@ test('assets keep selection and dimensions while inactive; variables retain and 
 test('variable create, rename and delete open a Scratch-style modal dialog', async t => {
     const page = await openPage(t);
     await page.evaluate(() => window.variableEditing('ja'));
-    assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['変数名', '変数の値', '操作']);
-    const add = page.getByRole('button', {name: '変数を作る'});
+    assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['種類', '変数名', '値', '操作']);
+    assert.equal(await page.getByRole('columnheader', {name: '操作', exact: true}).getByRole('button').count(), 0);
+    const add = page.getByRole('button', {name: '新しいスプライト変数を追加'});
     const [pane, addBox] = [await page.locator('.tw-sprite-variables').boundingBox(), await add.boundingBox()];
-    assert.ok(addBox.x + addBox.width > pane.x + pane.width - 30 && addBox.y + addBox.height > pane.y + pane.height - 30,
-        'the add button sits at the bottom-right corner of the pane');
+    assert.ok(addBox.x < pane.x + 30 && addBox.y + addBox.height > pane.y + pane.height - 30,
+        'the add button sits at the bottom-left corner of the pane');
 
     await add.click();
-    const dialog = page.getByRole('dialog', {name: '新しい変数'});
+    const dialog = page.getByRole('dialog', {name: '新しいスプライト変数'});
     await dialog.waitFor();
     const name = dialog.getByLabel('新しい変数名:');
     assert.equal(await name.evaluate(node => node === document.activeElement), true);
-    await dialog.getByRole('button', {name: 'OK'}).click();
+    await dialog.getByRole('button', {name: '作成'}).click();
     await dialog.getByRole('alert').waitFor();
     await name.fill('score');
     await name.press('Enter');
     await dialog.waitFor({state: 'detached'});
 
-    await page.getByRole('button', {name: '変数名を変更'}).click();
+    const row = page.getByRole('row').filter({has: page.getByRole('textbox', {name: 'Speed'})});
+    const renameButton = row.getByRole('button', {name: '変数名を変更'});
+    const opacity = () => renameButton.evaluate(button => getComputedStyle(button.parentElement).opacity);
+    await page.mouse.move(0, 0);
+    assert.equal(await opacity(), '0');
+    await row.hover();
+    assert.equal(await opacity(), '1');
+    await page.mouse.move(0, 0);
+    await renameButton.focus();
+    assert.equal(await opacity(), '1');
+    await renameButton.press('Enter');
     const rename = page.getByRole('dialog', {name: '変数名を変更'});
     assert.equal(await rename.getByLabel('新しい変数名:').inputValue(), 'Speed');
     await page.keyboard.press('Escape');
     await rename.waitFor({state: 'detached'});
 
-    await page.getByRole('button', {name: '変数を削除'}).click();
+    await row.hover();
+    await row.getByRole('button', {name: '変数を削除'}).click();
     const remove = page.getByRole('dialog', {name: '変数を削除'});
     await remove.getByText('変数「Speed」を削除しますか？').waitFor();
     await remove.getByRole('button', {name: '削除'}).click();

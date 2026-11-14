@@ -154,11 +154,6 @@
     container-type: inline-size;
 }
 
-/* Leave room so the floating add button never covers the last row. */
-.tw-sprite-variables__scroll--with-add {
-    padding-block-end: 4rem;
-}
-
 .tw-sprite-variables__table {
     inline-size: 100%;
     border-collapse: collapse;
@@ -180,10 +175,97 @@
     font-weight: normal;
 }
 
+.tw-sprite-variables__sort {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    padding: .2rem 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.tw-sprite-variables__sort svg {
+    flex: none;
+    inline-size: .6rem;
+    block-size: .9rem;
+    fill: currentColor;
+}
+
+.tw-sprite-variables__sort path {
+    opacity: .55;
+}
+
+.tw-sprite-variables__sort:hover path,
+.tw-sprite-variables__sort path[data-active="true"] {
+    opacity: 1;
+}
+
+.tw-sprite-variables__sort path[data-active="true"] {
+    fill: var(--tw-variables-accent);
+}
+
+.tw-sprite-variables__table .tw-sprite-variables__type-cell {
+    inline-size: 1%;
+    text-align: center;
+}
+
+.tw-sprite-variables__type {
+    display: inline-flex;
+    font-size: 1rem;
+    vertical-align: middle;
+}
+
+.tw-sprite-variables__list-preview,
+.tw-sprite-variables__list-preview ul {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+}
+
+.tw-sprite-variables__list-preview ul {
+    flex-wrap: wrap;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tw-sprite-variables__list-preview li {
+    min-inline-size: 1rem;
+    max-inline-size: min(8rem, 100%);
+    min-block-size: 1.5em;
+    padding: .1em .35em;
+    overflow: hidden;
+    border-radius: .25rem;
+    background: var(--ui-black-transparent, #e8ecf2);
+    text-overflow: ellipsis;
+    white-space: pre;
+}
+
+.tw-sprite-variables__list-edit {
+    flex: none;
+    white-space: nowrap;
+}
+
 .tw-sprite-variables__table .tw-sprite-variables__actions-cell {
     inline-size: 1%;
     white-space: nowrap;
     overflow-wrap: normal;
+}
+
+.tw-sprite-variables__table .tw-sprite-variables__monitor {
+    inline-size: 1%;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.tw-sprite-variables__monitor input,
+.tw-sprite-variables__cloud-option input {
+    accent-color: var(--looks-secondary, #855cd6);
 }
 
 .tw-sprite-variables__scope {
@@ -193,10 +275,19 @@
 }
 
 .tw-sprite-variables__cloud {
+    margin-inline-start: .4em;
     color: #2399c2;
 }
 
-.tw-sprite-variables__icon {
+.tw-sprite-variables__cloud-option {
+    display: flex;
+    align-items: center;
+    gap: .45em;
+    margin-block: .65rem;
+}
+
+.tw-sprite-variables__icon,
+.tw-sprite-pane__pen-icon {
     flex: none;
     inline-size: 1em;
     block-size: 1em;
@@ -212,11 +303,42 @@
     gap: .3rem;
 }
 
+@media (hover: hover) {
+    .tw-sprite-variables__table tbody tr:not(:hover, :has(:focus-visible)) :is(
+        .tw-sprite-variables__actions-cell > div, .tw-sprite-variables__list-edit
+    ) {
+        opacity: 0;
+        pointer-events: none;
+    }
+}
+
 @container (max-width: 30rem) {
     .tw-sprite-variables__actions {
         flex-direction: column;
         align-items: stretch;
     }
+}
+
+.tw-sprite-variables__table .tw-sprite-variables__references {
+    inline-size: 1%;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.tw-sprite-variables__reference-link {
+    display: inline-flex;
+    min-inline-size: 1.5rem;
+    min-block-size: 1.5rem;
+    justify-content: center;
+    align-items: center;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: .15em;
+}
+
+.tw-sprite-variables__reference-link:hover,
+.tw-sprite-variables__reference-link:focus-visible {
+    color: var(--tw-variables-accent);
 }
 
 .tw-sprite-variables__action {
@@ -254,11 +376,11 @@
     font: inherit;
 }
 
-/* Floating add button, shaped like Scratch's sprite and costume add buttons. */
 .tw-sprite-variables__add {
-    position: absolute;
-    inset-block-end: .75rem;
-    inset-inline-end: .75rem;
+    flex: none;
+    align-self: start;
+    max-inline-size: calc(100% - 1.5rem);
+    margin: .5rem .75rem .75rem;
     display: flex;
     align-items: center;
     gap: .5rem;
@@ -270,10 +392,12 @@
     box-shadow: 0 .15rem .5rem rgba(0, 0, 0, .15);
     font: inherit;
     font-weight: bold;
+    text-align: start;
     cursor: pointer;
 }
 
 .tw-sprite-variables__add-icon {
+    flex: none;
     display: grid;
     place-items: center;
     inline-size: 2.25rem;
@@ -332,6 +456,83 @@
     background: var(--ui-modal-header-background, var(--tw-variables-accent));
 }
 
+.tw-sprite-variables__dialog--list {
+    inline-size: min(38rem, calc(100vw - 2rem));
+    max-block-size: calc(100dvh - 2rem);
+}
+
+.tw-sprite-variables__dialog--list::backdrop,
+.tw-sprite-variables__dialog:has(.tw-sprite-variables__creation-tabs)::backdrop {
+    background: #17212a80;
+}
+
+.tw-sprite-variables__dialog--list[open],
+.tw-sprite-variables__list-form {
+    display: flex;
+    flex-direction: column;
+    min-block-size: 0;
+}
+
+.tw-sprite-variables__dialog--list .tw-sprite-variables__dialog-header {
+    flex-shrink: 0;
+}
+
+.tw-sprite-variables__list-scroll {
+    min-block-size: 0;
+    overflow: auto;
+    padding: .75rem 1rem;
+}
+
+.tw-sprite-variables__list-items {
+    display: grid;
+    gap: .45rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tw-sprite-variables__list-items li {
+    display: grid;
+    grid-template-columns: minmax(2ch, auto) minmax(0, 1fr) repeat(3, auto);
+    align-items: center;
+    gap: .3rem;
+}
+
+.tw-sprite-variables__list-position {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
+}
+
+.tw-sprite-variables__list-items .tw-sprite-variables__dialog-input {
+    block-size: auto;
+    min-block-size: 2.25rem;
+    margin: 0;
+    padding: .5rem;
+    resize: vertical;
+}
+
+.tw-sprite-variables__list-form .tw-sprite-variables__action {
+    justify-content: center;
+    min-block-size: 2rem;
+    min-inline-size: 2rem;
+}
+
+.tw-sprite-variables__list-footer {
+    display: flex;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: .5rem;
+    padding: .75rem 1rem;
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
+}
+
+.tw-sprite-variables__list-footer .tw-sprite-variables__dialog-buttons {
+    margin-block-start: 0;
+    margin-inline-start: auto;
+}
+
 .tw-sprite-variables__dialog-title {
     margin: 0;
     overflow: hidden;
@@ -373,6 +574,40 @@
     background: var(--ui-modal-background, #fff);
 }
 
+.tw-sprite-variables__creation-tabs {
+    display: flex;
+    gap: .5rem;
+    margin-block-end: 1.25rem;
+    border-block-end: 1px solid var(--ui-black-transparent, hsla(0, 0%, 0%, .15));
+}
+
+.tw-sprite-variables__creation-tabs > button {
+    display: inline-flex;
+    align-items: center;
+    gap: .375rem;
+    padding: .5rem .75rem;
+    border: 0;
+    border-block-end: 3px solid transparent;
+    color: var(--text-primary, #575e75);
+    background: transparent;
+    font: inherit;
+    cursor: pointer;
+}
+
+.tw-sprite-variables__creation-tabs > button[aria-selected="true"] {
+    border-block-end-color: var(--tw-variables-accent);
+    font-weight: 600;
+}
+
+.tw-sprite-variables__creation-tabs > button:is(:hover, :focus-visible) {
+    background: var(--ui-black-transparent, hsla(0, 0%, 0%, .15));
+}
+
+.tw-sprite-variables__creation-tabs > button:focus-visible {
+    outline: 2px solid var(--tw-variables-accent);
+    outline-offset: -2px;
+}
+
 .tw-sprite-variables__dialog-label {
     display: block;
     margin: 0 0 .75rem;
@@ -410,6 +645,14 @@
     margin: -.75rem 0 1.25rem;
     color: var(--error-primary, #ff4c4c);
     font-size: .8rem;
+}
+
+.tw-sprite-variables__dialog-input[aria-describedby] {
+    margin-block-end: .375rem;
+}
+
+.tw-sprite-variables__dialog-input + .tw-sprite-variables__dialog-error {
+    margin: 0 0 1rem;
 }
 
 .tw-sprite-variables__dialog-buttons {
@@ -480,6 +723,13 @@
     font-size: .8rem;
 }
 
+.tw-sprite-messages__script-start {
+    display: block;
+    margin-block-start: .15em;
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .875em;
+}
+
 .tw-sprite-messages__link {
     padding: 0;
     border: 0;
@@ -542,6 +792,12 @@
     font: inherit;
 }
 
+.tw-sprite-messages__rename {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+}
+
 .tw-sprite-messages__button:disabled {
     opacity: .55;
 }
@@ -558,42 +814,234 @@
 }
 
 .tw-sprite-messages__diagram {
+    --message-columns: minmax(7rem, 1fr) minmax(8rem, 1.4fr) minmax(7rem, 1fr);
+    --message-line: var(--text-primary-transparent, #575e75);
+    --message-accent: var(--looks-secondary, #855cd6);
+    --message-branch: 1rem;
     margin: 0;
+    overflow-x: auto;
 }
 
 .tw-sprite-messages__diagram figcaption {
-    margin-block-end: .35rem;
-    font-size: .9rem;
+    margin-block-end: .5rem;
     font-weight: bold;
 }
 
-.tw-sprite-messages__diagram svg {
-    inline-size: 100%;
-    block-size: auto;
-    overflow: visible;
+.tw-sprite-messages__connections {
+    min-inline-size: 22rem;
 }
 
-.tw-sprite-messages__column {
-    fill: var(--text-primary-transparent, #575e75);
-    font-size: 11px;
+.tw-sprite-messages__headings,
+.tw-sprite-messages__connection {
+    display: grid;
+    grid-template-columns: var(--message-columns);
+    align-items: center;
+}
+
+.tw-sprite-messages__headings {
+    color: var(--message-line);
+    text-align: center;
+}
+
+.tw-sprite-messages__headings > :last-child {
+    grid-column: 3;
+}
+
+.tw-sprite-messages__connections-list,
+.tw-sprite-messages__endpoints {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tw-sprite-messages__connection {
+    padding: .65rem .25rem;
+}
+
+.tw-sprite-messages__connection + .tw-sprite-messages__connection {
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
+}
+
+.tw-sprite-messages__endpoints li {
+    position: relative;
+    padding-block: .2rem;
+}
+
+.tw-sprite-messages__endpoints[data-direction="send"] li {
+    padding-inline-end: var(--message-branch);
+}
+
+.tw-sprite-messages__endpoints[data-direction="receive"] li {
+    padding-inline-start: var(--message-branch);
+}
+
+/* Branches connect every endpoint of a broadcast to the same labelled arrow. */
+.tw-sprite-messages__endpoints li::before,
+.tw-sprite-messages__endpoints li::after {
+    content: "";
+    position: absolute;
+    pointer-events: none;
+}
+
+.tw-sprite-messages__endpoints li::before {
+    inset-block: 0;
+    border-inline-end: 1px solid var(--message-line);
+}
+
+.tw-sprite-messages__endpoints li:first-child::before {
+    inset-block-start: 50%;
+}
+
+.tw-sprite-messages__endpoints li:last-child::before {
+    inset-block-end: 50%;
+}
+
+.tw-sprite-messages__endpoints li::after {
+    inset-block-start: 50%;
+    inline-size: var(--message-branch);
+    border-block-start: 1px solid var(--message-line);
+}
+
+.tw-sprite-messages__endpoints[data-direction="send"] li::before,
+.tw-sprite-messages__endpoints[data-direction="send"] li::after {
+    inset-inline-end: 0;
+}
+
+.tw-sprite-messages__endpoints[data-direction="receive"] li::before,
+.tw-sprite-messages__endpoints[data-direction="receive"] li::after {
+    inset-inline-start: 0;
+}
+
+.tw-sprite-messages__node {
+    position: relative;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    inline-size: 100%;
+    min-block-size: 2.65rem;
+    padding: .2rem .35rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .4rem;
+    color: inherit;
+    background: var(--input-background, #fff);
+    font: inherit;
+    overflow-wrap: anywhere;
+    text-align: start;
+}
+
+.tw-sprite-messages__node[aria-current="true"] {
+    border: 3px solid var(--message-accent);
+    padding: calc(.2rem - 2px) calc(.35rem - 2px);
+}
+
+button.tw-sprite-messages__node {
+    cursor: pointer;
+}
+
+button.tw-sprite-messages__node:hover,
+button.tw-sprite-messages__node:focus-visible {
+    border-color: var(--message-accent);
+}
+
+.tw-sprite-messages__node img {
+    flex: none;
+    inline-size: 1.9rem;
+    block-size: 1.9rem;
+    object-fit: contain;
+}
+
+.tw-sprite-messages__node img[data-backdrop] {
+    box-sizing: border-box;
+    block-size: 1.425rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .15rem;
 }
 
 .tw-sprite-messages__edge {
+    display: grid;
+    grid-template-rows: 1fr 0 1fr;
+    align-self: stretch;
+}
+
+.tw-sprite-messages__edge::after {
+    content: "";
+    grid-row: 2;
+    border-block-start: 1px solid var(--message-line);
+}
+
+.tw-sprite-messages__edge[data-status="sendOnly"]::after,
+.tw-sprite-messages__edge[data-status="receiveOnly"]::after {
+    border-block-start-style: dashed;
+}
+
+.tw-sprite-messages__endpoints[data-direction="receive"] .tw-sprite-messages__node::before {
+    content: "";
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-end: 100%;
+    inline-size: 0;
+    border-block: .25em solid transparent;
+    border-inline-start: .45em solid var(--message-line);
+    transform: translateY(-50%);
+}
+
+.tw-sprite-messages__edge-label {
+    grid-row: 1;
+    align-self: end;
+    justify-self: center;
+    display: flex;
+    align-items: start;
+    gap: .3em;
+    min-inline-size: 0;
+    padding: .05rem .45rem .2rem;
+    overflow-wrap: anywhere;
+}
+
+.tw-sprite-messages__edge-label svg {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    margin-block-start: .12em;
     fill: none;
-    stroke: var(--text-primary-transparent, #575e75);
-    stroke-width: 1.2;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
 }
 
-.tw-sprite-messages__node rect {
-    fill: var(--input-background, #fff);
-    stroke: var(--ui-black-transparent, #ccd5e2);
+.tw-sprite-messages__missing {
+    margin: 0;
+    padding-inline: .25rem;
+    color: var(--message-line);
 }
 
-.tw-sprite-messages__node text {
-    fill: var(--text-primary, #273146);
-    font-size: 12px;
+.tw-sprite-messages__connection > .tw-sprite-messages__missing {
+    text-align: center;
 }
 
-.tw-sprite-messages__node[role="button"] {
-    cursor: pointer;
+.tw-sprite-clone-notice {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35em .8em;
+    margin: .5rem;
+    padding: .5rem .65rem;
+    border-radius: .35rem;
+    color: var(--text-primary, #273146);
+    background: var(--ui-secondary, #edf3fd);
+    font-size: .875rem;
+}
+
+.tw-sprite-variables__intro {
+    margin: .5rem .5rem .75rem;
+}
+
+.tw-sprite-variables__intro h3 {
+    margin: 0 0 .3rem;
+    font-size: inherit;
+}
+
+.tw-sprite-variables__intro p {
+    margin: .2rem 0;
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .85em;
 }

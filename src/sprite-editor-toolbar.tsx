@@ -104,9 +104,14 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
     const [tooltip, setTooltip] = React.useState<{button: HTMLButtonElement; id: SpriteEditorSection; y: number}>();
     const japanese = /^ja(?:-|$)/i.test(locale);
     const labels = japanese ? {code: 'コード', costumes: isStage ? '背景' : 'コスチューム', sounds: '音',
-        variables: propertiesInVariables ? '変数など' : '変数', messages: 'メッセージ'} :
+        variables: isStage ? 'グローバル変数' : propertiesInVariables ? '変数など' : 'スプライト変数', messages: 'メッセージ'} :
         {code: 'Code', costumes: isStage ? 'Backdrops' : 'Costumes', sounds: 'Sounds',
-            variables: propertiesInVariables ? 'Properties & Variables' : 'Variables', messages: 'Messages'};
+            variables: isStage ? 'Global Variables' : propertiesInVariables ? 'Properties & Variables' : 'Sprite Variables', messages: 'Messages'};
+    const variableHeading = !isStage && propertiesInVariables ?
+        (japanese ? 'スプライトのプロパティと変数' : 'Sprite Properties and Variables') :
+            labels.variables;
+    const heading = section === 'code' ? undefined : section === 'variables' ? variableHeading : labels[section];
+    const variableTooltip = japanese && !isStage ? variableHeading : labels.variables;
 
     function showTooltip(button: HTMLButtonElement, id: SpriteEditorSection) {
         const tab = button.getBoundingClientRect();
@@ -153,8 +158,9 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
             </button>)}
         </div>
         {tooltip && <span className="tw-plus-sprite-toolbar-tooltip" aria-hidden="true"
-            style={{top: tooltip.y}}>{labels[tooltip.id]}</span>}
-        {(search || actions) && <div className="tw-plus-sprite-toolbar-tools">
+            style={{top: tooltip.y}}>{tooltip.id === 'variables' ? variableTooltip : labels[tooltip.id]}</span>}
+        {(heading || search || actions) && <div className="tw-plus-sprite-toolbar-tools">
+            {heading && <h2 className="tw-plus-sprite-toolbar-heading">{heading}</h2>}
             {actions}
             {search && <SearchBox {...{viewId, section, japanese, search}} />}
         </div>}

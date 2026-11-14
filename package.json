@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-sprite-panes",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Panes of the TurboWarp Plus Editor sprite editor: assets, variables, messages, properties and the section toolbar",
   "type": "module",
   "license": "MPL-2.0",
@@ -18,6 +18,10 @@
     "./sprite-message-pane": {
       "types": "./dist/sprite-message-pane.d.ts",
       "default": "./dist/sprite-message-pane.js"
+    },
+    "./sprite-clone-inspector": {
+      "types": "./dist/sprite-clone-inspector.d.ts",
+      "default": "./dist/sprite-clone-inspector.js"
     },
     "./sprite-properties": {
       "types": "./dist/sprite-properties.d.ts",
@@ -49,7 +53,7 @@
     "test:browser": "npm run build && node --test test/*.browser.ts"
   },
   "dependencies": {
-    "@kubohiroya/turbowarp-plus-editor-project-model": "0.1.0"
+    "@kubohiroya/turbowarp-plus-editor-project-model": "0.1.2"
   },
   "peerDependencies": {
     "react": ">=16.14",

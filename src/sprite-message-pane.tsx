@@ -1,16 +1,21 @@
 import React from 'react';
+import {PenIcon} from './pen-icon.tsx';
 import type {
-    MessageGraph, MessageGraphNode, MessageRenameError, MessageStatus, MessageUse, ProjectMessage, TargetMessages
+    MessageRenameError, MessageStatus, MessageUse, ProjectMessage, TargetMessages
 } from '@kubohiroya/turbowarp-plus-editor-project-model/project-messages';
 import {checkMessageRename, receiveOpcode} from '@kubohiroya/turbowarp-plus-editor-project-model/project-messages';
 
 export type {MessageRenameError};
 
+export interface MessagePaneData extends TargetMessages {
+    getThumbnailUrl?(targetId: string): string | undefined;
+}
+
 export interface SpriteMessagePaneProps {
     kind: 'messages';
     locale: string;
     editable: boolean;
-    data: TargetMessages;
+    data: MessagePaneData;
     /** Open the block that sends or receives the message. */
     onOpen?(use: MessageUse): void;
     /** Open a sprite or the stage from the diagram. */
@@ -25,9 +30,9 @@ const english = {
     elsewhere: 'Used elsewhere in this project',
     message: 'Message',
     block: 'Block',
-    script: 'Script',
+    scriptStart: 'Script starts with %1',
     actions: 'Actions',
-    rename: 'Rename',
+    rename: 'Rename message',
     cancel: 'Cancel',
     name: 'Message name',
     projectWide: 'Renaming a message changes it everywhere in the project.',
@@ -44,13 +49,13 @@ const english = {
     unused: 'Unused',
     diagram: 'Messages between sprites and the stage',
     senders: 'Sends',
-    messages: 'Message',
     receivers: 'Receives',
     stage: 'Stage',
     noMessages: 'This project has no messages.',
+    noConnections: 'This diagram shows messages with a sender or a receiver.',
     openBlock: 'Open this block',
     openTarget: 'Open this sprite',
-    uses: '%1 sending, %2 receiving',
+    openStage: 'Open the stage',
     broadcast: 'broadcast %1',
     broadcastAndWait: 'broadcast %1 and wait',
     whenReceived: 'when I receive %1',
@@ -73,9 +78,9 @@ const japanese: typeof english = {
     elsewhere: 'この作品の他の場所のメッセージ',
     message: 'メッセージ',
     block: 'ブロック',
-    script: 'スクリプト',
+    scriptStart: '「%1」から始まるスクリプト',
     actions: '操作',
-    rename: '名前を変更',
+    rename: 'メッセージ名を変更',
     cancel: 'キャンセル',
     name: 'メッセージ名',
     projectWide: 'メッセージの名前を変えると、作品全体で変わります。',
@@ -92,13 +97,13 @@ const japanese: typeof english = {
     unused: '使われていません',
     diagram: 'スプライト・背景とメッセージの関係',
     senders: '送信元',
-    messages: 'メッセージ',
     receivers: '受信先',
     stage: '背景',
     noMessages: 'この作品にはメッセージがありません。',
+    noConnections: '送信または受信に使われているメッセージがここに表示されます。',
     openBlock: 'このブロックを開く',
     openTarget: 'このスプライトを開く',
-    uses: '送信 %1 件・受信 %2 件',
+    openStage: '背景を開く',
     broadcast: '%1を送る',
     broadcastAndWait: '%1を送って待つ',
     whenReceived: '%1を受け取ったとき',
@@ -136,6 +141,13 @@ function Status({labels, status}: {labels: Labels; status: MessageStatus}) {
     return <span className="tw-sprite-messages__status" data-status={status}>{labels[status]}</span>;
 }
 
+function RenameButton({labels, editable, onClick}: {labels: Labels; editable: boolean; onClick(): void}) {
+    return <button type="button" className="tw-sprite-messages__button tw-sprite-messages__rename"
+        disabled={!editable} onClick={onClick}>
+        <PenIcon />{labels.rename}
+    </button>;
+}
+
 function RenameForm({labels, message, onSubmit, onCancel}: {
     labels: Labels;
     message: ProjectMessage;
@@ -165,93 +177,76 @@ function RenameForm({labels, message, onSubmit, onCancel}: {
     </form>;
 }
 
-const nodeHeight = 26;
-const nodeGap = 10;
-const nodeWidth = 150;
-const columnGap = 70;
-const diagramWidth = nodeWidth * 3 + columnGap * 2;
-const shorten = (name: string) => name.length > 18 ? name.slice(0, 17) + '…' : name;
-
-function Diagram({labels, graph, onOpenTarget}: {
+function DiagramTargets({labels, uses, current, direction, getThumbnailUrl, onOpenTarget}: {
     labels: Labels;
-    graph: MessageGraph;
-    onOpenTarget?(targetId: string): void;
+    uses: readonly MessageUse[];
+    current: string;
+    direction: 'send' | 'receive';
+    getThumbnailUrl: MessagePaneData['getThumbnailUrl'];
+    onOpenTarget: SpriteMessagePaneProps['onOpenTarget'];
 }) {
-    const senders = graph.targets.filter(target =>
-        graph.edges.some(edge => edge.direction === 'send' && edge.targetId === target.id));
-    const receivers = graph.targets.filter(target =>
-        graph.edges.some(edge => edge.direction === 'receive' && edge.targetId === target.id));
-    const rows = Math.max(senders.length, receivers.length, graph.messages.length);
-    if (!graph.messages.length) return <p className="tw-sprite-messages__empty">{labels.noMessages}</p>;
-    const height = Math.max(1, rows) * (nodeHeight + nodeGap) + nodeGap;
-    const place = (items: readonly unknown[], index: number) =>
-        (height - items.length * (nodeHeight + nodeGap) + nodeGap) / 2 + index * (nodeHeight + nodeGap);
-    const columns = [0, nodeWidth + columnGap, (nodeWidth + columnGap) * 2];
-    const targetY = (list: readonly MessageGraphNode[], id: string) => {
-        const index = list.findIndex(target => target.id === id);
-        return index < 0 ? undefined : place(list, index) + nodeHeight / 2;
-    };
-    const messageY = (key: string) => {
-        const index = graph.messages.findIndex(message => message.key === key);
-        return index < 0 ? undefined : place(graph.messages, index) + nodeHeight / 2;
-    };
+    if (!uses.length) {
+        return <span className="tw-sprite-messages__missing">
+            {direction === 'send' ? labels.receiveOnly : labels.sendOnly}
+        </span>;
+    }
+    const targets = new Map(uses.map(use => [use.targetId, use]));
+    return <ul className="tw-sprite-messages__endpoints" data-direction={direction}>
+        {[...targets.values()].map(({targetId, targetName, isStage}) => {
+            const name = isStage ? labels.stage : targetName;
+            const thumbnail = getThumbnailUrl?.(targetId);
+            const title = onOpenTarget ? name + ' — ' + (isStage ? labels.openStage : labels.openTarget) : name;
+            const nodeProps = {
+                className: 'tw-sprite-messages__node',
+                'aria-current': targetId === current ? true : undefined,
+                title
+            };
+            const content = <>
+                {thumbnail && <img src={thumbnail} alt="" data-backdrop={isStage || undefined} />}
+                <span>{name}</span>
+            </>;
+            return <li key={targetId}>
+                {onOpenTarget ? <button type="button" {...nodeProps} onClick={() => onOpenTarget(targetId)}>
+                    {content}
+                </button> : <span {...nodeProps}>{content}</span>}
+            </li>;
+        })}
+    </ul>;
+}
 
-    const node = (x: number, y: number, label: string, title: string, open?: () => void) => {
-        const interactive = Boolean(open);
-        return <g key={x + ':' + y + ':' + title} className="tw-sprite-messages__node"
-            role={interactive ? 'button' : undefined} tabIndex={interactive ? 0 : undefined}
-            aria-label={interactive ? title : undefined} onClick={open}
-            onKeyDown={interactive ? event => {
-                if (event.key !== 'Enter' && event.key !== ' ') return;
-                event.preventDefault();
-                open();
-            } : undefined}>
-            <title>{title}</title>
-            <rect x={x} y={y} width={nodeWidth} height={nodeHeight} rx="5" />
-            <text x={x + nodeWidth / 2} y={y + nodeHeight / 2} textAnchor="middle" dominantBaseline="central">
-                {shorten(label)}
-            </text>
-        </g>;
-    };
+function Diagram({labels, data, onOpenTarget}: {
+    labels: Labels;
+    data: MessagePaneData;
+    onOpenTarget: SpriteMessagePaneProps['onOpenTarget'];
+}) {
+    const {targetId, isStage, messages, getThumbnailUrl} = data;
+    const connections = messages.filter(message => isStage ? message.sends.length || message.receives.length :
+        message.sends.some(use => use.targetId === targetId) || message.receives.some(use => use.targetId === targetId));
+    const endpointProps = {labels, current: targetId, getThumbnailUrl, onOpenTarget};
 
     return <figure className="tw-sprite-messages__diagram">
         <figcaption>{labels.diagram}</figcaption>
-        <svg viewBox={'0 -18 ' + diagramWidth + ' ' + (height + 18)} role="group" aria-label={labels.diagram}>
-            {[labels.senders, labels.messages, labels.receivers].map((heading, index) =>
-                <text key={heading} className="tw-sprite-messages__column" x={columns[index] + nodeWidth / 2} y={-6}
-                    textAnchor="middle">{heading}</text>)}
-            {graph.edges.map(edge => {
-                const fromMessage = edge.direction === 'receive';
-                const from = fromMessage ? messageY(edge.messageKey) : targetY(senders, edge.targetId);
-                const to = fromMessage ? targetY(receivers, edge.targetId) : messageY(edge.messageKey);
-                if (from === undefined || to === undefined) return null;
-                const left = columns[fromMessage ? 1 : 0] + nodeWidth;
-                const right = columns[fromMessage ? 2 : 1];
-                const middle = (left + right) / 2;
-                return <path key={edge.direction + edge.targetId + edge.messageKey}
-                    className="tw-sprite-messages__edge"
-                    d={'M' + left + ' ' + from + 'C' + middle + ' ' + from + ' ' + middle + ' ' + to +
-                        ' ' + right + ' ' + to} />;
-            })}
-            {senders.map((target, index) => node(columns[0], place(senders, index),
-                target.isStage ? labels.stage : target.name,
-                (target.isStage ? labels.stage : target.name) + (onOpenTarget ? ' — ' + labels.openTarget : ''),
-                onOpenTarget && (() => onOpenTarget(target.id))))}
-            {graph.messages.map((message, index) => {
-                const counts = labels.uses
-                    .replace('%1', String(graph.edges.filter(edge =>
-                        edge.direction === 'send' && edge.messageKey === message.key).length))
-                    .replace('%2', String(graph.edges.filter(edge =>
-                        edge.direction === 'receive' && edge.messageKey === message.key).length));
-                const status = message.status === 'both' ? '' : ' — ' + labels[message.status];
-                return node(columns[1], place(graph.messages, index), message.name,
-                    quoted(message.name) + ' — ' + counts + status);
-            })}
-            {receivers.map((target, index) => node(columns[2], place(receivers, index),
-                target.isStage ? labels.stage : target.name,
-                (target.isStage ? labels.stage : target.name) + (onOpenTarget ? ' — ' + labels.openTarget : ''),
-                onOpenTarget && (() => onOpenTarget(target.id))))}
-        </svg>
+        {connections.length ? <div className="tw-sprite-messages__connections">
+            <div className="tw-sprite-messages__headings">
+                <span>{labels.senders}</span><span>{labels.receivers}</span>
+            </div>
+            <ul className="tw-sprite-messages__connections-list">
+                {connections.map(message => <li className="tw-sprite-messages__connection" key={message.key}>
+                    <DiagramTargets {...endpointProps} uses={message.sends} direction="send" />
+                    <div className="tw-sprite-messages__edge" data-status={message.status}>
+                        <span className="tw-sprite-messages__edge-label">
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                            </svg>
+                            <span>{message.name}</span>
+                        </span>
+                    </div>
+                    <DiagramTargets {...endpointProps} uses={message.receives} direction="receive" />
+                </li>)}
+            </ul>
+        </div> : <p className="tw-sprite-messages__missing">
+            {messages.length ? labels.noConnections : labels.noMessages}
+        </p>}
     </figure>;
 }
 
@@ -273,7 +268,6 @@ function Group({labels, title, uses, empty, byKey, editable, renaming, onOpen, o
             <thead><tr>
                 <th scope="col">{labels.message}</th>
                 <th scope="col">{labels.block}</th>
-                <th scope="col">{labels.script}</th>
                 {onRename && <th scope="col">{labels.actions}</th>}
             </tr></thead>
             <tbody>{uses.map(use => {
@@ -285,15 +279,18 @@ function Group({labels, title, uses, empty, byKey, editable, renaming, onOpen, o
                             <span data-message-key={use.key} tabIndex={-1}>{use.name}</span>}
                         {message && <Status labels={labels} status={message.status} />}
                     </th>
-                    <td>{blockLabel(labels, use)}</td>
-                    <td>{scriptLabel(labels, use)}</td>
+                    <td>
+                        {blockLabel(labels, use)}
+                        {use.blockId !== use.scriptId && <small className="tw-sprite-messages__script-start">
+                            {labels.scriptStart.replace('%1', () => scriptLabel(labels, use))}
+                        </small>}
+                    </td>
                     {onRename && <td>
                         {renaming === use.key && message ?
                             <RenameForm labels={labels} message={message}
                                 onSubmit={name => onRename(message, name)}
                                 onCancel={() => onStartRename(null)} /> :
-                            <button type="button" className="tw-sprite-messages__button" disabled={!editable}
-                                onClick={() => onStartRename(use.key)}>{labels.rename}</button>}
+                            <RenameButton labels={labels} editable={editable} onClick={() => onStartRename(use.key)} />}
                     </td>}
                 </tr>;
             })}</tbody>
@@ -332,11 +329,10 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
                         <RenameForm labels={labels} message={message}
                             onSubmit={name => rename(message, name)}
                             onCancel={() => setRenaming(null)} /> :
-                        <button type="button" className="tw-sprite-messages__button" disabled={!editable}
-                            onClick={() => setRenaming(message.key)}>{labels.rename}</button>)}
+                        <RenameButton labels={labels} editable={editable} onClick={() => setRenaming(message.key)} />)}
                 </li>)}
             </ul> : <p className="tw-sprite-messages__empty">{labels.noElsewhere}</p>}
         </section>
-        {data.graph && <Diagram labels={labels} graph={data.graph} onOpenTarget={onOpenTarget} />}
+        <Diagram labels={labels} data={data} onOpenTarget={onOpenTarget} />
     </section>;
 }

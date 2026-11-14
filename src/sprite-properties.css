@@ -12,8 +12,20 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
-    gap: 0.5rem;
+    gap: 1rem;
     padding: 0.5rem;
+}
+
+.tw-sprite-properties__basic,
+.tw-sprite-properties__attributes {
+    display: grid;
+    min-inline-size: 0;
+    gap: .5rem;
+}
+
+.tw-sprite-properties__attributes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
 }
 
 .tw-sprite-properties__field {
@@ -23,7 +35,7 @@
     font: inherit;
 }
 
-.tw-sprite-properties__field :is(input, select) {
+.tw-sprite-properties__field :is(input:not([type="radio"]), select) {
     box-sizing: border-box;
     inline-size: 100%;
     min-inline-size: 0;
@@ -36,22 +48,187 @@
     border-radius: 0.25rem;
 }
 
-.tw-sprite-properties__field :is(input, select):focus-visible {
+.tw-sprite-properties__field :is(input:not([type="radio"]), select):focus-visible {
     outline: 2px solid var(--motion-primary, #2769c6);
     outline-offset: -2px;
 }
 
-@container (min-width: 22rem) {
-    .tw-sprite-properties__fields {
-        grid-template-columns: minmax(0, 1fr) repeat(2, 7.5rem);
+.tw-sprite-properties__field input[readonly] {
+    background: var(--ui-secondary, #edf1f8);
+}
+
+.tw-sprite-properties__read-only {
+    margin-inline-start: .6em;
+    font-size: .75em;
+}
+
+.tw-sprite-properties__visibility {
+    display: flex;
+    justify-self: start;
+    border: 1px solid var(--ui-black-transparent, #7b8494);
+    border-radius: .25rem;
+    color: var(--text-primary-transparent, #575e75);
+    background: var(--input-background, #fff);
+}
+
+.tw-sprite-properties__visibility label {
+    position: relative;
+    display: grid;
+    place-items: center;
+    inline-size: 2rem;
+    block-size: calc(2rem - 2px);
+}
+
+.tw-sprite-properties__visibility label + label {
+    border-inline-start: 1px solid var(--ui-black-transparent, #7b8494);
+}
+
+.tw-sprite-properties__visibility label:has(input:checked) {
+    color: var(--looks-secondary, #855cd6);
+    background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.tw-sprite-properties__visibility label:has(input:focus-visible) {
+    z-index: 1;
+    outline: 2px solid var(--motion-primary, #2769c6);
+    outline-offset: -2px;
+}
+
+.tw-sprite-properties__visibility label:has(input:disabled) {
+    opacity: .5;
+}
+
+.tw-sprite-properties__visibility input {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    margin: 0;
+    opacity: 0;
+}
+
+.tw-sprite-properties__visibility input:enabled {
+    cursor: pointer;
+}
+
+.tw-sprite-properties__visibility svg {
+    inline-size: 1rem;
+    block-size: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-properties__direction {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 7.5rem);
+    align-items: center;
+    min-inline-size: 0;
+    gap: .75rem;
+}
+
+.tw-sprite-properties__visibility-field {
+    justify-self: start;
+}
+
+.tw-sprite-properties__direction-options {
+    gap: .5rem;
+}
+
+.tw-sprite-properties__direction-value {
+    display: grid;
+    grid-template-columns: auto minmax(0, 4.25rem);
+    align-items: center;
+    gap: .5rem;
+}
+
+.tw-sprite-properties__dial {
+    display: grid;
+    place-items: center;
+    inline-size: 100%;
+    max-inline-size: 7.5rem;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    color: var(--looks-secondary, #855cd6);
+}
+
+.tw-sprite-properties__dial:active {
+    cursor: grabbing;
+}
+
+.tw-sprite-properties__dial[aria-disabled="true"] {
+    opacity: .55;
+    cursor: default;
+    touch-action: auto;
+}
+
+.tw-sprite-properties__dial:focus-visible {
+    outline: 2px solid var(--motion-primary, #2769c6);
+}
+
+.tw-sprite-properties__dial svg {
+    inline-size: 100%;
+    block-size: 100%;
+    fill: none;
+}
+
+.tw-sprite-properties__dial-face {
+    fill: color-mix(in srgb, currentColor 12%, transparent);
+    stroke: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.tw-sprite-properties__dial-sector {
+    fill: color-mix(in srgb, currentColor 26%, transparent);
+    stroke: currentColor;
+    stroke-width: .85;
+}
+
+.tw-sprite-properties__dial-ticks {
+    stroke: var(--text-primary, #26324b);
+    opacity: .22;
+}
+
+.tw-sprite-properties__dial-handle {
+    fill: currentColor;
+    stroke: color-mix(in srgb, currentColor 25%, var(--input-background, #fff));
+    stroke-width: 3;
+}
+
+.tw-sprite-properties__dial-arrow {
+    stroke: white;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-properties__rotation {
+    justify-self: start;
+}
+
+@container (max-width: 12rem) {
+    .tw-sprite-properties__direction {
+        grid-template-columns: minmax(0, 1fr);
     }
 }
 
-@container (min-width: 50rem) {
-    .tw-sprite-properties__fields {
-        grid-template-columns: minmax(0, 1fr) repeat(5, 7.5rem);
+@container (min-width: 18rem) {
+    .tw-sprite-properties__attributes {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) max-content minmax(0, 1fr);
     }
 }
+
+@container (min-width: 36rem) {
+    .tw-sprite-properties__fields {
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+    }
+}
+
 .tw-sprite-properties-selector {
     display: flex;
     flex-direction: column;

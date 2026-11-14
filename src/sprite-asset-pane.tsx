@@ -1,7 +1,8 @@
 import React from 'react';
+import {PenIcon} from './pen-icon.tsx';
 import {observeTileNameTitles} from './native-tile-title.ts';
 import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from './sprite-properties.tsx';
-import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
+import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError, type SpriteVariableValue, type SpriteListItem} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
 
 interface NativeAssetPanelProps {
     children?: React.ReactNode;
@@ -134,9 +135,10 @@ export interface SpriteMediaAsset {
 export interface SpriteVariable {
     id: string;
     name: string;
-    value: string | number;
+    value: SpriteVariableValue;
     scope?: 'local' | 'global';
     isCloud?: boolean;
+    monitor?: {visible: boolean; setVisible(visible: boolean): void};
     accesses?: {read: number; write: number; open(access: 'read' | 'write'): void};
 }
 
@@ -160,6 +162,9 @@ export interface SpriteVariablePaneProps extends PaneProps {
     variables: readonly SpriteVariable[];
     properties?: SpritePropertiesPanelProps['values'];
     targetId?: string;
+    clone?: boolean;
+    global?: {canAddCloudVariable: boolean};
+    notice?: React.ReactNode;
     onWriteProperties?: SpritePropertiesPanelProps['onChange'];
     onWrite(id: string, value: SpriteVariable['value']): void;
     onEdit?(edit: SpriteVariableEdit): SpriteVariableEditError | void;
@@ -168,32 +173,66 @@ export interface SpriteVariablePaneProps extends PaneProps {
 export type SpriteAssetPaneProps = SpriteMediaPaneProps | SpriteVariablePaneProps;
 
 const english = {
-    costumes: 'Costumes', sounds: 'Sounds', variables: 'Variables', name: 'Variable name', value: 'Variable value',
+    costumes: 'Costumes', sounds: 'Sounds', name: 'Variable name', value: 'Value',
+    type: 'Type', variable: 'Variable', list: 'List',
+    editList: 'Edit', editListTitle: 'Edit list: %1', emptyList: 'Empty list',
+    listItem: 'Item %1', moveUp: 'Move item %1 up', moveDown: 'Move item %1 down',
+    deleteItem: 'Delete item %1', addItem: 'Add item', save: 'Save',
+    moreItems: '+%1',
+    spriteVariables: 'Sprite Variables', globalVariables: 'Global Variables',
+    spriteDescription: 'These variables belong to this sprite.',
+    globalDescription: 'The stage and all sprites can use these variables.',
+    cloneDescription: 'Each clone has its own values for its sprite variables.',
+    showOnStage: 'Show %1 on the stage',
+    showOriginalOnStage: 'Show the original sprite’s %1 on the stage',
+    stageColumn: 'Stage',
     local: 'Sprite', global: 'Project', cloudVariable: 'Cloud variable', emptyCostumes: 'No costumes', emptySounds: 'No sounds',
-    emptyVariables: 'No variables', selectCostume: 'Select a costume', selectSound: 'Select a sound',
+    emptyVariables: 'No variables or lists', selectCostume: 'Select a costume', selectSound: 'Select a sound',
     imageUnavailable: 'Image unavailable', waveformUnavailable: 'Waveform unavailable', waveform: 'Waveform',
-    seconds: 's', accesses: 'References', read: 'Read', write: 'Write',
-    actions: 'Actions', create: 'Create variable', rename: 'Rename variable', delete: 'Delete variable',
-    cancel: 'Cancel', ok: 'OK', close: 'Close', confirmDelete: 'Delete', createTitle: 'New Variable',
-    renameTitle: 'Rename Variable', deleteTitle: 'Delete Variable', newName: 'New variable name:',
+    seconds: 's', read: 'Read', write: 'Write',
+    actions: 'Actions', addSprite: 'Add a new sprite variable', addGlobal: 'Add a new global variable',
+    rename: 'Rename variable', delete: 'Delete variable',
+    cancel: 'Cancel', ok: 'OK', create: 'Create', close: 'Close', confirmDelete: 'Delete',
+    newSprite: 'New Sprite Variable', newGlobal: 'New Global Variable',
+    renameTitle: 'Rename Variable', deleteTitle: 'Delete Variable', newName: 'New variable name:', newListName: 'New list name:',
     deletePrompt: 'Delete variable “%1”?', emptyName: 'Enter a variable name.',
     duplicateName: 'A variable with this name is already in scope.',
+    emptyListName: 'Enter a list name.', duplicateListName: 'A list with this name is already in scope.',
     inUse: 'This variable is used by a block. Remove its uses before deleting it.',
-    unavailable: 'This variable or target is no longer available.'
+    unavailable: 'This variable or target is no longer available.',
+    sharedDefinition: 'This change applies to the original sprite and all its clones.',
+    cloudLimit: 'This project cannot have any more cloud variables.'
 };
 const japanese: typeof english = {
-    costumes: 'コスチューム', sounds: '音', variables: '変数', name: '変数名', value: '変数の値',
+    costumes: 'コスチューム', sounds: '音', name: '変数名', value: '値',
+    type: '種類', variable: '変数', list: 'リスト',
+    editList: '編集', editListTitle: 'リストを編集：%1', emptyList: '空のリスト',
+    listItem: '項目 %1', moveUp: '項目 %1 を上に移動', moveDown: '項目 %1 を下に移動',
+    deleteItem: '項目 %1 を削除', addItem: '項目を追加', save: '保存',
+    moreItems: '+%1',
+    spriteVariables: 'スプライト変数', globalVariables: 'グローバル変数',
+    spriteDescription: 'このスプライト専用の変数です。',
+    globalDescription: 'この背景とすべてのスプライトで参照・利用できる変数です。',
+    cloneDescription: 'クローンのスプライト変数はそれぞれのクローンごとに別々の値を持ちます。',
+    showOnStage: '「%1」をステージに表示',
+    showOriginalOnStage: '元のスプライトの「%1」をステージに表示',
+    stageColumn: 'ステージ',
     local: 'スプライト', global: '作品', cloudVariable: 'クラウド変数', emptyCostumes: 'コスチュームがありません', emptySounds: '音がありません',
-    emptyVariables: '変数がありません', selectCostume: 'コスチュームを選択してください', selectSound: '音を選択してください',
+    emptyVariables: '変数やリストがありません', selectCostume: 'コスチュームを選択してください', selectSound: '音を選択してください',
     imageUnavailable: '画像を表示できません', waveformUnavailable: '波形を表示できません', waveform: '波形',
-    seconds: '秒', accesses: '参照箇所', read: '読み取り', write: '変更',
-    actions: '操作', create: '変数を作る', rename: '変数名を変更', delete: '変数を削除',
-    cancel: 'キャンセル', ok: 'OK', close: '閉じる', confirmDelete: '削除', createTitle: '新しい変数',
-    renameTitle: '変数名を変更', deleteTitle: '変数を削除', newName: '新しい変数名:',
+    seconds: '秒', read: '読み取り', write: '変更',
+    actions: '操作', addSprite: '新しいスプライト変数を追加', addGlobal: '新しいグローバル変数を追加',
+    rename: '変数名を変更', delete: '変数を削除',
+    cancel: 'キャンセル', ok: 'OK', create: '作成', close: '閉じる', confirmDelete: '削除',
+    newSprite: '新しいスプライト変数', newGlobal: '新しいグローバル変数',
+    renameTitle: '変数名を変更', deleteTitle: '変数を削除', newName: '新しい変数名:', newListName: '新しいリスト名:',
     deletePrompt: '変数「%1」を削除しますか？', emptyName: '変数名を入力してください。',
     duplicateName: '同じ名前の変数がすでにあります。',
+    emptyListName: 'リスト名を入力してください。', duplicateListName: '同じ名前のリストがすでにあります。',
     inUse: 'この変数はブロックで使用中です。削除するには、先に参照を外してください。',
-    unavailable: 'この変数または編集対象を操作できなくなりました。'
+    unavailable: 'この変数または編集対象を操作できなくなりました。',
+    sharedDefinition: 'この変更は元のスプライトとすべてのクローンに反映されます。',
+    cloudLimit: 'この作品にはこれ以上クラウド変数を追加できません。'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -247,8 +286,10 @@ function MediaPane({kind, items, selectedId, onSelect, renderEditor, editable, l
     </section>;
 }
 
+const isList = (value: SpriteVariableValue): value is readonly SpriteListItem[] => Array.isArray(value);
+
 function VariableField({variable, editable, onWrite}: {
-    variable: SpriteVariable;
+    variable: SpriteVariable & {value: string | number};
     editable: boolean;
     onWrite: SpriteVariablePaneProps['onWrite'];
 }) {
@@ -296,9 +337,6 @@ type VariableLabels = ReturnType<typeof labelsFor>;
 
 const iconProps = {viewBox: '0 0 16 16', 'aria-hidden': true, focusable: false} as const;
 const PlusIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon"><path d="M8 3.5v9M3.5 8h9" /></svg>;
-const PenIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon">
-    <path d="M10.6 2.9l2.5 2.5-7.4 7.4-3.2.7.7-3.2z M9.3 4.2l2.5 2.5" />
-</svg>;
 const TrashIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon">
     <path d="M2.8 4.3h10.4M6.3 4.3V2.8h3.4v1.5M4.2 4.3l.7 8.9h6.2l.7-8.9M6.8 6.8v4.1M9.2 6.8v4.1" />
 </svg>;
@@ -318,25 +356,21 @@ function useDialogIds() {
     return ids;
 }
 
-/** A modal shaped like Scratch's “New Variable” prompt, shown in the top layer above every pane. */
-function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: {
-    action: SpriteVariableEdit;
+function VariableModal({title, labels, onClose, children, list}: React.PropsWithChildren<{
+    title: string;
     labels: VariableLabels;
-    targetName: string;
-    error?: SpriteVariableEditError;
-    onSubmit(event: React.FormEvent<HTMLFormElement>): void;
     onClose(): void;
-}) {
+    list?: boolean;
+}>) {
     const dialog = React.useRef<HTMLDialogElement>(null);
-    const {titleId, inputId} = useDialogIds();
-    const isDelete = action.type === 'delete';
+    const {titleId} = useDialogIds();
     React.useLayoutEffect(() => {
         const node = dialog.current;
         if (!node) return;
         if (typeof node.showModal === 'function') {
             if (!node.open) node.showModal();
         } else node.setAttribute('open', '');
-        // React focuses autoFocus elements before the dialog opens, so focus the intended control here.
+        // React sets autoFocus before the dialog opens.
         const initial = node.querySelector<HTMLElement>('[data-initial-focus]');
         initial?.focus();
         if (initial instanceof HTMLInputElement) initial.select();
@@ -344,8 +378,9 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: 
             if (node.open && typeof node.close === 'function') node.close();
         };
     }, []);
-    const title = action.type === 'create' ? labels.createTitle : action.type === 'rename' ? labels.renameTitle : labels.deleteTitle;
-    return <dialog ref={dialog} className="tw-sprite-variables__dialog" aria-labelledby={titleId}
+    return <dialog ref={dialog}
+        className={list ? 'tw-sprite-variables__dialog tw-sprite-variables__dialog--list' : 'tw-sprite-variables__dialog'}
+        aria-labelledby={titleId}
         onCancel={event => {
             event.preventDefault();
             onClose();
@@ -357,7 +392,6 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: 
             onClose();
         }}
         onClick={event => {
-            // The content fills the dialog box, so a click on the dialog itself is a click on the backdrop.
             if (event.target === event.currentTarget) onClose();
         }}>
         <div className="tw-sprite-variables__dialog-header">
@@ -366,97 +400,380 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: 
                 <CloseIcon />
             </button>
         </div>
-        <form className="tw-sprite-variables__dialog-body" onSubmit={onSubmit}>
-            {isDelete ? <p className="tw-sprite-variables__dialog-message">{labels.deletePrompt.replace('%1', targetName)}</p> : <>
-                <label className="tw-sprite-variables__dialog-label" htmlFor={inputId}>{labels.newName}</label>
-                <input id={inputId} className="tw-sprite-variables__dialog-input" name="name" defaultValue={action.name}
-                    autoComplete="off" spellCheck={false} data-initial-focus="" />
-            </>}
-            {error && <p role="alert" className="tw-sprite-variables__dialog-error">{labels[error]}</p>}
-            <div className="tw-sprite-variables__dialog-buttons">
-                <button type="button" className="tw-sprite-variables__dialog-button" onClick={onClose}
-                    data-initial-focus={isDelete ? '' : undefined}>{labels.cancel}</button>
-                <button type="submit" className="tw-sprite-variables__dialog-button tw-sprite-variables__dialog-button--ok">
-                    {isDelete ? labels.confirmDelete : labels.ok}
-                </button>
-            </div>
-        </form>
+        {children}
     </dialog>;
 }
 
-function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties}: SpriteVariablePaneProps) {
+const creationTypes = ['variable', 'list'] as const;
+
+function VariableDialogActions({cancelLabel, confirmLabel, onClose, deleting = false}: {
+    cancelLabel: string;
+    confirmLabel: string;
+    onClose(): void;
+    deleting?: boolean;
+}) {
+    return <div className="tw-sprite-variables__dialog-buttons tw-plus-dialog-actions">
+        <button type="button" className="tw-sprite-variables__dialog-button" onClick={onClose}
+            data-dialog-action="cancel" data-initial-focus={deleting ? '' : undefined}>{cancelLabel}</button>
+        <button type="submit" className="tw-sprite-variables__dialog-button tw-sprite-variables__dialog-button--ok"
+            data-dialog-action={deleting ? 'delete' : 'confirm'}>{confirmLabel}</button>
+    </div>;
+}
+
+function VariableDialog({action, labels, targetName, error, onSubmit, onClose, onClearError, clone, global}: {
+    action: SpriteVariableEdit;
+    labels: VariableLabels;
+    targetName: string;
+    clone?: boolean;
+    global?: SpriteVariablePaneProps['global'];
+    error?: SpriteVariableEditError;
+    onSubmit(event: React.FormEvent<HTMLFormElement>, list: boolean): void;
+    onClose(): void;
+    onClearError(): void;
+}) {
+    const {inputId} = useDialogIds();
+    const [kind, setKind] = React.useState<typeof creationTypes[number]>('variable');
+    const [name, setName] = React.useState(action.type === 'delete' ? '' : action.name);
+    const [cloud, setCloud] = React.useState(false);
+    const isCreate = action.type === 'create';
+    const isDelete = action.type === 'delete';
+    const list = kind === 'list';
+    const title = isCreate ? (global ? labels.newGlobal : labels.newSprite) :
+        action.type === 'rename' ? labels.renameTitle : labels.deleteTitle;
+    const selectKind = (next: typeof kind) => {
+        if (next === kind) return;
+        setKind(next);
+        onClearError();
+    };
+    const errorText = list && error === 'emptyName' ? labels.emptyListName :
+        list && error === 'duplicateName' ? labels.duplicateListName : error && labels[error];
+    const errorId = inputId + '-error';
+    const errorMessage = errorText &&
+        <p id={errorId} role="alert" className="tw-sprite-variables__dialog-error">{errorText}</p>;
+    const nameField = <>
+        <label className="tw-sprite-variables__dialog-label" htmlFor={inputId}>{list ? labels.newListName : labels.newName}</label>
+        <input id={inputId} className="tw-sprite-variables__dialog-input" name="name" value={name}
+            aria-describedby={errorText ? errorId : undefined}
+            aria-invalid={error === 'emptyName' || error === 'duplicateName' || undefined}
+            onChange={event => setName(event.currentTarget.value)} autoComplete="off" spellCheck={false} data-initial-focus="" />
+        {errorMessage}
+    </>;
+    return <VariableModal title={title} labels={labels} onClose={onClose}>
+        <form className="tw-sprite-variables__dialog-body" onSubmit={event => onSubmit(event, list)}>
+            {isCreate ? <>
+                <div className="tw-sprite-variables__creation-tabs" role="tablist" aria-label={labels.type}>
+                    {creationTypes.map(type => <button key={type} type="button" role="tab"
+                        id={inputId + '-' + type + '-tab'} aria-controls={inputId + '-' + type}
+                        aria-selected={kind === type} tabIndex={kind === type ? 0 : -1} onClick={() => selectKind(type)}
+                        onKeyDown={event => {
+                            const {key} = event;
+                            if (key !== 'Home' && key !== 'End' && key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+                            const target = key === 'Home' || (key !== 'End' && type === 'list') ? 'variable' : 'list';
+                            event.preventDefault();
+                            selectKind(target);
+                            event.currentTarget.ownerDocument.getElementById(inputId + '-' + target + '-tab')?.focus();
+                        }}>
+                        <VariableTypeIcon list={type === 'list'} />{labels[type]}
+                    </button>)}
+                </div>
+                {creationTypes.map(type => <div key={type} id={inputId + '-' + type} role="tabpanel"
+                    aria-labelledby={inputId + '-' + type + '-tab'} hidden={type !== kind}>
+                    {type === kind && nameField}
+                    {type === kind && type === 'variable' && global && <>
+                        <label className="tw-sprite-variables__cloud-option">
+                            <input type="checkbox" name="isCloud" disabled={!global.canAddCloudVariable}
+                                checked={cloud} onChange={event => setCloud(event.currentTarget.checked)} />
+                            {labels.cloudVariable}
+                        </label>
+                        {!global.canAddCloudVariable && <p>{labels.cloudLimit}</p>}
+                    </>}
+                </div>)}
+            </> : isDelete ? <p className="tw-sprite-variables__dialog-message">{labels.deletePrompt.replace('%1', targetName)}</p> :
+                nameField}
+            {clone && <p>{labels.sharedDefinition}</p>}
+            {isDelete && errorMessage}
+            <VariableDialogActions cancelLabel={labels.cancel} onClose={onClose} deleting={isDelete}
+                confirmLabel={isCreate ? labels.create : isDelete ? labels.confirmDelete : labels.ok} />
+        </form>
+    </VariableModal>;
+}
+
+const listItemValue = ({original, text}: {original: SpriteListItem; text: string}): SpriteListItem => {
+    if (text === String(original)) return original;
+    const number = Number(text);
+    return typeof original === 'number' && text.trim() && Number.isFinite(number) ? number : text;
+};
+
+function ListValueDialog({name, value, labels, onSave, onClose}: {
+    name: string;
+    value: readonly SpriteListItem[];
+    labels: VariableLabels;
+    onSave(items: SpriteListItem[]): void;
+    onClose(): void;
+}) {
+    const [initial] = React.useState(() => value.map((original, id) => ({id, original, text: String(original)})));
+    const [items, setItems] = React.useState(initial);
+    const nextId = React.useRef(initial.length);
+    const focusId = React.useRef<number | null>(null);
+    const form = React.useRef<HTMLFormElement>(null);
+    React.useLayoutEffect(() => {
+        if (focusId.current === null) return;
+        const input = form.current?.querySelector<HTMLElement>(`[data-list-item="${focusId.current}"]`);
+        (input ?? form.current?.querySelector<HTMLElement>('[data-add-item]'))?.focus();
+        focusId.current = null;
+    }, [items]);
+    const move = (index: number, step: number) => {
+        const next = items.slice();
+        [next[index], next[index + step]] = [next[index + step], next[index]];
+        focusId.current = items[index].id;
+        setItems(next);
+    };
+    const remove = (index: number) => {
+        const next = items.filter((_, position) => position !== index);
+        focusId.current = (next[index] ?? next[index - 1])?.id ?? -1;
+        setItems(next);
+    };
+    const add = () => {
+        const id = nextId.current++;
+        focusId.current = id;
+        setItems([...items, {id, original: '', text: ''}]);
+    };
+    return <VariableModal list title={labels.editListTitle.replace('%1', name)} labels={labels} onClose={onClose}>
+        <form ref={form} className="tw-sprite-variables__list-form" onSubmit={event => {
+            event.preventDefault();
+            const next = items.map(listItemValue);
+            if (next.length !== initial.length || next.some((item, i) => !Object.is(item, initial[i].original))) {
+                onSave(next);
+            } else onClose();
+        }}>
+            <div className="tw-sprite-variables__list-scroll">
+                {!items.length && <p>{labels.emptyList}</p>}
+                <ol className="tw-sprite-variables__list-items">
+                    {items.map((item, index) => {
+                        const position = String(index + 1);
+                        const up = labels.moveUp.replace('%1', position);
+                        const down = labels.moveDown.replace('%1', position);
+                        const del = labels.deleteItem.replace('%1', position);
+                        return <li key={item.id}>
+                            <span className="tw-sprite-variables__list-position" aria-hidden="true">{position}</span>
+                            <textarea rows={1} className="tw-sprite-variables__dialog-input" data-list-item={item.id}
+                                aria-label={labels.listItem.replace('%1', position)} value={item.text}
+                                data-initial-focus={index === 0 ? '' : undefined}
+                                onChange={event => {
+                                    const text = event.currentTarget.value;
+                                    setItems(items.map(entry => entry.id === item.id ? {...entry, text} : entry));
+                                }} />
+                            <button type="button" className="tw-sprite-variables__action" aria-label={up} title={up}
+                                disabled={index === 0} onClick={() => move(index, -1)}>
+                                <ListArrow />
+                            </button>
+                            <button type="button" className="tw-sprite-variables__action" aria-label={down} title={down}
+                                disabled={index === items.length - 1} onClick={() => move(index, 1)}>
+                                <ListArrow down />
+                            </button>
+                            <button type="button" className="tw-sprite-variables__action" aria-label={del} title={del}
+                                onClick={() => remove(index)}><TrashIcon /></button>
+                        </li>;
+                    })}
+                </ol>
+            </div>
+            <div className="tw-sprite-variables__list-footer">
+                <button type="button" className="tw-sprite-variables__action" data-add-item=""
+                    data-initial-focus={!items.length ? '' : undefined} onClick={add}><PlusIcon />{labels.addItem}</button>
+                <VariableDialogActions cancelLabel={labels.cancel} confirmLabel={labels.save} onClose={onClose} />
+            </div>
+        </form>
+    </VariableModal>;
+}
+
+const ListArrow = ({down}: {down?: boolean}) => <svg {...iconProps} className="tw-sprite-variables__icon">
+    <path d={down ? 'M8 3v10m-4-4 4 4 4-4' : 'M8 13V3M4 7l4-4 4 4'} />
+</svg>;
+
+const VariableTypeIcon = ({list}: {list: boolean}) => <svg {...iconProps} className="tw-sprite-variables__icon">
+    <path d={list ? 'M2.5 2.5h11v10h-11zM3.5 13v1m9-1v1m-10-8h11m-11 3.3h11M7 4.2h2m-2 3.4h2M7 11h2' :
+        'M3 6v7h10V6M2 3h12v3H2zM6.5 8.5h3'} />
+</svg>;
+
+function ListPreview({id, value, editable, labels, onEdit}: {
+    id: string;
+    value: readonly SpriteListItem[];
+    editable: boolean;
+    labels: VariableLabels;
+    onEdit(): void;
+}) {
+    return <div className="tw-sprite-variables__list-preview" data-variable-id={id} tabIndex={-1}>
+        {value.length ? <ul>{value.slice(0, 5).map((item, index) =>
+            <li key={index} title={String(item)}>{String(item)}</li>)}
+            {value.length > 5 && <li>{labels.moreItems.replace('%1', String(value.length - 5))}</li>}
+        </ul> : <span>{labels.emptyList}</span>}
+        {editable && <button type="button" className="tw-sprite-variables__action tw-sprite-variables__list-edit"
+            onClick={onEdit}><PenIcon />{labels.editList}</button>}
+    </div>;
+}
+
+type SortColumn = 'stageColumn' | 'type' | 'name' | 'value' | 'read' | 'write';
+type Sort = {column: SortColumn; direction: 'ascending' | 'descending'};
+
+const referenceCount = (variable: SpriteVariable) => (variable.accesses?.read ?? 0) + (variable.accesses?.write ?? 0);
+
+function compareVariables(a: SpriteVariable, b: SpriteVariable, column: SortColumn, collator: Intl.Collator) {
+    switch (column) {
+    case 'stageColumn': return Number(Boolean(a.monitor?.visible)) - Number(Boolean(b.monitor?.visible));
+    case 'type': return Number(isList(a.value)) - Number(isList(b.value));
+    case 'name': return collator.compare(variableName(a), variableName(b));
+    case 'read':
+    case 'write': return (a.accesses?.[column] ?? 0) - (b.accesses?.[column] ?? 0);
+    case 'value':
+        if (isList(a.value)) return isList(b.value) ? a.value.length - b.value.length : 1;
+        if (isList(b.value)) return -1;
+        if (typeof a.value === 'number' && typeof b.value === 'number') return a.value - b.value;
+        if (typeof a.value !== typeof b.value) return typeof a.value === 'number' ? -1 : 1;
+        return collator.compare(String(a.value), String(b.value));
+    }
+}
+
+function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties,
+    clone, notice, global}: SpriteVariablePaneProps) {
     const labels = labelsFor(locale);
     const [action, setAction] = React.useState<SpriteVariableEdit | null>(null);
     const [error, setError] = React.useState<SpriteVariableEditError | undefined>();
+    const [listId, setListId] = React.useState<string | null>(null);
+    const [sort, setSort] = React.useState<Sort | null>(null);
+    const collator = React.useMemo(() => new Intl.Collator(locale || undefined, {numeric: true, sensitivity: 'base'}), [locale]);
+    const activeList = variables.find(variable => variable.id === listId && isList(variable.value));
+    const listValue = activeList && isList(activeList.value) ? activeList.value : undefined;
     const start = (next: SpriteVariableEdit | null) => {
         setError(undefined);
         setAction(next);
     };
     React.useLayoutEffect(() => {
         if (!editable) start(null);
-    }, [editable]);
-    const submit = (event: React.FormEvent<HTMLFormElement>) => {
+        if (!editable || !activeList) setListId(null);
+    }, [editable, activeList?.id]);
+    const submit = (event: React.FormEvent<HTMLFormElement>, list: boolean) => {
         event.preventDefault();
         if (!onEdit || !editable || !action) return;
-        const result = onEdit(action.type === 'delete' ? action :
-            {...action, name: String(new FormData(event.currentTarget).get('name') ?? '')});
+        const form = new FormData(event.currentTarget);
+        const name = String(form.get('name') ?? '');
+        let edit: SpriteVariableEdit = action;
+        if (action.type === 'create') {
+            edit = list ? {type: 'create', name, variableType: 'list'} :
+                {type: 'create', name, ...(global?.canAddCloudVariable && form.has('isCloud') ? {isCloud: true} : {})};
+        } else if (action.type === 'rename') edit = {...action, name};
+        const result = onEdit(edit);
         if (result) setError(result);
         else start(null);
     };
     const selected = action && action.type !== 'create' ? variables.find(variable => variable.id === action.id) : undefined;
     const showAccesses = variables.some(variable => variable.accesses);
-    return <section className="tw-sprite-variables" aria-label={labels.variables}>
-        <div className={onEdit ? 'tw-sprite-variables__scroll tw-sprite-variables__scroll--with-add' : 'tw-sprite-variables__scroll'}>
+    const showMonitors = variables.some(variable => variable.monitor);
+    const sorted = sort ? variables.slice().sort((a, b) =>
+        (sort.direction === 'ascending' ? 1 : -1) * compareVariables(a, b, sort.column, collator)) : variables;
+    const header = (column: SortColumn, className?: string) => {
+        const direction = sort?.column === column ? sort.direction : undefined;
+        return <th scope="col" className={className} aria-sort={direction}>
+            <button type="button" className="tw-sprite-variables__sort"
+                onClick={() => setSort({column, direction: direction === 'ascending' ? 'descending' : 'ascending'})}>
+                {labels[column]}
+                <svg viewBox="0 0 10 16" aria-hidden="true" focusable="false">
+                    <path d="M1 6 5 1l4 5Z" data-active={direction === 'ascending'} />
+                    <path d="m1 10 4 5 4-5Z" data-active={direction === 'descending'} />
+                </svg>
+            </button>
+        </th>;
+    };
+    return <section className="tw-sprite-variables" aria-label={global ? labels.globalVariables : labels.spriteVariables}>
+        <div className="tw-sprite-variables__scroll">
+            {notice}
             {properties && targetId && onWriteProperties &&
                 <SpritePropertiesPanel targetId={targetId} values={properties} locale={locale}
-                    disabled={!editable} onChange={onWriteProperties} />}
+                    disabled={!editable} nameReadOnly={clone} onChange={onWriteProperties} />}
+            <div className="tw-sprite-variables__intro">
+                {!global && <h3>{labels.spriteVariables}</h3>}
+                <p>{global ? labels.globalDescription : labels.spriteDescription}</p>
+                {clone && <p>{labels.cloneDescription}</p>}
+            </div>
             {variables.length ? <table className="tw-sprite-variables__table">
-                <thead><tr><th scope="col">{labels.name}</th><th scope="col">{labels.value}</th>
-                    {showAccesses && <th scope="col">{labels.accesses}</th>}
+                <thead><tr>
+                    {showMonitors && header('stageColumn', 'tw-sprite-variables__monitor')}
+                    {header('type', 'tw-sprite-variables__type-cell')}{header('name')}{header('value')}
+                    {showAccesses && header('read', 'tw-sprite-variables__references')}
+                    {showAccesses && header('write', 'tw-sprite-variables__references')}
                     {onEdit && <th scope="col" className="tw-sprite-variables__actions-cell">{labels.actions}</th>}
                 </tr></thead>
-                <tbody>{variables.map(variable => <tr key={variable.id}>
-                    <th scope="row">
-                        {variable.isCloud && <>
-                            <span className="tw-sprite-variables__cloud" role="img" aria-label={labels.cloudVariable}>☁︎</span>{' '}
-                        </>}
-                        {variableName(variable)}
-                        {variable.scope && <span className="tw-sprite-variables__scope">{labels[variable.scope]}</span>}
-                    </th>
-                    <td><VariableField variable={variable} editable={editable} onWrite={onWrite} /></td>
-                    {showAccesses && <td>
-                        {variable.accesses && <div className="tw-sprite-variables__actions">
-                            {(['read', 'write'] as const).map(access => {
-                                const caption = `${labels[access]} ${variable.accesses[access]}`;
-                                return <button key={access} type="button" className="tw-sprite-variables__action"
-                                    aria-label={`${variableName(variable)}: ${caption}`} disabled={!editable}
-                                    onClick={() => variable.accesses.open(access)}>{caption}</button>;
-                            })}
-                        </div>}
-                    </td>}
-                    {onEdit && <td className="tw-sprite-variables__actions-cell">
-                        <div className="tw-sprite-variables__actions">
-                            <button type="button" className="tw-sprite-variables__action" disabled={!editable}
-                                onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
-                                <PenIcon />{labels.rename}
-                            </button>
-                            <button type="button" className="tw-sprite-variables__action tw-sprite-variables__action--delete"
-                                disabled={!editable} onClick={() => start({type: 'delete', id: variable.id})}>
-                                <TrashIcon />{labels.delete}
-                            </button>
-                        </div>
-                    </td>}
-                </tr>)}</tbody>
+                <tbody>{sorted.map(variable => {
+                    const {value} = variable;
+                    const list = isList(value);
+                    const inUse = referenceCount(variable) > 0;
+                    const monitorLabel = (clone ? labels.showOriginalOnStage : labels.showOnStage).replace('%1', variableName(variable));
+                    return <tr key={variable.id}>
+                        {showMonitors && <td className="tw-sprite-variables__monitor">
+                            {variable.monitor && <input type="checkbox"
+                                aria-label={monitorLabel} title={monitorLabel}
+                                checked={variable.monitor.visible} disabled={!editable}
+                                onChange={event => variable.monitor.setVisible(event.currentTarget.checked)} />}
+                        </td>}
+                        <td className="tw-sprite-variables__type-cell">
+                            <span className="tw-sprite-variables__type" role="img"
+                                aria-label={list ? labels.list : labels.variable} title={list ? labels.list : labels.variable}>
+                                <VariableTypeIcon list={list} />
+                            </span>
+                        </td>
+                        <th scope="row">
+                            {variableName(variable)}
+                            {variable.isCloud && <> <span className="tw-sprite-variables__cloud" role="img"
+                                aria-label={labels.cloudVariable} title={labels.cloudVariable}>☁︎</span></>}
+                            {variable.scope && <span className="tw-sprite-variables__scope">{labels[variable.scope]}</span>}
+                        </th>
+                        <td>{list ? <ListPreview id={variable.id} value={value} editable={editable} labels={labels}
+                            onEdit={() => setListId(variable.id)} /> :
+                            <VariableField variable={{...variable, value}} editable={editable} onWrite={onWrite} />}</td>
+                        {showAccesses && (['read', 'write'] as const).map(access => {
+                            const counts = variable.accesses;
+                            return <td key={access} className="tw-sprite-variables__references">
+                                {counts && (editable ? <a href="#" className="tw-sprite-variables__reference-link"
+                                    aria-label={`${variableName(variable)}: ${labels[access]} ${counts[access]}`}
+                                    onClick={event => {
+                                        event.preventDefault();
+                                        counts.open(access);
+                                    }}>{counts[access]}</a> : counts[access])}
+                            </td>;
+                        })}
+                        {onEdit && <td className="tw-sprite-variables__actions-cell">
+                            {!list && <div className="tw-sprite-variables__actions">
+                                <button type="button" className="tw-sprite-variables__action" disabled={!editable}
+                                    onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
+                                    <PenIcon />{labels.rename}
+                                </button>
+                                <button type="button" className="tw-sprite-variables__action tw-sprite-variables__action--delete"
+                                    disabled={!editable || inUse} title={inUse ? labels.inUse : undefined}
+                                    onClick={() => start({type: 'delete', id: variable.id})}>
+                                    <TrashIcon />{labels.delete}
+                                </button>
+                            </div>}
+                        </td>}
+                    </tr>;
+                })}</tbody>
             </table> : <p>{labels.emptyVariables}</p>}
         </div>
         {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
             onClick={() => start({type: 'create', name: ''})}>
             <span className="tw-sprite-variables__add-icon"><PlusIcon /></span>
-            <span className="tw-sprite-variables__add-label">{labels.create}</span>
+            <span className="tw-sprite-variables__add-label">{global ? labels.addGlobal : labels.addSprite}</span>
         </button>}
         {editable && action && <VariableDialog key={action.type === 'create' ? 'create' : action.type + action.id}
-            action={action} labels={labels} error={error} onSubmit={submit} onClose={() => start(null)}
+            action={action} labels={labels} error={error} clone={clone} global={global} onSubmit={submit}
+            onClose={() => start(null)} onClearError={() => setError(undefined)}
             targetName={selected ? variableName(selected) : ''} />}
+        {editable && activeList && listValue &&
+            <ListValueDialog key={activeList.id} name={variableName(activeList)} value={listValue} labels={labels}
+                onClose={() => setListId(null)} onSave={items => {
+                    if (items.length !== listValue.length || items.some((item, index) => !Object.is(item, listValue[index]))) {
+                        onWrite(activeList.id, items);
+                    }
+                    setListId(null);
+                }} />}
     </section>;
 }
 

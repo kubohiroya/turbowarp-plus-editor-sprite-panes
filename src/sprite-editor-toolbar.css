@@ -147,6 +147,16 @@
     background: var(--tw-plus-toolbar-background);
 }
 
+.tw-plus-sprite-toolbar-heading {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    padding-block: .35rem;
+    font-size: inherit;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
 .tw-plus-sprite-search {
     position: relative;
     inline-size: 132px;
@@ -195,3 +205,92 @@
 .tw-plus-sprite-search li { padding: 4px 6px; overflow-wrap: anywhere; cursor: pointer; }
 .tw-plus-sprite-search li:hover,
 .tw-plus-sprite-search li[aria-selected="true"] { background: var(--looks-light-transparent, #e6dff3); }
+
+.tw-plus-sprite-toolbar-tools:has(.tw-sprite-clone-pages) {
+    flex-wrap: wrap;
+    column-gap: .6rem;
+    row-gap: .15rem;
+    padding-block: .2rem;
+}
+
+.tw-sprite-clone-pages,
+.tw-sprite-clone-pages__numbers,
+.tw-sprite-clone-pages__stepper {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.tw-sprite-clone-pages {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-inline-start: auto;
+    font-size: .875rem;
+}
+
+.tw-sprite-clone-pages :is(button, select) {
+    box-sizing: border-box;
+    min-block-size: 2rem;
+    padding-inline: .6em;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .4rem;
+    color: inherit;
+    background: var(--input-background, #fff);
+    font: inherit;
+}
+
+.tw-sprite-clone-pages :is(button, select):enabled {
+    cursor: pointer;
+}
+
+.tw-sprite-clone-pages button:hover:enabled,
+.tw-sprite-clone-pages button[aria-current="true"] {
+    border-color: var(--looks-secondary, #855cd6);
+    background: color-mix(in srgb, var(--looks-secondary, #855cd6) 16%, var(--input-background, #fff));
+}
+
+.tw-sprite-clone-pages button[aria-current="true"] {
+    font-weight: bold;
+}
+
+.tw-sprite-clone-pages__numbers {
+    flex-wrap: wrap;
+    gap: .2rem;
+}
+
+.tw-sprite-clone-pages__numbers button {
+    min-inline-size: 1.9rem;
+    padding-inline: .3em;
+}
+
+.tw-sprite-clone-pages__stepper {
+    gap: .625rem;
+}
+
+.tw-sprite-clone-pages button.tw-sprite-clone-pages__arrow {
+    display: grid;
+    place-items: center;
+    inline-size: 2.5rem;
+    block-size: 2.5rem;
+    padding: 0;
+    border-radius: 50%;
+}
+
+.tw-sprite-clone-pages__arrow:disabled {
+    opacity: .45;
+}
+
+.tw-plus-sprite-toolbar .tw-sprite-clone-pages__arrow svg {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-clone-pages :is(button, select):focus-visible {
+    outline: 2px solid var(--looks-secondary, #855cd6);
+    outline-offset: 1px;
+}
