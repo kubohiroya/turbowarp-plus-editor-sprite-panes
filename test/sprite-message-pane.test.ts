@@ -57,8 +57,8 @@ test('the pane lists what the sprite sends and receives, with the block and the 
     ['メッセージ', '送信', '受信', 'この作品の他の場所のメッセージ']);
     const rows = [...container.querySelectorAll('tbody tr')].map(row => text(row.querySelectorAll('th, td')));
     assert.deepEqual(rows, [
-        ['go', '「go」を送る', '緑の旗が押されたとき'],
-        ['go', '「go」を受け取ったとき', '「go」を受け取ったとき']
+        ['go', '「go」を送る「緑の旗が押されたとき」から始まるスクリプト'],
+        ['go', '「go」を受け取ったとき']
     ]);
     assert.equal(container.querySelector('.tw-sprite-messages__empty').textContent,
         'この作品のメッセージはすべてここで使われています。');
@@ -70,7 +70,7 @@ test('a send that waits is told apart from a plain send', t => {
         data: {targetId: 'cat', isStage: false, sends: [sent], receives: [], elsewhere: [],
             messages: [message({sends: [sent]})]}
     });
-    assert.deepEqual(text(container.querySelectorAll('tbody td')).slice(0, 1), ['「go」を送って待つ']);
+    assert.match(container.querySelector('tbody td').textContent, /^「go」を送って待つ/);
 });
 
 test('a message sent but never received, and one the sprite does not use, are marked', t => {
@@ -106,7 +106,7 @@ test('renaming refuses a name another message already has and reports why', t =>
     });
 
     const button = [...container.querySelectorAll('tbody button')]
-        .find(node => node.textContent === '名前を変更');
+        .find(node => node.textContent === 'メッセージ名を変更');
     act(() => button.dispatchEvent(new window.MouseEvent('click', {bubbles: true})));
     assert.equal(container.querySelector('.tw-sprite-messages__hint').textContent,
         'メッセージの名前を変えると、作品全体で変わります。');

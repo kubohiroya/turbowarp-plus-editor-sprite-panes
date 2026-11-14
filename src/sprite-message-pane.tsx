@@ -1,4 +1,5 @@
 import React from 'react';
+import {PenIcon} from './pen-icon.tsx';
 import type {
     MessageRenameError, MessageStatus, MessageUse, ProjectMessage, TargetMessages
 } from '@kubohiroya/turbowarp-plus-editor-project-model/project-messages';
@@ -29,9 +30,9 @@ const english = {
     elsewhere: 'Used elsewhere in this project',
     message: 'Message',
     block: 'Block',
-    script: 'Script',
+    scriptStart: 'Script starts with %1',
     actions: 'Actions',
-    rename: 'Rename',
+    rename: 'Rename message',
     cancel: 'Cancel',
     name: 'Message name',
     projectWide: 'Renaming a message changes it everywhere in the project.',
@@ -77,9 +78,9 @@ const japanese: typeof english = {
     elsewhere: 'この作品の他の場所のメッセージ',
     message: 'メッセージ',
     block: 'ブロック',
-    script: 'スクリプト',
+    scriptStart: '「%1」から始まるスクリプト',
     actions: '操作',
-    rename: '名前を変更',
+    rename: 'メッセージ名を変更',
     cancel: 'キャンセル',
     name: 'メッセージ名',
     projectWide: 'メッセージの名前を変えると、作品全体で変わります。',
@@ -138,6 +139,13 @@ const scriptLabel = (labels: Labels, use: MessageUse) => {
 function Status({labels, status}: {labels: Labels; status: MessageStatus}) {
     if (status === 'both') return null;
     return <span className="tw-sprite-messages__status" data-status={status}>{labels[status]}</span>;
+}
+
+function RenameButton({labels, editable, onClick}: {labels: Labels; editable: boolean; onClick(): void}) {
+    return <button type="button" className="tw-sprite-messages__button tw-sprite-messages__rename"
+        disabled={!editable} onClick={onClick}>
+        <PenIcon />{labels.rename}
+    </button>;
 }
 
 function RenameForm({labels, message, onSubmit, onCancel}: {
@@ -260,7 +268,6 @@ function Group({labels, title, uses, empty, byKey, editable, renaming, onOpen, o
             <thead><tr>
                 <th scope="col">{labels.message}</th>
                 <th scope="col">{labels.block}</th>
-                <th scope="col">{labels.script}</th>
                 {onRename && <th scope="col">{labels.actions}</th>}
             </tr></thead>
             <tbody>{uses.map(use => {
@@ -272,15 +279,18 @@ function Group({labels, title, uses, empty, byKey, editable, renaming, onOpen, o
                             <span data-message-key={use.key} tabIndex={-1}>{use.name}</span>}
                         {message && <Status labels={labels} status={message.status} />}
                     </th>
-                    <td>{blockLabel(labels, use)}</td>
-                    <td>{scriptLabel(labels, use)}</td>
+                    <td>
+                        {blockLabel(labels, use)}
+                        {use.blockId !== use.scriptId && <small className="tw-sprite-messages__script-start">
+                            {labels.scriptStart.replace('%1', () => scriptLabel(labels, use))}
+                        </small>}
+                    </td>
                     {onRename && <td>
                         {renaming === use.key && message ?
                             <RenameForm labels={labels} message={message}
                                 onSubmit={name => onRename(message, name)}
                                 onCancel={() => onStartRename(null)} /> :
-                            <button type="button" className="tw-sprite-messages__button" disabled={!editable}
-                                onClick={() => onStartRename(use.key)}>{labels.rename}</button>}
+                            <RenameButton labels={labels} editable={editable} onClick={() => onStartRename(use.key)} />}
                     </td>}
                 </tr>;
             })}</tbody>
@@ -319,8 +329,7 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
                         <RenameForm labels={labels} message={message}
                             onSubmit={name => rename(message, name)}
                             onCancel={() => setRenaming(null)} /> :
-                        <button type="button" className="tw-sprite-messages__button" disabled={!editable}
-                            onClick={() => setRenaming(message.key)}>{labels.rename}</button>)}
+                        <RenameButton labels={labels} editable={editable} onClick={() => setRenaming(message.key)} />)}
                 </li>)}
             </ul> : <p className="tw-sprite-messages__empty">{labels.noElsewhere}</p>}
         </section>

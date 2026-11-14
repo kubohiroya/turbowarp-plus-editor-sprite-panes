@@ -1,4 +1,5 @@
 import React from 'react';
+import {PenIcon} from './pen-icon.tsx';
 import {observeTileNameTitles} from './native-tile-title.ts';
 import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from './sprite-properties.tsx';
 import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError, type SpriteVariableValue, type SpriteListItem} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
@@ -188,7 +189,7 @@ const english = {
     local: 'Sprite', global: 'Project', cloudVariable: 'Cloud variable', emptyCostumes: 'No costumes', emptySounds: 'No sounds',
     emptyVariables: 'No variables or lists', selectCostume: 'Select a costume', selectSound: 'Select a sound',
     imageUnavailable: 'Image unavailable', waveformUnavailable: 'Waveform unavailable', waveform: 'Waveform',
-    seconds: 's', accesses: 'References', read: 'Read', write: 'Write',
+    seconds: 's', read: 'Read', write: 'Write',
     actions: 'Actions', addSprite: 'Add a new sprite variable', addGlobal: 'Add a new global variable',
     rename: 'Rename variable', delete: 'Delete variable',
     cancel: 'Cancel', ok: 'OK', close: 'Close', confirmDelete: 'Delete',
@@ -218,7 +219,7 @@ const japanese: typeof english = {
     local: 'スプライト', global: '作品', cloudVariable: 'クラウド変数', emptyCostumes: 'コスチュームがありません', emptySounds: '音がありません',
     emptyVariables: '変数やリストがありません', selectCostume: 'コスチュームを選択してください', selectSound: '音を選択してください',
     imageUnavailable: '画像を表示できません', waveformUnavailable: '波形を表示できません', waveform: '波形',
-    seconds: '秒', accesses: '参照箇所', read: '読み取り', write: '変更',
+    seconds: '秒', read: '読み取り', write: '変更',
     actions: '操作', addSprite: '新しいスプライト変数を追加', addGlobal: '新しいグローバル変数を追加',
     rename: '変数名を変更', delete: '変数を削除',
     cancel: 'キャンセル', ok: 'OK', close: '閉じる', confirmDelete: '削除',
@@ -334,9 +335,6 @@ type VariableLabels = ReturnType<typeof labelsFor>;
 
 const iconProps = {viewBox: '0 0 16 16', 'aria-hidden': true, focusable: false} as const;
 const PlusIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon"><path d="M8 3.5v9M3.5 8h9" /></svg>;
-const PenIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon">
-    <path d="M10.6 2.9l2.5 2.5-7.4 7.4-3.2.7.7-3.2z M9.3 4.2l2.5 2.5" />
-</svg>;
 const TrashIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon">
     <path d="M2.8 4.3h10.4M6.3 4.3V2.8h3.4v1.5M4.2 4.3l.7 8.9h6.2l.7-8.9M6.8 6.8v4.1M9.2 6.8v4.1" />
 </svg>;
@@ -569,20 +567,18 @@ function ListPreview({id, value, editable, labels, onEdit}: {
     </div>;
 }
 
-type SortColumn = 'stageColumn' | 'type' | 'name' | 'value' | 'accesses' | 'actions';
+type SortColumn = 'stageColumn' | 'type' | 'name' | 'value' | 'read' | 'write';
 type Sort = {column: SortColumn; direction: 'ascending' | 'descending'};
 
 const referenceCount = (variable: SpriteVariable) => (variable.accesses?.read ?? 0) + (variable.accesses?.write ?? 0);
-const actionCount = (variable: SpriteVariable, editable: boolean) =>
-    editable && !isList(variable.value) ? (referenceCount(variable) ? 1 : 2) : 0;
 
-function compareVariables(a: SpriteVariable, b: SpriteVariable, column: SortColumn, collator: Intl.Collator, editable: boolean) {
+function compareVariables(a: SpriteVariable, b: SpriteVariable, column: SortColumn, collator: Intl.Collator) {
     switch (column) {
     case 'stageColumn': return Number(Boolean(a.monitor?.visible)) - Number(Boolean(b.monitor?.visible));
     case 'type': return Number(isList(a.value)) - Number(isList(b.value));
     case 'name': return collator.compare(variableName(a), variableName(b));
-    case 'accesses': return referenceCount(a) - referenceCount(b);
-    case 'actions': return actionCount(a, editable) - actionCount(b, editable);
+    case 'read':
+    case 'write': return (a.accesses?.[column] ?? 0) - (b.accesses?.[column] ?? 0);
     case 'value':
         if (isList(a.value)) return isList(b.value) ? a.value.length - b.value.length : 1;
         if (isList(b.value)) return -1;
@@ -625,7 +621,7 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
     const showAccesses = variables.some(variable => variable.accesses);
     const showMonitors = variables.some(variable => variable.monitor);
     const sorted = sort ? variables.slice().sort((a, b) =>
-        (sort.direction === 'ascending' ? 1 : -1) * compareVariables(a, b, sort.column, collator, editable)) : variables;
+        (sort.direction === 'ascending' ? 1 : -1) * compareVariables(a, b, sort.column, collator)) : variables;
     const header = (column: SortColumn, className?: string) => {
         const direction = sort?.column === column ? sort.direction : undefined;
         return <th scope="col" className={className} aria-sort={direction}>
@@ -654,8 +650,9 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                 <thead><tr>
                     {showMonitors && header('stageColumn', 'tw-sprite-variables__monitor')}
                     {header('type', 'tw-sprite-variables__type-cell')}{header('name')}{header('value')}
-                    {showAccesses && header('accesses')}
-                    {onEdit && header('actions', 'tw-sprite-variables__actions-cell')}
+                    {showAccesses && header('read', 'tw-sprite-variables__references')}
+                    {showAccesses && header('write', 'tw-sprite-variables__references')}
+                    {onEdit && <th scope="col" className="tw-sprite-variables__actions-cell">{labels.actions}</th>}
                 </tr></thead>
                 <tbody>{sorted.map(variable => {
                     const {value} = variable;
@@ -681,16 +678,17 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                         <td>{list ? <ListPreview id={variable.id} value={value} editable={editable} labels={labels}
                             onEdit={() => setListId(variable.id)} /> :
                             <VariableField variable={{...variable, value}} editable={editable} onWrite={onWrite} />}</td>
-                        {showAccesses && <td className="tw-sprite-variables__references">
-                            {variable.accesses && <div className="tw-sprite-variables__actions">
-                                {(['read', 'write'] as const).map(access => {
-                                    const caption = `${labels[access]} ${variable.accesses[access]}`;
-                                    return <button key={access} type="button" className="tw-sprite-variables__action"
-                                        aria-label={`${variableName(variable)}: ${caption}`} disabled={!editable}
-                                        onClick={() => variable.accesses.open(access)}>{caption}</button>;
-                                })}
-                            </div>}
-                        </td>}
+                        {showAccesses && (['read', 'write'] as const).map(access => {
+                            const counts = variable.accesses;
+                            return <td key={access} className="tw-sprite-variables__references">
+                                {counts && (editable ? <a href="#" className="tw-sprite-variables__reference-link"
+                                    aria-label={`${variableName(variable)}: ${labels[access]} ${counts[access]}`}
+                                    onClick={event => {
+                                        event.preventDefault();
+                                        counts.open(access);
+                                    }}>{counts[access]}</a> : counts[access])}
+                            </td>;
+                        })}
                         {onEdit && <td className="tw-sprite-variables__actions-cell">
                             {!list && <div className="tw-sprite-variables__actions">
                                 <button type="button" className="tw-sprite-variables__action" disabled={!editable}

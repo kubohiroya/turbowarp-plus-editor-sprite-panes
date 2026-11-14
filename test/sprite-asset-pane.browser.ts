@@ -71,6 +71,7 @@ async function openPage(t) {
     t.after(() => browser.close());
     const page = await browser.newPage({viewport: {width: 640, height: 480}});
     const routes = new Map([
+        ['/pen-icon.js', new URL('../dist/pen-icon.js', import.meta.url)],
         ['/sprite-asset-pane.js', new URL('../dist/sprite-asset-pane.js', import.meta.url)],
         ['/sprite-variable-edit.js', require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit')],
         ['/native-tile-title.js', new URL('../dist/native-tile-title.js', import.meta.url)],
@@ -152,6 +153,7 @@ test('variable create, rename and delete open a Scratch-style modal dialog', asy
     const page = await openPage(t);
     await page.evaluate(() => window.variableEditing('ja'));
     assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['種類', '変数名', '値', '操作']);
+    assert.equal(await page.getByRole('columnheader', {name: '操作', exact: true}).getByRole('button').count(), 0);
     const add = page.getByRole('button', {name: '新しいスプライト変数を追加'});
     const [pane, addBox] = [await page.locator('.tw-sprite-variables').boundingBox(), await add.boundingBox()];
     assert.ok(addBox.x < pane.x + 30 && addBox.y + addBox.height > pane.y + pane.height - 30,

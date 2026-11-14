@@ -286,7 +286,8 @@
     margin-block: .65rem;
 }
 
-.tw-sprite-variables__icon {
+.tw-sprite-variables__icon,
+.tw-sprite-pane__pen-icon {
     flex: none;
     inline-size: 1em;
     block-size: 1em;
@@ -318,8 +319,26 @@
     }
 }
 
-.tw-sprite-variables__references button {
-    white-space: nowrap;
+.tw-sprite-variables__table .tw-sprite-variables__references {
+    inline-size: 1%;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.tw-sprite-variables__reference-link {
+    display: inline-flex;
+    min-inline-size: 1.5rem;
+    min-block-size: 1.5rem;
+    justify-content: center;
+    align-items: center;
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: .15em;
+}
+
+.tw-sprite-variables__reference-link:hover,
+.tw-sprite-variables__reference-link:focus-visible {
+    color: var(--tw-variables-accent);
 }
 
 .tw-sprite-variables__action {
@@ -657,6 +676,13 @@
     font-size: .8rem;
 }
 
+.tw-sprite-messages__script-start {
+    display: block;
+    margin-block-start: .15em;
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .875em;
+}
+
 .tw-sprite-messages__link {
     padding: 0;
     border: 0;
@@ -717,6 +743,12 @@
     color: inherit;
     background: var(--input-background, #fff);
     font: inherit;
+}
+
+.tw-sprite-messages__rename {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
 }
 
 .tw-sprite-messages__button:disabled {
