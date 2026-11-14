@@ -14,7 +14,7 @@ interface Target extends Properties {
     sprite: {clones: readonly Target[]};
     variables: Record<string, CloneVariable>;
     getName(): string;
-    createVariable(id: string, name: string, type: '', isCloud: false): void;
+    createVariable(id: string, name: string, type: '' | 'list', isCloud: false): void;
     postSpriteInfo(patch: Properties): void;
 }
 
@@ -61,8 +61,8 @@ export function editClonedSpriteVariable(vm: SpriteCloneVm, targetId: string, ed
     const definition = original.variables[id];
     for (const clone of original.sprite.clones) {
         if (clone.isOriginal) continue;
-        if (edit.type === 'create' && definition?.type === '') {
-            clone.createVariable(id, definition.name, '', false);
+        if (edit.type === 'create' && (definition?.type === '' || definition?.type === 'list')) {
+            clone.createVariable(id, definition.name, definition.type, false);
         } else if (clone.variables[id]?.type === '') {
             if (edit.type === 'delete' && !definition) delete clone.variables[id];
             if (edit.type === 'rename' && definition?.type === '') clone.variables[id].name = definition.name;
