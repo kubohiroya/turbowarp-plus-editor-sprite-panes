@@ -762,3 +762,20 @@ button.tw-sprite-messages__node:focus-visible {
 .tw-sprite-messages__connection > .tw-sprite-messages__missing {
     text-align: center;
 }
+
+.tw-sprite-clone-notice {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35em .8em;
+    margin: .5rem;
+    padding: .5rem .65rem;
+    border-radius: .35rem;
+    color: var(--text-primary, #273146);
+    background: var(--ui-secondary, #edf3fd);
+    font-size: .875rem;
+}
+
+.tw-sprite-variables__local-heading {
+    margin: .75rem .5rem .35rem;
+    font-size: inherit;
+}

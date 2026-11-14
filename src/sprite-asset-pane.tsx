@@ -160,6 +160,8 @@ export interface SpriteVariablePaneProps extends PaneProps {
     variables: readonly SpriteVariable[];
     properties?: SpritePropertiesPanelProps['values'];
     targetId?: string;
+    clone?: boolean;
+    notice?: React.ReactNode;
     onWriteProperties?: SpritePropertiesPanelProps['onChange'];
     onWrite(id: string, value: SpriteVariable['value']): void;
     onEdit?(edit: SpriteVariableEdit): SpriteVariableEditError | void;
@@ -385,7 +387,8 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: 
     </dialog>;
 }
 
-function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties}: SpriteVariablePaneProps) {
+function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties,
+    clone, notice}: SpriteVariablePaneProps) {
     const labels = labelsFor(locale);
     const [action, setAction] = React.useState<SpriteVariableEdit | null>(null);
     const [error, setError] = React.useState<SpriteVariableEditError | undefined>();
@@ -408,9 +411,13 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
     const showAccesses = variables.some(variable => variable.accesses);
     return <section className="tw-sprite-variables" aria-label={labels.variables}>
         <div className={onEdit ? 'tw-sprite-variables__scroll tw-sprite-variables__scroll--with-add' : 'tw-sprite-variables__scroll'}>
+            {notice}
             {properties && targetId && onWriteProperties &&
                 <SpritePropertiesPanel targetId={targetId} values={properties} locale={locale}
-                    disabled={!editable} onChange={onWriteProperties} />}
+                    disabled={!editable} nameReadOnly={clone} onChange={onWriteProperties} />}
+            {clone && <h3 className="tw-sprite-variables__local-heading">
+                {/^ja(?:-|$)/i.test(locale) ? 'ローカル変数' : 'Local Variables'}
+            </h3>}
             {variables.length ? <table className="tw-sprite-variables__table">
                 <thead><tr><th scope="col">{labels.name}</th><th scope="col">{labels.value}</th>
                     {showAccesses && <th scope="col">{labels.accesses}</th>}

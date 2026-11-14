@@ -41,6 +41,15 @@
     outline-offset: -2px;
 }
 
+.tw-sprite-properties__field input[readonly] {
+    background: var(--ui-secondary, #edf1f8);
+}
+
+.tw-sprite-properties__read-only {
+    margin-inline-start: .6em;
+    font-size: .75em;
+}
+
 .tw-sprite-properties__visibility {
     display: flex;
     justify-self: start;

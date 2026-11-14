@@ -8,6 +8,7 @@ export interface SpritePropertiesPanelProps {
     targetId: string | null;
     values?: Partial<SpriteProperties>;
     disabled?: boolean;
+    nameReadOnly?: boolean;
     locale?: string;
     onChange(targetId: string, patch: Partial<SpriteProperties>): void;
 }
@@ -17,6 +18,7 @@ const labels = {
         panel: 'Sprite properties',
         title: 'Sprite',
         name: 'Sprite name',
+        readOnly: 'Read only',
         visibility: 'Visibility',
         show: 'Show',
         hide: 'Hide',
@@ -31,6 +33,7 @@ const labels = {
         panel: 'スプライトのプロパティ',
         title: 'スプライト',
         name: 'スプライト名',
+        readOnly: '読み取り専用',
         visibility: '表示',
         show: '表示する',
         hide: '表示しない',
@@ -46,7 +49,7 @@ const labels = {
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? labels.ja : labels.en;
 export const spritePropertiesTitle = (locale: string) => labelsFor(locale).title;
 
-function BufferedInput({label, value, disabled, numeric, onCommit}) {
+function BufferedInput({label, value, disabled, readOnly = false, numeric, onCommit}) {
     const [draft, setDraft] = useState(null);
     const pending = useRef(null);
     const display = numeric && Number.isFinite(value) ? Math.round(value) : value;
@@ -65,6 +68,7 @@ function BufferedInput({label, value, disabled, numeric, onCommit}) {
         <input
             aria-label={label}
             disabled={disabled}
+            readOnly={readOnly}
             onBlur={flush}
             onChange={event => {
                 const {value: next, validity} = event.currentTarget;
@@ -85,13 +89,14 @@ function BufferedInput({label, value, disabled, numeric, onCommit}) {
 
 let nextVisibilityGroup = 0;
 
-function Fields({values, disabled, text, commit}) {
+function Fields({values, disabled, nameReadOnly, text, commit}) {
     const [visibilityGroup] = useState(() => 'sprite-visibility-' + ++nextVisibilityGroup);
     const input = (field, label, numeric) => (
         <BufferedInput
             label={label}
             value={values[field]}
             disabled={disabled}
+            readOnly={field === 'name' && nameReadOnly}
             numeric={numeric}
             onCommit={next => commit(field, next)}
         />
@@ -105,7 +110,9 @@ function Fields({values, disabled, text, commit}) {
     return (
         <div className="tw-sprite-properties__fields">
             <label className="tw-sprite-properties__field">
-                <span>{text.name}</span>
+                <span>{text.name}{nameReadOnly && <small className="tw-sprite-properties__read-only">
+                    {text.readOnly}
+                </small>}</span>
                 {input('name', text.name, false)}
             </label>
             <label className="tw-sprite-properties__field">
@@ -157,7 +164,7 @@ function Fields({values, disabled, text, commit}) {
     );
 }
 
-export function SpritePropertiesPanel({targetId, values, disabled = false, locale = 'en', onChange}: SpritePropertiesPanelProps) {
+export function SpritePropertiesPanel({targetId, values, disabled = false, nameReadOnly = false, locale = 'en', onChange}: SpritePropertiesPanelProps) {
     const text = labelsFor(locale);
     const unavailable = disabled || !targetId;
     const commit = (field, next) => {
@@ -170,6 +177,7 @@ export function SpritePropertiesPanel({targetId, values, disabled = false, local
                 key={JSON.stringify([targetId, unavailable])}
                 values={targetId ? (values ?? {}) : {}}
                 disabled={unavailable}
+                nameReadOnly={nameReadOnly}
                 text={text}
                 commit={commit}
             />
