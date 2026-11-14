@@ -168,13 +168,24 @@ test('variable create, rename and delete open a Scratch-style modal dialog', asy
     await name.press('Enter');
     await dialog.waitFor({state: 'detached'});
 
-    await page.getByRole('button', {name: '変数名を変更'}).click();
+    const row = page.getByRole('row').filter({has: page.getByRole('textbox', {name: 'Speed'})});
+    const renameButton = row.getByRole('button', {name: '変数名を変更'});
+    const opacity = () => renameButton.evaluate(button => getComputedStyle(button.parentElement).opacity);
+    await page.mouse.move(0, 0);
+    assert.equal(await opacity(), '0');
+    await row.hover();
+    assert.equal(await opacity(), '1');
+    await page.mouse.move(0, 0);
+    await renameButton.focus();
+    assert.equal(await opacity(), '1');
+    await renameButton.press('Enter');
     const rename = page.getByRole('dialog', {name: '変数名を変更'});
     assert.equal(await rename.getByLabel('新しい変数名:').inputValue(), 'Speed');
     await page.keyboard.press('Escape');
     await rename.waitFor({state: 'detached'});
 
-    await page.getByRole('button', {name: '変数を削除'}).click();
+    await row.hover();
+    await row.getByRole('button', {name: '変数を削除'}).click();
     const remove = page.getByRole('dialog', {name: '変数を削除'});
     await remove.getByText('変数「Speed」を削除しますか？').waitFor();
     await remove.getByRole('button', {name: '削除'}).click();

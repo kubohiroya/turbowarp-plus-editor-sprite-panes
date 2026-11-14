@@ -109,15 +109,115 @@
     stroke-linejoin: round;
 }
 
+.tw-sprite-properties__direction {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: .5rem;
+}
+
+.tw-sprite-properties__visibility-field {
+    justify-self: start;
+}
+
+.tw-sprite-properties__dial-controls {
+    display: grid;
+    justify-items: center;
+    gap: .25rem;
+    color: var(--looks-secondary, #855cd6);
+}
+
+.tw-sprite-properties__dial {
+    display: grid;
+    place-items: center;
+    inline-size: 7.5rem;
+    block-size: 7.5rem;
+    border-radius: 50%;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+}
+
+.tw-sprite-properties__dial:active {
+    cursor: grabbing;
+}
+
+.tw-sprite-properties__dial[aria-disabled="true"] {
+    opacity: .55;
+    cursor: default;
+    touch-action: auto;
+}
+
+.tw-sprite-properties__dial:focus-visible {
+    outline: 2px solid var(--motion-primary, #2769c6);
+}
+
+.tw-sprite-properties__dial svg {
+    inline-size: 100%;
+    block-size: 100%;
+    fill: none;
+}
+
+.tw-sprite-properties__dial-face {
+    fill: color-mix(in srgb, currentColor 12%, transparent);
+    stroke: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.tw-sprite-properties__dial-sector {
+    fill: color-mix(in srgb, currentColor 26%, transparent);
+    stroke: currentColor;
+    stroke-width: .85;
+}
+
+.tw-sprite-properties__dial-ticks {
+    stroke: var(--text-primary, #26324b);
+    opacity: .22;
+}
+
+.tw-sprite-properties__dial-handle {
+    fill: currentColor;
+    stroke: color-mix(in srgb, currentColor 25%, var(--input-background, #fff));
+    stroke-width: 3;
+}
+
+.tw-sprite-properties__dial-arrow {
+    stroke: white;
+    stroke-width: 2.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-properties__rotation {
+    justify-self: center;
+}
+
+@container (max-width: 11rem) {
+    .tw-sprite-properties__direction {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
 @container (min-width: 22rem) {
     .tw-sprite-properties__fields {
-        grid-template-columns: minmax(0, 1fr) repeat(2, 7.5rem);
+        grid-template-columns: max-content minmax(3.75rem, 6rem) minmax(0, 1fr) repeat(2, minmax(2.5rem, 5rem));
+    }
+
+    .tw-sprite-properties__fields > :first-child {
+        grid-column: span 3;
+    }
+
+    .tw-sprite-properties__direction {
+        grid-column: 3 / -1;
     }
 }
 
 @container (min-width: 50rem) {
     .tw-sprite-properties__fields {
-        grid-template-columns: minmax(0, 1fr) repeat(5, 7.5rem);
+        grid-template-columns: minmax(0, 1fr) repeat(2, 6rem) max-content 6rem 13rem;
+    }
+
+    .tw-sprite-properties__fields > :first-child,
+    .tw-sprite-properties__direction {
+        grid-column: auto;
     }
 }
 .tw-sprite-properties-selector {

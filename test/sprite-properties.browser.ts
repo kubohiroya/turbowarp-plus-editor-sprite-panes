@@ -70,6 +70,8 @@ test('panel width drives 1-row, 1-column and wrapped layouts in English and Japa
             assert.equal(wider[index + 1].x - wider[index].right, initial[index + 1].x - initial[index].right);
             assert.ok(wider[index + 1].x - wider[index].right <= 10);
         }
+        assert.ok(wider[4].x - wider[3].right <= 10);
+        assert.ok(wider[5].width >= 200);
 
         await resize(page, 210, 520);
         const narrow = await boxes(page);
@@ -105,12 +107,52 @@ test('reflow retains drafts and focus, keyboard order stays stable, Enter and bl
         await resize(page, width, 520);
         await name.focus();
         const keyboardOrder = [];
-        for (let index = 0; index < 7; index++) {
+        for (let index = 0; index < 8; index++) {
             keyboardOrder.push(await page.evaluate(() => document.activeElement.getAttribute('aria-label')));
             await page.keyboard.press('Tab');
         }
-        assert.deepEqual(keyboardOrder, ['Sprite name', 'x', 'y', 'Show', 'Size', 'Direction', 'Rotation style']);
+        assert.deepEqual(keyboardOrder, ['Sprite name', 'x', 'y', 'Show', 'Size', 'Direction', 'Direction dial', 'All around']);
     }
+}));
+
+test('direction dial previews drag angles, commits once and follows the rotation style', () => withFixture(async page => {
+    await resize(page, 540, 310);
+    const dial = page.getByRole('slider', {name: 'Direction dial'});
+    const input = page.getByRole('spinbutton', {name: 'Direction'});
+    const style = page.getByRole('radiogroup', {name: 'Rotation style'});
+    const edits = () => page.evaluate(() => window.spriteFixture.edits);
+    async function drag(from: [number, number], to: [number, number], preview?: string) {
+        const box = await dial.boundingBox();
+        const centerX = box.x + box.width / 2;
+        const centerY = box.y + box.height / 2;
+        await page.mouse.move(centerX + from[0], centerY + from[1]);
+        await page.mouse.down();
+        await page.mouse.move(centerX + to[0], centerY + to[1], {steps: 5});
+        if (preview !== undefined) assert.equal(await input.inputValue(), preview);
+        await page.mouse.up();
+    }
+    await drag([15, 0], [0, -20], '0');
+    assert.deepEqual(await edits(), [{id: 'Cat', patch: {direction: 0}}]);
+    assert.equal(await dial.getAttribute('aria-valuenow'), '0');
+    await dial.press('Shift+ArrowRight');
+    assert.equal(await input.inputValue(), '15');
+    await style.getByRole('radio', {name: 'Left-right'}).check();
+    assert.equal(await dial.getAttribute('aria-valuenow'), '90');
+    assert.equal(await input.inputValue(), '15');
+    await drag([15, 0], [-17, -12], '-90');
+    assert.equal(await dial.getAttribute('aria-valuenow'), '-90');
+    assert.equal(await input.inputValue(), '-90');
+    await style.getByRole('radio', {name: "Don't rotate"}).check();
+    assert.equal(await dial.getAttribute('aria-disabled'), 'true');
+    assert.equal(await dial.getAttribute('aria-valuenow'), '90');
+    const before = await edits();
+    await drag([15, 0], [-17, -12]);
+    assert.deepEqual(await edits(), before);
+    await input.fill('-35');
+    await input.press('Enter');
+    assert.equal(await input.inputValue(), '-35');
+    await style.getByRole('radio', {name: 'All around'}).check();
+    assert.equal(await dial.getAttribute('aria-valuenow'), '-35');
 }));
 
 test('all properties are committed against one target, stale drafts are discarded, stage is disabled', () => withFixture(async page => {
@@ -122,7 +164,7 @@ test('all properties are committed against one target, stale drafts are discarde
     const hide = visibility.getByRole('radio', {name: 'Hide'});
     const size = page.getByRole('spinbutton', {name: 'Size'});
     const direction = page.getByRole('spinbutton', {name: 'Direction'});
-    const rotation = page.getByRole('combobox', {name: 'Rotation style'});
+    const rotation = page.getByRole('radiogroup', {name: 'Rotation style'});
 
     await name.fill('Discard this draft');
     await page.evaluate(() => window.spriteFixture.select('Dog'));
@@ -144,7 +186,7 @@ test('all properties are committed against one target, stale drafts are discarde
     await size.fill('75');
     await direction.fill('-45');
     await direction.press('Tab');
-    await rotation.selectOption("don't rotate");
+    await rotation.getByRole('radio', {name: "Don't rotate"}).check();
     assert.deepEqual(await page.evaluate(() => window.spriteFixture.edits), [
         {id: 'Dog', patch: {name: 'New Dog'}},
         {id: 'Dog', patch: {x: -12.5}},
@@ -167,6 +209,6 @@ test('all properties are committed against one target, stale drafts are discarde
     await name.fill('Uncommitted stage switch');
     await page.evaluate(() => window.spriteFixture.select('Stage'));
     await page.waitForFunction(() => document.querySelector('#panel input').disabled);
-    assert.equal(await page.locator('#panel :is(input,select):disabled').count(), 8);
+    assert.equal(await page.locator('#panel :is(input,select):disabled').count(), 10);
     assert.equal(await page.evaluate(() => window.spriteFixture.edits.length), 8);
 }));

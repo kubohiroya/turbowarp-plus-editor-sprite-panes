@@ -428,38 +428,42 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                     {showAccesses && <th scope="col">{labels.accesses}</th>}
                     {onEdit && <th scope="col" className="tw-sprite-variables__actions-cell">{labels.actions}</th>}
                 </tr></thead>
-                <tbody>{variables.map(variable => <tr key={variable.id}>
-                    <th scope="row">
-                        {variable.isCloud && <>
-                            <span className="tw-sprite-variables__cloud" role="img" aria-label={labels.cloudVariable}>☁︎</span>{' '}
-                        </>}
-                        {variableName(variable)}
-                        {variable.scope && <span className="tw-sprite-variables__scope">{labels[variable.scope]}</span>}
-                    </th>
-                    <td><VariableField variable={variable} editable={editable} onWrite={onWrite} /></td>
-                    {showAccesses && <td>
-                        {variable.accesses && <div className="tw-sprite-variables__actions">
-                            {(['read', 'write'] as const).map(access => {
-                                const caption = `${labels[access]} ${variable.accesses[access]}`;
-                                return <button key={access} type="button" className="tw-sprite-variables__action"
-                                    aria-label={`${variableName(variable)}: ${caption}`} disabled={!editable}
-                                    onClick={() => variable.accesses.open(access)}>{caption}</button>;
-                            })}
-                        </div>}
-                    </td>}
-                    {onEdit && <td className="tw-sprite-variables__actions-cell">
-                        <div className="tw-sprite-variables__actions">
-                            <button type="button" className="tw-sprite-variables__action" disabled={!editable}
-                                onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
-                                <PenIcon />{labels.rename}
-                            </button>
-                            <button type="button" className="tw-sprite-variables__action tw-sprite-variables__action--delete"
-                                disabled={!editable} onClick={() => start({type: 'delete', id: variable.id})}>
-                                <TrashIcon />{labels.delete}
-                            </button>
-                        </div>
-                    </td>}
-                </tr>)}</tbody>
+                <tbody>{variables.map(variable => {
+                    const inUse = variable.accesses && variable.accesses.read + variable.accesses.write > 0;
+                    return <tr key={variable.id}>
+                        <th scope="row">
+                            {variable.isCloud && <>
+                                <span className="tw-sprite-variables__cloud" role="img" aria-label={labels.cloudVariable}>☁︎</span>{' '}
+                            </>}
+                            {variableName(variable)}
+                            {variable.scope && <span className="tw-sprite-variables__scope">{labels[variable.scope]}</span>}
+                        </th>
+                        <td><VariableField variable={variable} editable={editable} onWrite={onWrite} /></td>
+                        {showAccesses && <td>
+                            {variable.accesses && <div className="tw-sprite-variables__actions">
+                                {(['read', 'write'] as const).map(access => {
+                                    const caption = `${labels[access]} ${variable.accesses[access]}`;
+                                    return <button key={access} type="button" className="tw-sprite-variables__action"
+                                        aria-label={`${variableName(variable)}: ${caption}`} disabled={!editable}
+                                        onClick={() => variable.accesses.open(access)}>{caption}</button>;
+                                })}
+                            </div>}
+                        </td>}
+                        {onEdit && <td className="tw-sprite-variables__actions-cell">
+                            <div className="tw-sprite-variables__actions">
+                                <button type="button" className="tw-sprite-variables__action" disabled={!editable}
+                                    onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
+                                    <PenIcon />{labels.rename}
+                                </button>
+                                <button type="button" className="tw-sprite-variables__action tw-sprite-variables__action--delete"
+                                    disabled={!editable || inUse} title={inUse ? labels.inUse : undefined}
+                                    onClick={() => start({type: 'delete', id: variable.id})}>
+                                    <TrashIcon />{labels.delete}
+                                </button>
+                            </div>
+                        </td>}
+                    </tr>;
+                })}</tbody>
             </table> : <p>{labels.emptyVariables}</p>}
         </div>
         {onEdit && !clone && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
