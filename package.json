@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-sprite-panes",
-  "version": "0.1.2-clone-pagination.0",
+  "version": "0.1.2-clone-pagination.1",
   "description": "Panes of the TurboWarp Plus Editor sprite editor: assets, variables, messages, properties and the section toolbar",
   "type": "module",
   "license": "MPL-2.0",

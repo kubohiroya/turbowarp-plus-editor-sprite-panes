@@ -1,5 +1,6 @@
 import React from 'react';
-import {SpriteAssetPane, type SpriteVariable} from './sprite-asset-pane.tsx';
+import {SpriteAssetPane, type SpriteVariable, type SpriteVariablePaneProps} from './sprite-asset-pane.tsx';
+import type {SpriteVariableEdit, SpriteVariableEditError} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
 import type {SpritePropertiesPanelProps} from './sprite-properties.tsx';
 
 type Properties = NonNullable<SpritePropertiesPanelProps['values']>;
@@ -32,16 +33,33 @@ const labels = {
         navigation: 'クローンを切り替える', original: '元のスプライト', count: (n: number) => `クローン ${n} 体`,
         clone: (n: number) => `クローン ${n}`, selected: (n: number) => `クローン ${n} を編集中`,
         previous: '前のクローン', next: '次のクローン', choose: 'クローン番号を選ぶ',
-        temporary: '変更はこの実行中だけ有効', removed: 'クローンが消えたため、元のスプライトに戻りました。'
+        temporary: 'プロパティと変数の値の変更はこの実行中だけ有効',
+        removed: 'クローンが消えたため、元のスプライトに戻りました。'
     },
     en: {
         navigation: 'Switch clones', original: 'Original sprite', count: (n: number) => `${n} clones`,
         clone: (n: number) => `Clone ${n}`, selected: (n: number) => `Editing clone ${n}`,
         previous: 'Previous clone', next: 'Next clone', choose: 'Choose clone number',
-        temporary: 'Changes apply only to this run', removed: 'The clone disappeared. The original sprite is selected.'
+        temporary: 'Property and variable value edits apply only to this run',
+        removed: 'The clone disappeared. The original sprite is selected.'
     }
 };
 const textFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? labels.ja : labels.en;
+
+/** The original owns local variable definitions. Running clones store their values separately. */
+export function editClonedSpriteVariable(vm: SpriteCloneVm, targetId: string, edit: SpriteVariableEdit,
+    apply: () => SpriteVariableEditError | void) {
+    const error = apply();
+    if (error || edit.type === 'create') return error;
+    const original = vm.runtime.getTargetById(targetId);
+    if (!original?.isOriginal || original.isStage) return;
+    const definition = original.variables[edit.id];
+    for (const clone of original.sprite.clones) {
+        if (clone.isOriginal || clone.variables[edit.id]?.type !== '') continue;
+        if (edit.type === 'delete' && !definition) delete clone.variables[edit.id];
+        if (edit.type === 'rename' && definition?.type === '') clone.variables[edit.id].name = definition.name;
+    }
+}
 
 function readClone(target: Target) {
     const {id, x, y, size, direction, visible, rotationStyle} = target;
@@ -113,7 +131,7 @@ function createView(vm: SpriteCloneVm, targetId: string) {
         lastRead = now;
         if (readSelection()) notify();
     };
-    const events = ['targetWasCreated', 'targetWasRemoved', 'PROJECT_STOP_ALL'];
+    const events = ['targetWasCreated', 'targetWasRemoved', 'PROJECT_STOP_ALL', 'PROJECT_CHANGED'];
     refreshTargets();
     return {
         snapshot: () => ({ids, selectedId, removed, clone}),
@@ -225,7 +243,10 @@ export function SpriteClonePagination(props: ViewProps) {
     </nav>;
 }
 
-export function SpriteCloneVariables(props: ViewProps & {editable: boolean; children: React.ReactNode}) {
+export function SpriteCloneVariables(props: ViewProps & {
+    editable: boolean;
+    children: React.ReactElement<SpriteVariablePaneProps>;
+}) {
     const view = useCloneView(props);
     const state = view?.snapshot();
     const text = textFor(props.locale);
@@ -234,8 +255,15 @@ export function SpriteCloneVariables(props: ViewProps & {editable: boolean; chil
         {props.children}
     </>;
     const clone = state.clone;
+    const {variables: originalVariables, onEdit} = props.children.props;
+    const byId = new Map(originalVariables.map(variable => [variable.id, variable]));
+    const variables = clone.variables.map(variable => ({
+        ...variable,
+        accesses: byId.get(variable.id)?.accesses
+    }));
     return <SpriteAssetPane kind="variables" key={clone.id} targetId={clone.id}
-        locale={props.locale} editable={props.editable} clone properties={clone.properties} variables={clone.variables}
+        locale={props.locale} editable={props.editable} clone properties={clone.properties} variables={variables}
+        onEdit={onEdit}
         onWriteProperties={view.writeProperties} onWrite={(id, value) => view.writeVariable(clone.id, id, value)}
         notice={<p className="tw-sprite-clone-notice" role="status">
             <strong>{text.selected(state.ids.indexOf(clone.id) + 1)}</strong><span>{text.temporary}</span>

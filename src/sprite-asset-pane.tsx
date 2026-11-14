@@ -181,7 +181,8 @@ const english = {
     deletePrompt: 'Delete variable “%1”?', emptyName: 'Enter a variable name.',
     duplicateName: 'A variable with this name is already in scope.',
     inUse: 'This variable is used by a block. Remove its uses before deleting it.',
-    unavailable: 'This variable or target is no longer available.'
+    unavailable: 'This variable or target is no longer available.',
+    sharedDefinition: 'This change applies to the original sprite and all its clones.'
 };
 const japanese: typeof english = {
     costumes: 'コスチューム', sounds: '音', variables: '変数', name: '変数名', value: '変数の値',
@@ -195,7 +196,8 @@ const japanese: typeof english = {
     deletePrompt: '変数「%1」を削除しますか？', emptyName: '変数名を入力してください。',
     duplicateName: '同じ名前の変数がすでにあります。',
     inUse: 'この変数はブロックで使用中です。削除するには、先に参照を外してください。',
-    unavailable: 'この変数または編集対象を操作できなくなりました。'
+    unavailable: 'この変数または編集対象を操作できなくなりました。',
+    sharedDefinition: 'この変更は元のスプライトとすべてのクローンに反映されます。'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -321,10 +323,11 @@ function useDialogIds() {
 }
 
 /** A modal shaped like Scratch's “New Variable” prompt, shown in the top layer above every pane. */
-function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: {
+function VariableDialog({action, labels, targetName, error, onSubmit, onClose, clone}: {
     action: SpriteVariableEdit;
     labels: VariableLabels;
     targetName: string;
+    clone?: boolean;
     error?: SpriteVariableEditError;
     onSubmit(event: React.FormEvent<HTMLFormElement>): void;
     onClose(): void;
@@ -374,6 +377,7 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose}: 
                 <input id={inputId} className="tw-sprite-variables__dialog-input" name="name" defaultValue={action.name}
                     autoComplete="off" spellCheck={false} data-initial-focus="" />
             </>}
+            {clone && <p>{labels.sharedDefinition}</p>}
             {error && <p role="alert" className="tw-sprite-variables__dialog-error">{labels[error]}</p>}
             <div className="tw-sprite-variables__dialog-buttons tw-plus-dialog-actions">
                 <button type="button" className="tw-sprite-variables__dialog-button" onClick={onClose}
@@ -410,7 +414,8 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
     const selected = action && action.type !== 'create' ? variables.find(variable => variable.id === action.id) : undefined;
     const showAccesses = variables.some(variable => variable.accesses);
     return <section className="tw-sprite-variables" aria-label={labels.variables}>
-        <div className={onEdit ? 'tw-sprite-variables__scroll tw-sprite-variables__scroll--with-add' : 'tw-sprite-variables__scroll'}>
+        <div className={onEdit && !clone ?
+            'tw-sprite-variables__scroll tw-sprite-variables__scroll--with-add' : 'tw-sprite-variables__scroll'}>
             {notice}
             {properties && targetId && onWriteProperties &&
                 <SpritePropertiesPanel targetId={targetId} values={properties} locale={locale}
@@ -457,13 +462,13 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                 </tr>)}</tbody>
             </table> : <p>{labels.emptyVariables}</p>}
         </div>
-        {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
+        {onEdit && !clone && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
             onClick={() => start({type: 'create', name: ''})}>
             <span className="tw-sprite-variables__add-icon"><PlusIcon /></span>
             <span className="tw-sprite-variables__add-label">{labels.create}</span>
         </button>}
         {editable && action && <VariableDialog key={action.type === 'create' ? 'create' : action.type + action.id}
-            action={action} labels={labels} error={error} onSubmit={submit} onClose={() => start(null)}
+            action={action} labels={labels} error={error} clone={clone} onSubmit={submit} onClose={() => start(null)}
             targetName={selected ? variableName(selected) : ''} />}
     </section>;
 }
