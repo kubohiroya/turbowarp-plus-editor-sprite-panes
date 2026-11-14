@@ -154,11 +154,6 @@
     container-type: inline-size;
 }
 
-/* Leave room so the floating add button never covers the last row. */
-.tw-sprite-variables__scroll--with-add {
-    padding-block-end: 4rem;
-}
-
 .tw-sprite-variables__table {
     inline-size: 100%;
     border-collapse: collapse;
@@ -186,6 +181,17 @@
     overflow-wrap: normal;
 }
 
+.tw-sprite-variables__table .tw-sprite-variables__monitor {
+    inline-size: 1%;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.tw-sprite-variables__monitor input,
+.tw-sprite-variables__cloud-option input {
+    accent-color: var(--looks-secondary, #855cd6);
+}
+
 .tw-sprite-variables__scope {
     display: block;
     font-size: .8em;
@@ -193,7 +199,15 @@
 }
 
 .tw-sprite-variables__cloud {
+    margin-inline-start: .4em;
     color: #2399c2;
+}
+
+.tw-sprite-variables__cloud-option {
+    display: flex;
+    align-items: center;
+    gap: .45em;
+    margin-block: .65rem;
 }
 
 .tw-sprite-variables__icon {
@@ -261,11 +275,11 @@
     font: inherit;
 }
 
-/* Floating add button, shaped like Scratch's sprite and costume add buttons. */
 .tw-sprite-variables__add {
-    position: absolute;
-    inset-block-end: .75rem;
-    inset-inline-end: .75rem;
+    flex: none;
+    align-self: start;
+    max-inline-size: calc(100% - 1.5rem);
+    margin: .5rem .75rem .75rem;
     display: flex;
     align-items: center;
     gap: .5rem;
@@ -277,10 +291,12 @@
     box-shadow: 0 .15rem .5rem rgba(0, 0, 0, .15);
     font: inherit;
     font-weight: bold;
+    text-align: start;
     cursor: pointer;
 }
 
 .tw-sprite-variables__add-icon {
+    flex: none;
     display: grid;
     place-items: center;
     inline-size: 2.25rem;
@@ -782,7 +798,17 @@ button.tw-sprite-messages__node:focus-visible {
     font-size: .875rem;
 }
 
-.tw-sprite-variables__local-heading {
-    margin: .75rem .5rem .35rem;
+.tw-sprite-variables__intro {
+    margin: .5rem .5rem .75rem;
+}
+
+.tw-sprite-variables__intro h3 {
+    margin: 0 0 .3rem;
     font-size: inherit;
+}
+
+.tw-sprite-variables__intro p {
+    margin: .2rem 0;
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .85em;
 }

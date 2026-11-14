@@ -14,6 +14,7 @@ interface Target extends Properties {
     sprite: {clones: readonly Target[]};
     variables: Record<string, CloneVariable>;
     getName(): string;
+    createVariable(id: string, name: string, type: '', isCloud: false): void;
     postSpriteInfo(patch: Properties): void;
 }
 
@@ -49,15 +50,23 @@ const textFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? labels.ja : lab
 /** The original owns local variable definitions. Running clones store their values separately. */
 export function editClonedSpriteVariable(vm: SpriteCloneVm, targetId: string, edit: SpriteVariableEdit,
     apply: () => SpriteVariableEditError | void) {
-    const error = apply();
-    if (error || edit.type === 'create') return error;
     const original = vm.runtime.getTargetById(targetId);
-    if (!original?.isOriginal || original.isStage) return;
-    const definition = original.variables[edit.id];
+    if (!original?.isOriginal || original.isStage || original.sprite.clones.length < 2) return apply();
+    const oldIds = edit.type === 'create' ? new Set(Object.keys(original.variables)) : undefined;
+    const error = apply();
+    if (error) return error;
+    const id = edit.type === 'create' ?
+        Object.keys(original.variables).find(id => !oldIds.has(id)) : edit.id;
+    if (!id) return;
+    const definition = original.variables[id];
     for (const clone of original.sprite.clones) {
-        if (clone.isOriginal || clone.variables[edit.id]?.type !== '') continue;
-        if (edit.type === 'delete' && !definition) delete clone.variables[edit.id];
-        if (edit.type === 'rename' && definition?.type === '') clone.variables[edit.id].name = definition.name;
+        if (clone.isOriginal) continue;
+        if (edit.type === 'create' && definition?.type === '') {
+            clone.createVariable(id, definition.name, '', false);
+        } else if (clone.variables[id]?.type === '') {
+            if (edit.type === 'delete' && !definition) delete clone.variables[id];
+            if (edit.type === 'rename' && definition?.type === '') clone.variables[id].name = definition.name;
+        }
     }
 }
 
@@ -259,7 +268,8 @@ export function SpriteCloneVariables(props: ViewProps & {
     const byId = new Map(originalVariables.map(variable => [variable.id, variable]));
     const variables = clone.variables.map(variable => ({
         ...variable,
-        accesses: byId.get(variable.id)?.accesses
+        accesses: byId.get(variable.id)?.accesses,
+        monitor: byId.get(variable.id)?.monitor
     }));
     return <SpriteAssetPane kind="variables" key={clone.id} targetId={clone.id}
         locale={props.locale} editable={props.editable} clone properties={clone.properties} variables={variables}

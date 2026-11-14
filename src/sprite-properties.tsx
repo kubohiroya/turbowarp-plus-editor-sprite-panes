@@ -211,51 +211,52 @@ function Fields({values, disabled, nameReadOnly, text, commit}) {
 
     return (
         <div className="tw-sprite-properties__fields">
-            <label className="tw-sprite-properties__field">
-                <span>{text.name}{nameReadOnly && <small className="tw-sprite-properties__read-only">
-                    {text.readOnly}
-                </small>}</span>
-                {input('name', text.name, false)}
-            </label>
-            <label className="tw-sprite-properties__field">
-                <span>x</span>
-                {input('x', 'x', true)}
-            </label>
-            <label className="tw-sprite-properties__field">
-                <span>y</span>
-                {input('y', 'y', true)}
-            </label>
-            <div className="tw-sprite-properties__field tw-sprite-properties__visibility-field">
-                <span>{text.visibility}</span>
-                <div className="tw-sprite-properties__visibility" role="radiogroup" aria-label={text.visibility}>
-                    {[true, false].map(visible => {
-                        const label = visible ? text.show : text.hide;
-                        return <label key={label} title={label}>
-                            <input type="radio" name={visibilityGroup} aria-label={label} disabled={disabled}
-                                checked={values.visible === visible} onChange={() => commit('visible', visible)} />
-                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                                {visible ? <>
-                                    <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
-                                    <circle cx="12" cy="12" r="2.5" />
-                                </> : <path d="M3 21 21 3M9 6.5a10 10 0 0 1 3-.5c6 0 9.5 6 9.5 6a17 17 0 0 1-2.6 3.1M15 17.5a10 10 0 0 1-3 .5c-6 0-9.5-6-9.5-6a17 17 0 0 1 2.6-3.1" />}
-                            </svg>
-                        </label>;
-                    })}
+            <div className="tw-sprite-properties__basic">
+                <label className="tw-sprite-properties__field">
+                    <span>{text.name}{nameReadOnly && <small className="tw-sprite-properties__read-only">
+                        {text.readOnly}
+                    </small>}</span>
+                    {input('name', text.name, false)}
+                </label>
+                <div className="tw-sprite-properties__attributes">
+                    <label className="tw-sprite-properties__field">
+                        <span>x</span>
+                        {input('x', 'x', true)}
+                    </label>
+                    <label className="tw-sprite-properties__field">
+                        <span>y</span>
+                        {input('y', 'y', true)}
+                    </label>
+                    <div className="tw-sprite-properties__field tw-sprite-properties__visibility-field">
+                        <span>{text.visibility}</span>
+                        <div className="tw-sprite-properties__visibility" role="radiogroup" aria-label={text.visibility}>
+                            {[true, false].map(visible => {
+                                const label = visible ? text.show : text.hide;
+                                return <label key={label} title={label}>
+                                    <input type="radio" name={visibilityGroup} aria-label={label} disabled={disabled}
+                                        checked={values.visible === visible} onChange={() => commit('visible', visible)} />
+                                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                        {visible ? <>
+                                            <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                                            <circle cx="12" cy="12" r="2.5" />
+                                        </> : <path d="M3 21 21 3M9 6.5a10 10 0 0 1 3-.5c6 0 9.5 6 9.5 6a17 17 0 0 1-2.6 3.1M15 17.5a10 10 0 0 1-3 .5c-6 0-9.5-6-9.5-6a17 17 0 0 1 2.6-3.1" />}
+                                    </svg>
+                                </label>;
+                            })}
+                        </div>
+                    </div>
+                    <label className="tw-sprite-properties__field">
+                        <span>{text.size}</span>
+                        {input('size', text.size, true)}
+                    </label>
                 </div>
             </div>
-            <label className="tw-sprite-properties__field">
-                <span>{text.size}</span>
-                {input('size', text.size, true)}
-            </label>
-            <div className="tw-sprite-properties__field tw-sprite-properties__direction">
-                <label className="tw-sprite-properties__field">
-                    <span>{text.direction}</span>
-                    {input('direction', text.direction, true)}
-                </label>
-                <div className="tw-sprite-properties__dial-controls">
-                    <DirectionDial direction={values.direction} rotation={values.rotationStyle}
-                        disabled={disabled || values.direction === undefined} text={text}
-                        preview={directionPreview} setPreview={setDirectionPreview} onChange={next => commit('direction', next)} />
+            <div className="tw-sprite-properties__direction">
+                <div className="tw-sprite-properties__field tw-sprite-properties__direction-options">
+                    <label className="tw-sprite-properties__direction-value">
+                        <span>{text.direction}</span>
+                        {input('direction', text.direction, true)}
+                    </label>
                     <div className="tw-sprite-properties__visibility tw-sprite-properties__rotation"
                         role="radiogroup" aria-label={text.rotation}>
                         {rotationLabels.map(([value, label]) => <label key={value} title={label}>
@@ -267,6 +268,9 @@ function Fields({values, disabled, nameReadOnly, text, commit}) {
                         </label>)}
                     </div>
                 </div>
+                <DirectionDial direction={values.direction} rotation={values.rotationStyle}
+                    disabled={disabled || values.direction === undefined} text={text}
+                    preview={directionPreview} setPreview={setDirectionPreview} onChange={next => commit('direction', next)} />
             </div>
         </div>
     );

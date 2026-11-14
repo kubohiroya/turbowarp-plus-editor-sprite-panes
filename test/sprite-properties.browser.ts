@@ -47,43 +47,42 @@ async function withFixture(run) {
 const resize = (page, width, height) => page.evaluate(([w, h]) => {
     window.spriteFixture.resize(w, h);
 }, [width, height]);
-const fields = page => page.locator('.tw-sprite-properties__fields > .tw-sprite-properties__field');
-const boxes = page => fields(page).evaluateAll(elements => elements.map(element => {
-    const {x, y, width, right} = element.getBoundingClientRect();
-    return {x, y, width, right};
-}));
-
-test('panel width drives 1-row, 1-column and wrapped layouts in English and Japanese', () => withFixture(async page => {
-    for (const [locale, name] of [['en', 'Sprite name'], ['ja', 'スプライト名']]) {
+test('sprite properties and direction use two panels that reflow in narrow panes', () => withFixture(async page => {
+    for (const [locale, name, rotation] of [
+        ['en', 'Sprite name', 'Rotation style'], ['ja', 'スプライト名', '回転方法']
+    ]) {
         await page.evaluate(language => window.spriteFixture.changeLocale(language), locale);
-        await page.getByRole('textbox', {name, exact: true}).waitFor();
+        const basic = page.locator('.tw-sprite-properties__basic');
+        const attributes = basic.locator('.tw-sprite-properties__attributes > .tw-sprite-properties__field');
+        const direction = page.locator('.tw-sprite-properties__direction');
+        assert.equal(await basic.getByRole('textbox', {name}).count(), 1);
+        assert.equal(await direction.getByRole('spinbutton').count(), 1);
+        const rotationButtons = direction.getByRole('radiogroup', {name: rotation});
+        const dial = direction.getByRole('slider');
+        await resize(page, 900, 300);
+        const [left, right, buttons, circle, nameInput, directionInput] = await Promise.all([
+            basic.boundingBox(), direction.boundingBox(), rotationButtons.boundingBox(), dial.boundingBox(),
+            basic.getByRole('textbox', {name}).boundingBox(), direction.getByRole('spinbutton').boundingBox()
+        ]);
+        assert.ok(left.x + left.width < right.x);
+        assert.ok(buttons.x + buttons.width < circle.x);
+        assert.ok(directionInput.y + directionInput.height < buttons.y);
+        const row = await attributes.evaluateAll(elements => elements.map(element => {
+            const {x, y, right} = element.getBoundingClientRect();
+            return {x, y, right};
+        }));
+        assert.equal(row.length, 4);
+        assert.ok(nameInput.y + nameInput.height < row[0].y);
+        assert.equal(new Set(row.map(box => box.y)).size, 1);
+        assert.ok(row[3].x - row[2].right <= 10);
 
-        await resize(page, 900, 140);
-        const initial = await boxes(page);
-        assert.equal(initial.length, 6);
-        assert.equal(new Set(initial.map(box => box.y)).size, 1);
-        assert.equal(new Set(initial.map(box => box.x)).size, 6);
-        await resize(page, 1060, 140);
-        const wider = await boxes(page);
-        assert.equal(wider[0].width - initial[0].width, 160);
-        for (const index of [1, 4]) {
-            assert.equal(wider[index + 1].x - wider[index].right, initial[index + 1].x - initial[index].right);
-            assert.ok(wider[index + 1].x - wider[index].right <= 10);
+        for (const width of [490, 210, 145]) {
+            await resize(page, width, 700);
+            const [top, bottom] = await Promise.all([basic.boundingBox(), direction.boundingBox()]);
+            assert.ok(top.y + top.height < bottom.y);
+            assert.equal(await page.locator('.tw-sprite-properties').evaluate(element =>
+                element.scrollWidth <= element.clientWidth), true);
         }
-        assert.ok(wider[4].x - wider[3].right <= 10);
-        assert.ok(wider[5].width >= 200);
-
-        await resize(page, 210, 520);
-        const narrow = await boxes(page);
-        assert.equal(new Set(narrow.map(box => box.x)).size, 1);
-        assert.equal(new Set(narrow.map(box => box.y)).size, 6);
-        await resize(page, 490, 300);
-        const medium = await boxes(page);
-        assert.ok(new Set(medium.map(box => box.y)).size > 1);
-        assert.ok(new Set(medium.map(box => box.x)).size > 1);
-        assert.equal(await page.locator('.tw-sprite-properties').evaluate(element =>
-            element.scrollWidth <= element.clientWidth
-        ), true);
     }
     await resize(page, 210, 145);
     assert.equal(await page.locator('.tw-sprite-properties').evaluate(element =>
@@ -111,7 +110,7 @@ test('reflow retains drafts and focus, keyboard order stays stable, Enter and bl
             keyboardOrder.push(await page.evaluate(() => document.activeElement.getAttribute('aria-label')));
             await page.keyboard.press('Tab');
         }
-        assert.deepEqual(keyboardOrder, ['Sprite name', 'x', 'y', 'Show', 'Size', 'Direction', 'Direction dial', 'All around']);
+        assert.deepEqual(keyboardOrder, ['Sprite name', 'x', 'y', 'Show', 'Size', 'Direction', 'All around', 'Direction dial']);
     }
 }));
 

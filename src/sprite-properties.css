@@ -12,8 +12,20 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
-    gap: 0.5rem;
+    gap: 1rem;
     padding: 0.5rem;
+}
+
+.tw-sprite-properties__basic,
+.tw-sprite-properties__attributes {
+    display: grid;
+    min-inline-size: 0;
+    gap: .5rem;
+}
+
+.tw-sprite-properties__attributes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
 }
 
 .tw-sprite-properties__field {
@@ -110,31 +122,39 @@
 }
 
 .tw-sprite-properties__direction {
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: start;
-    gap: .5rem;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 7.5rem);
+    align-items: center;
+    min-inline-size: 0;
+    gap: .75rem;
 }
 
 .tw-sprite-properties__visibility-field {
     justify-self: start;
 }
 
-.tw-sprite-properties__dial-controls {
+.tw-sprite-properties__direction-options {
+    gap: .5rem;
+}
+
+.tw-sprite-properties__direction-value {
     display: grid;
-    justify-items: center;
-    gap: .25rem;
-    color: var(--looks-secondary, #855cd6);
+    grid-template-columns: auto minmax(0, 4.25rem);
+    align-items: center;
+    gap: .5rem;
 }
 
 .tw-sprite-properties__dial {
     display: grid;
     place-items: center;
-    inline-size: 7.5rem;
-    block-size: 7.5rem;
+    inline-size: 100%;
+    max-inline-size: 7.5rem;
+    aspect-ratio: 1;
     border-radius: 50%;
     cursor: grab;
     touch-action: none;
     user-select: none;
+    color: var(--looks-secondary, #855cd6);
 }
 
 .tw-sprite-properties__dial:active {
@@ -187,39 +207,28 @@
 }
 
 .tw-sprite-properties__rotation {
-    justify-self: center;
+    justify-self: start;
 }
 
-@container (max-width: 11rem) {
+@container (max-width: 12rem) {
     .tw-sprite-properties__direction {
         grid-template-columns: minmax(0, 1fr);
     }
 }
 
-@container (min-width: 22rem) {
-    .tw-sprite-properties__fields {
-        grid-template-columns: max-content minmax(3.75rem, 6rem) minmax(0, 1fr) repeat(2, minmax(2.5rem, 5rem));
-    }
-
-    .tw-sprite-properties__fields > :first-child {
-        grid-column: span 3;
-    }
-
-    .tw-sprite-properties__direction {
-        grid-column: 3 / -1;
+@container (min-width: 18rem) {
+    .tw-sprite-properties__attributes {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) max-content minmax(0, 1fr);
     }
 }
 
-@container (min-width: 50rem) {
+@container (min-width: 36rem) {
     .tw-sprite-properties__fields {
-        grid-template-columns: minmax(0, 1fr) repeat(2, 6rem) max-content 6rem 13rem;
-    }
-
-    .tw-sprite-properties__fields > :first-child,
-    .tw-sprite-properties__direction {
-        grid-column: auto;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
     }
 }
+
 .tw-sprite-properties-selector {
     display: flex;
     flex-direction: column;

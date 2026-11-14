@@ -104,11 +104,11 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
     const [tooltip, setTooltip] = React.useState<{button: HTMLButtonElement; id: SpriteEditorSection; y: number}>();
     const japanese = /^ja(?:-|$)/i.test(locale);
     const labels = japanese ? {code: 'コード', costumes: isStage ? '背景' : 'コスチューム', sounds: '音',
-        variables: propertiesInVariables ? '変数など' : '変数', messages: 'メッセージ'} :
+        variables: isStage ? 'グローバル変数' : propertiesInVariables ? '変数など' : 'スプライト変数', messages: 'メッセージ'} :
         {code: 'Code', costumes: isStage ? 'Backdrops' : 'Costumes', sounds: 'Sounds',
-            variables: propertiesInVariables ? 'Properties & Variables' : 'Variables', messages: 'Messages'};
-    const variableHeading = isStage ? (japanese ? 'グローバル変数' : 'Global Variables') :
-        propertiesInVariables ? (japanese ? 'スプライトのプロパティと変数' : 'Sprite Properties and Variables') :
+            variables: isStage ? 'Global Variables' : propertiesInVariables ? 'Properties & Variables' : 'Sprite Variables', messages: 'Messages'};
+    const variableHeading = !isStage && propertiesInVariables ?
+        (japanese ? 'スプライトのプロパティと変数' : 'Sprite Properties and Variables') :
             labels.variables;
     const heading = section === 'code' ? undefined : section === 'variables' ? variableHeading : labels[section];
     const variableTooltip = japanese && !isStage ? variableHeading : labels.variables;

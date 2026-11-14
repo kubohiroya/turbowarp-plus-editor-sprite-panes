@@ -152,13 +152,13 @@ test('variable create, rename and delete open a Scratch-style modal dialog', asy
     const page = await openPage(t);
     await page.evaluate(() => window.variableEditing('ja'));
     assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['変数名', '変数の値', '操作']);
-    const add = page.getByRole('button', {name: '変数を作る'});
+    const add = page.getByRole('button', {name: '新しいスプライト変数を追加'});
     const [pane, addBox] = [await page.locator('.tw-sprite-variables').boundingBox(), await add.boundingBox()];
-    assert.ok(addBox.x + addBox.width > pane.x + pane.width - 30 && addBox.y + addBox.height > pane.y + pane.height - 30,
-        'the add button sits at the bottom-right corner of the pane');
+    assert.ok(addBox.x < pane.x + 30 && addBox.y + addBox.height > pane.y + pane.height - 30,
+        'the add button sits at the bottom-left corner of the pane');
 
     await add.click();
-    const dialog = page.getByRole('dialog', {name: '新しい変数'});
+    const dialog = page.getByRole('dialog', {name: '新しいスプライト変数'});
     await dialog.waitFor();
     const name = dialog.getByLabel('新しい変数名:');
     assert.equal(await name.evaluate(node => node === document.activeElement), true);
