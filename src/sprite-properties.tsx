@@ -33,7 +33,7 @@ const labels = {
         name: 'スプライト名',
         visibility: '表示',
         show: '表示する',
-        hide: '隠す',
+        hide: '表示しない',
         size: '大きさ',
         direction: '向き',
         rotation: '回転方法',
@@ -83,7 +83,10 @@ function BufferedInput({label, value, disabled, numeric, onCommit}) {
     );
 }
 
+let nextVisibilityGroup = 0;
+
 function Fields({values, disabled, text, commit}) {
+    const [visibilityGroup] = useState(() => 'sprite-visibility-' + ++nextVisibilityGroup);
     const input = (field, label, numeric) => (
         <BufferedInput
             label={label}
@@ -113,19 +116,24 @@ function Fields({values, disabled, text, commit}) {
                 <span>y</span>
                 {input('y', 'y', true)}
             </label>
-            <label className="tw-sprite-properties__field">
+            <div className="tw-sprite-properties__field">
                 <span>{text.visibility}</span>
-                <select
-                    aria-label={text.visibility}
-                    disabled={disabled}
-                    value={values.visible === undefined ? '' : String(values.visible)}
-                    onChange={event => commit('visible', event.currentTarget.value === 'true')}
-                >
-                    {values.visible === undefined && <option value="" disabled>—</option>}
-                    <option value="true">{text.show}</option>
-                    <option value="false">{text.hide}</option>
-                </select>
-            </label>
+                <div className="tw-sprite-properties__visibility" role="radiogroup" aria-label={text.visibility}>
+                    {[true, false].map(visible => {
+                        const label = visible ? text.show : text.hide;
+                        return <label key={label} title={label}>
+                            <input type="radio" name={visibilityGroup} aria-label={label} disabled={disabled}
+                                checked={values.visible === visible} onChange={() => commit('visible', visible)} />
+                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                {visible ? <>
+                                    <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+                                    <circle cx="12" cy="12" r="2.5" />
+                                </> : <path d="M3 21 21 3M9 6.5a10 10 0 0 1 3-.5c6 0 9.5 6 9.5 6a17 17 0 0 1-2.6 3.1M15 17.5a10 10 0 0 1-3 .5c-6 0-9.5-6-9.5-6a17 17 0 0 1 2.6-3.1" />}
+                            </svg>
+                        </label>;
+                    })}
+                </div>
+            </div>
             <label className="tw-sprite-properties__field">
                 <span>{text.size}</span>
                 {input('size', text.size, true)}

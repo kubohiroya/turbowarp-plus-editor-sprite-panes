@@ -109,7 +109,7 @@ test('reflow retains drafts and focus, keyboard order stays stable, Enter and bl
             keyboardOrder.push(await page.evaluate(() => document.activeElement.getAttribute('aria-label')));
             await page.keyboard.press('Tab');
         }
-        assert.deepEqual(keyboardOrder, ['Sprite name', 'x', 'y', 'Visibility', 'Size', 'Direction', 'Rotation style']);
+        assert.deepEqual(keyboardOrder, ['Sprite name', 'x', 'y', 'Show', 'Size', 'Direction', 'Rotation style']);
     }
 }));
 
@@ -117,7 +117,9 @@ test('all properties are committed against one target, stale drafts are discarde
     const name = page.getByRole('textbox', {name: 'Sprite name'});
     const x = page.getByRole('spinbutton', {name: 'x', exact: true});
     const y = page.getByRole('spinbutton', {name: 'y', exact: true});
-    const visibility = page.getByRole('combobox', {name: 'Visibility'});
+    const visibility = page.getByRole('radiogroup', {name: 'Visibility'});
+    const show = visibility.getByRole('radio', {name: 'Show'});
+    const hide = visibility.getByRole('radio', {name: 'Hide'});
     const size = page.getByRole('spinbutton', {name: 'Size'});
     const direction = page.getByRole('spinbutton', {name: 'Direction'});
     const rotation = page.getByRole('combobox', {name: 'Rotation style'});
@@ -135,7 +137,10 @@ test('all properties are committed against one target, stale drafts are discarde
     await x.fill('-12.5');
     await y.fill('22');
     await y.press('Tab');
-    await visibility.selectOption('false');
+    assert.equal(await show.isChecked(), true);
+    await show.press('ArrowRight');
+    assert.equal(await hide.isChecked(), true);
+    assert.equal(await show.isChecked(), false);
     await size.fill('75');
     await direction.fill('-45');
     await direction.press('Tab');
@@ -162,6 +167,6 @@ test('all properties are committed against one target, stale drafts are discarde
     await name.fill('Uncommitted stage switch');
     await page.evaluate(() => window.spriteFixture.select('Stage'));
     await page.waitForFunction(() => document.querySelector('#panel input').disabled);
-    assert.equal(await page.locator('#panel :is(input,select):disabled').count(), 7);
+    assert.equal(await page.locator('#panel :is(input,select):disabled').count(), 8);
     assert.equal(await page.evaluate(() => window.spriteFixture.edits.length), 8);
 }));
