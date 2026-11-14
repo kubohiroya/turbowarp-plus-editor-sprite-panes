@@ -461,6 +461,10 @@
     max-block-size: calc(100dvh - 2rem);
 }
 
+.tw-sprite-variables__dialog--list::backdrop {
+    background: #17212a80;
+}
+
 .tw-sprite-variables__dialog--list[open],
 .tw-sprite-variables__list-form {
     display: flex;
