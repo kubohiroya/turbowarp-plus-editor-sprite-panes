@@ -1,6 +1,6 @@
 import React from 'react';
 import {SpriteAssetPane, type SpriteVariable, type SpriteVariablePaneProps} from './sprite-asset-pane.tsx';
-import type {SpriteVariableEdit, SpriteVariableEditError} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
+import {readSpriteVariable, writeSpriteVariableValue, type SpriteVariableEdit, type SpriteVariableEditError} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
 import type {SpritePropertiesPanelProps} from './sprite-properties.tsx';
 
 type Properties = NonNullable<SpritePropertiesPanelProps['values']>;
@@ -73,13 +73,7 @@ export function editClonedSpriteVariable(vm: SpriteCloneVm, targetId: string, ed
 function readClone(target: Target) {
     const {id, x, y, size, direction, visible, rotationStyle} = target;
     const properties: Properties = {name: target.getName(), x, y, size, direction, visible, rotationStyle};
-    const variables: SpriteVariable[] = [];
-    for (const variable of Object.values(target.variables)) {
-        const {id, name, value, type} = variable;
-        if (type === '' && (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean')) {
-            variables.push({id, name, value: typeof value === 'boolean' ? String(value) : value});
-        }
-    }
+    const variables = Object.values(target.variables).flatMap(variable => readSpriteVariable(variable) ?? []);
     return {id, properties, variables};
 }
 
@@ -176,9 +170,7 @@ function createView(vm: SpriteCloneVm, targetId: string) {
         },
         writeVariable(id: string, variableId: string, value: SpriteVariable['value']) {
             const target = getSelected(id);
-            if (target?.variables[variableId]?.type !== '') return;
-            vm.setVariableValue(id, variableId, value);
-            if (readSelection()) notify();
+            if (target && writeSpriteVariableValue(vm, id, variableId, value) && readSelection()) notify();
         }
     };
 }

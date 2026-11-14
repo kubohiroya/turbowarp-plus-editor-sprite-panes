@@ -151,7 +151,7 @@ test('assets keep selection and dimensions while inactive; variables retain and 
 test('variable create, rename and delete open a Scratch-style modal dialog', async t => {
     const page = await openPage(t);
     await page.evaluate(() => window.variableEditing('ja'));
-    assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['変数名', '変数の値', '操作']);
+    assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['種類', '変数名', '値', '操作']);
     const add = page.getByRole('button', {name: '新しいスプライト変数を追加'});
     const [pane, addBox] = [await page.locator('.tw-sprite-variables').boundingBox(), await add.boundingBox()];
     assert.ok(addBox.x < pane.x + 30 && addBox.y + addBox.height > pane.y + pane.height - 30,
