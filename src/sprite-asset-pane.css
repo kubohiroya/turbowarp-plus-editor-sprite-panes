@@ -695,6 +695,13 @@ button.tw-sprite-messages__node:focus-visible {
     object-fit: contain;
 }
 
+.tw-sprite-messages__node img[data-backdrop] {
+    box-sizing: border-box;
+    block-size: 1.425rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .15rem;
+}
+
 .tw-sprite-messages__edge {
     display: grid;
     grid-template-rows: 1fr 0 1fr;

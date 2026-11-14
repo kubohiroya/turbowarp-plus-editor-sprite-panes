@@ -194,7 +194,7 @@ function DiagramTargets({labels, uses, current, direction, getThumbnailUrl, onOp
                 title
             };
             const content = <>
-                {thumbnail && <img src={thumbnail} alt="" />}
+                {thumbnail && <img src={thumbnail} alt="" data-backdrop={isStage || undefined} />}
                 <span>{name}</span>
             </>;
             return <li key={targetId}>
