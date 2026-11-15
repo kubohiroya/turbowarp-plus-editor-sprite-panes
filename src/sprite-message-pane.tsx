@@ -65,8 +65,6 @@ const english = {
     senders: 'Sends',
     receivers: 'Receives',
     stage: 'Stage',
-    noMessages: 'This project has no messages.',
-    noConnections: 'This diagram shows messages with a sender or a receiver.',
     openBlock: 'Open this block',
     openTarget: 'Open this sprite',
     openStage: 'Open the stage',
@@ -107,8 +105,6 @@ const japanese: typeof english = {
     senders: '送信元',
     receivers: '受信先',
     stage: '背景',
-    noMessages: 'この作品にはメッセージがありません。',
-    noConnections: '送信または受信に使われているメッセージがここに表示されます。',
     openBlock: 'このブロックを開く',
     openTarget: 'このスプライトを開く',
     openStage: '背景を開く',
@@ -253,20 +249,27 @@ function DiagramTargets({locale, labels, uses, current, direction, getThumbnailU
     </ul>;
 }
 
-function Diagram({locale, labels, data, onOpenTarget}: {
+/**
+ * The connections of the messages this target sends, or of those it receives. Every sender and
+ * receiver of those messages is drawn, with this target highlighted.
+ */
+function Diagram({side, locale, labels, data, onOpenTarget}: {
+    side: 'send' | 'receive';
     locale: string;
     labels: Labels;
     data: MessagePaneData;
     onOpenTarget: SpriteMessagePaneProps['onOpenTarget'];
 }) {
-    const {targetId, isStage, messages, getThumbnailUrl, getBlockImage, describeScript} = data;
-    const connections = messages.filter(message => isStage ? message.sends.length || message.receives.length :
-        message.sends.some(use => use.targetId === targetId) || message.receives.some(use => use.targetId === targetId));
+    const {targetId, messages, getThumbnailUrl, getBlockImage, describeScript} = data;
+    const connections = messages.filter(message =>
+        (side === 'send' ? message.sends : message.receives).some(use => use.targetId === targetId));
+    // The table above already says when this target sends or receives nothing.
+    if (!connections.length) return null;
     const endpointProps = {locale, labels, current: targetId, getThumbnailUrl, onOpenTarget, getBlockImage, describeScript};
 
     return <figure className="tw-sprite-messages__diagram">
         <figcaption>{labels.diagram}</figcaption>
-        {connections.length ? <div className="tw-sprite-messages__connections">
+        <div className="tw-sprite-messages__connections">
             <div className="tw-sprite-messages__headings">
                 <span>{labels.senders}</span><span>{labels.receivers}</span>
             </div>
@@ -282,9 +285,7 @@ function Diagram({locale, labels, data, onOpenTarget}: {
                     <DiagramTargets {...endpointProps} uses={message.receives} direction="receive" />
                 </li>)}
             </ul>
-        </div> : <p className="tw-sprite-messages__missing">
-            {messages.length ? labels.noConnections : labels.noMessages}
-        </p>}
+        </div>
     </figure>;
 }
 
@@ -302,8 +303,8 @@ function Group({locale, labels, title, uses, empty, byKey, editable, onOpen, onR
     onRename?: SpriteMessagePaneProps['onRename'];
     onStartRename(key: string | null): void;
 }) {
+    // The tab above names the group, so it has no heading of its own.
     return <section className="tw-sprite-messages__group" aria-label={title}>
-        <h3 className="tw-sprite-messages__title">{title}</h3>
         {uses.length ? <table className="tw-sprite-messages__table">
             <thead><tr>
                 <th scope="col">{labels.message}</th>
@@ -339,9 +340,15 @@ function Group({locale, labels, title, uses, empty, byKey, editable, onOpen, onR
     </section>;
 }
 
+type Side = 'send' | 'receive';
+
 export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget, onRename}: SpriteMessagePaneProps) {
     const labels = labelsFor(locale);
     const [renaming, setRenaming] = React.useState<string | null>(null);
+    // Open on the side this target uses: sending, or receiving when it only receives.
+    const [side, setSide] = React.useState<Side>(() => !data.sends.length && data.receives.length ? 'receive' : 'send');
+    const tabs = React.useRef<HTMLDivElement>(null);
+    const ids = useDialogIds();
     React.useLayoutEffect(() => {
         if (!editable) setRenaming(null);
     }, [editable]);
@@ -358,9 +365,37 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
         <Group {...{locale, labels, title, uses, empty, byKey, editable, onOpen, onStartRename: setRenaming}}
             onRename={rename} getBlockImage={data.getBlockImage} />;
 
+    const sides = [
+        {side: 'send', title: labels.sent, uses: data.sends, empty: data.isStage ? labels.noSendsStage : labels.noSends},
+        {side: 'receive', title: labels.received, uses: data.receives,
+            empty: data.isStage ? labels.noReceivesStage : labels.noReceives}
+    ] as const;
+    const tabId = (side: string) => `${ids.titleId}-${side}`;
+    const choose = (side: Side, focus = false) => {
+        setSide(side);
+        if (focus) tabs.current?.querySelector<HTMLElement>(`[data-side="${side}"]`)?.focus();
+    };
+
     return <section className="tw-sprite-messages" aria-label={labels.panel}>
-        {group(labels.sent, data.sends, data.isStage ? labels.noSendsStage : labels.noSends)}
-        {group(labels.received, data.receives, data.isStage ? labels.noReceivesStage : labels.noReceives)}
+        <div ref={tabs} className="tw-sprite-messages__tabs" role="tablist" aria-label={labels.panel}
+            onKeyDown={event => {
+                const next = event.key === 'ArrowLeft' || event.key === 'Home' ? 'send' :
+                    event.key === 'ArrowRight' || event.key === 'End' ? 'receive' : undefined;
+                if (!next) return;
+                event.preventDefault();
+                choose(next, true);
+            }}>
+            {sides.map(({side: each, title, uses}) => <button key={each} type="button" role="tab" data-side={each}
+                id={tabId(each)} aria-controls={tabId(each) + '-panel'} aria-selected={side === each}
+                tabIndex={side === each ? 0 : -1} className="tw-sprite-messages__tab" onClick={() => choose(each)}>
+                {title}<span className="tw-sprite-messages__tab-count">{uses.length}</span>
+            </button>)}
+        </div>
+        {sides.map(({side: each, title, uses, empty}) => <div key={each} role="tabpanel" id={tabId(each) + '-panel'}
+            aria-labelledby={tabId(each)} hidden={side !== each} className="tw-sprite-messages__tab-panel">
+            {group(title, uses, empty)}
+            <Diagram side={each} locale={locale} labels={labels} data={data} onOpenTarget={onOpenTarget} />
+        </div>)}
         <section className="tw-sprite-messages__group" aria-label={labels.elsewhere}>
             <h3 className="tw-sprite-messages__title">{labels.elsewhere}</h3>
             {data.elsewhere.length ? <ul className="tw-sprite-messages__list">
@@ -372,7 +407,6 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
                 </li>)}
             </ul> : <p className="tw-sprite-messages__empty">{labels.noElsewhere}</p>}
         </section>
-        <Diagram locale={locale} labels={labels} data={data} onOpenTarget={onOpenTarget} />
         {rename && renamingMessage && <RenameDialog key={renamingMessage.key} labels={labels} message={renamingMessage}
             onSubmit={name => rename(renamingMessage, name)} onClose={() => setRenaming(null)} />}
     </section>;

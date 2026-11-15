@@ -1587,3 +1587,58 @@ button.tw-sprite-messages__node:focus-visible {
 .tw-sprite-messages__source-text {
     color: var(--text-primary-transparent, #575e75);
 }
+
+/* The message pane shows what the target sends and what it receives on two tabs. */
+.tw-sprite-messages__tabs {
+    display: flex;
+    gap: .25rem;
+    border-block-end: 1px solid var(--ui-black-transparent, #ccd5e2);
+}
+
+.tw-sprite-messages__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin-block-end: -1px;
+    padding: .45rem .9rem;
+    border: 1px solid transparent;
+    border-radius: .4rem .4rem 0 0;
+    color: var(--text-primary-transparent, #575e75);
+    background: transparent;
+    font: inherit;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.tw-sprite-messages__tab:hover,
+.tw-sprite-messages__tab:focus-visible {
+    color: var(--text-primary, #273146);
+}
+
+.tw-sprite-messages__tab[aria-selected="true"] {
+    border-color: var(--ui-black-transparent, #ccd5e2);
+    border-block-end-color: var(--ui-white, #fff);
+    color: var(--message-accent, var(--tw-variables-accent, #ff4c4c));
+    background: var(--ui-white, #fff);
+}
+
+.tw-sprite-messages__tab-count {
+    min-inline-size: 1.3em;
+    padding: 0 .35em;
+    border-radius: 999px;
+    color: inherit;
+    background: var(--ui-black-transparent, #e8ecf2);
+    font-size: .8em;
+    text-align: center;
+}
+
+.tw-sprite-messages__tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    padding-block-start: .5rem;
+}
+
+.tw-sprite-messages__tab-panel[hidden] {
+    display: none;
+}
