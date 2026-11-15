@@ -49,6 +49,9 @@ test('the sprite toolbar selects one section and searches in the active section'
     const tabs = strip.getByRole('tab');
     await expect(strip).toHaveAttribute('aria-orientation', 'vertical');
     await expect(tabs).toHaveCount(6);
+    // Functions sit with the panes that survey the sprite, before variables and messages.
+    assert.deepEqual(await tabs.evaluateAll(nodes => nodes.map(node => node.id.replace(/^.*-section-/, ''))),
+        ['code', 'costumes', 'sounds', 'functions', 'variables', 'messages']);
     await expect(selected).toHaveAccessibleName('コード');
     const tabBounds = await Promise.all((await tabs.all()).map(async tab => {
         await expect(tab).toHaveText('');
@@ -124,10 +127,10 @@ test('the sprite toolbar selects one section and searches in the active section'
 
     await page.locator('.tw-plus-sprite-tab-slot--split').evaluate(element => {element.style.height = '120px';});
     await selected.press('End');
-    await expect(selected).toHaveAccessibleName('Functions');
+    await expect(selected).toHaveAccessibleName('Messages');
     await expect(selected).toBeFocused();
     await expect(selected).toHaveCSS('height', '28px');
-    await expect(tooltip).toHaveText('Functions');
+    await expect(tooltip).toHaveText('Messages');
     assert.ok(await strip.evaluate(element => element.scrollTop > 0));
 });
 

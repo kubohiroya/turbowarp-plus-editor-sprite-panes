@@ -3,6 +3,13 @@ import React from 'react';
 export const spriteEditorSections = ['code', 'costumes', 'sounds', 'variables', 'messages', 'functions'] as const;
 export type SpriteEditorSection = typeof spriteEditorSections[number];
 
+/**
+ * The order the buttons appear in. `spriteEditorSections` numbers the sections, and saved layouts
+ * keep those numbers, so new sections join it at the end while this order places them where they read best.
+ */
+export const spriteEditorSectionOrder: readonly SpriteEditorSection[] =
+    ['code', 'costumes', 'sounds', 'functions', 'variables', 'messages'];
+
 /** The GUI owns these three panels; the rest are this package's own panes. */
 const nativeSections = new Set<SpriteEditorSection>(['code', 'costumes', 'sounds']);
 
@@ -101,7 +108,8 @@ function SearchBox({viewId, section, japanese, search}: {
 }
 
 export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, isStage, activeGroup, search,
-    availableSections = spriteEditorSections, propertiesInVariables = false, actions}: SpriteEditorToolbarProps) {
+    availableSections: available = spriteEditorSections, propertiesInVariables = false, actions}: SpriteEditorToolbarProps) {
+    const availableSections = spriteEditorSectionOrder.filter(id => available.includes(id));
     const [tooltip, setTooltip] = React.useState<{button: HTMLButtonElement; id: SpriteEditorSection; y: number}>();
     const japanese = /^ja(?:-|$)/i.test(locale);
     const labels = japanese ? {code: 'コード', costumes: isStage ? '背景' : 'コスチューム', sounds: '音',
