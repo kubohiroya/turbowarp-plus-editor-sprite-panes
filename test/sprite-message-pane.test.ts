@@ -111,6 +111,8 @@ test('renaming refuses a name another message already has and reports why', t =>
     const button = container.querySelector('tbody th .tw-pane-name-edit');
     assert.equal(button.getAttribute('aria-label'), 'メッセージ名を変更');
     assert.equal(button.previousElementSibling.textContent, 'go', 'the pencil follows the name');
+    // A speech bubble before the name marks the row as a message.
+    assert.ok(container.querySelector('tbody th').firstElementChild.matches('svg.tw-sprite-messages__icon'));
     act(() => button.dispatchEvent(new window.MouseEvent('click', {bubbles: true})));
     const dialog = container.querySelector('dialog');
     assert.equal(dialog.getAttribute('aria-labelledby') &&
@@ -169,6 +171,7 @@ test('the stage draws all used broadcasts as labelled arrows between thumbnails'
     assert.equal(figure.querySelector('.tw-sprite-messages__missing').textContent.trim(),
         '受け取るブロックがありません');
     assert.equal(container.querySelector('.tw-sprite-messages__list [data-message-key="idle"]').textContent, 'idle');
+    assert.ok(container.querySelector('.tw-sprite-messages__list li').firstElementChild.matches('svg.tw-sprite-messages__icon'));
     figure.querySelector('button[aria-current="true"]').click();
     assert.deepEqual(opened, ['stage']);
 });

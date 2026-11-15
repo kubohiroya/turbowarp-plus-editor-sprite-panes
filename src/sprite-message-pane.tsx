@@ -136,6 +136,11 @@ function Status({labels, status}: {labels: Labels; status: MessageStatus}) {
 }
 
 /** The pencil after a message name. It shows while the row is pointed at or focused, and opens the rename dialog. */
+/** The speech bubble that marks a message, in the tables as on the arrows of the diagram. */
+const MessageIcon = () => <svg className="tw-sprite-messages__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+</svg>;
+
 function RenameButton({labels, editable, onClick}: {labels: Labels; editable: boolean; onClick(): void}) {
     return <button type="button" className="tw-pane-name-edit" disabled={!editable}
         aria-label={labels.rename} title={labels.rename} onClick={onClick}>
@@ -270,9 +275,7 @@ function Diagram({locale, labels, data, onOpenTarget}: {
                     <DiagramTargets {...endpointProps} uses={message.sends} direction="send" />
                     <div className="tw-sprite-messages__edge" data-status={message.status}>
                         <span className="tw-sprite-messages__edge-label">
-                            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                                <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
-                            </svg>
+                            <MessageIcon />
                             <span>{message.name}</span>
                         </span>
                     </div>
@@ -310,6 +313,7 @@ function Group({locale, labels, title, uses, empty, byKey, editable, onOpen, onR
                 const message = byKey.get(use.key);
                 return <tr key={use.blockId}>
                     <th scope="row">
+                        <MessageIcon />
                         {onOpen ? <button type="button" className="tw-sprite-messages__link" data-message-key={use.key}
                             title={labels.openBlock} onClick={() => onOpen(use)}>{use.name}</button> :
                             <span data-message-key={use.key} tabIndex={-1}>{use.name}</span>}
@@ -361,6 +365,7 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
             <h3 className="tw-sprite-messages__title">{labels.elsewhere}</h3>
             {data.elsewhere.length ? <ul className="tw-sprite-messages__list">
                 {data.elsewhere.map(message => <li key={message.key}>
+                    <MessageIcon />
                     <span data-message-key={message.key} tabIndex={-1}>{message.name}</span>
                     {rename && <RenameButton labels={labels} editable={editable} onClick={() => setRenaming(message.key)} />}
                     <Status labels={labels} status={message.status} />

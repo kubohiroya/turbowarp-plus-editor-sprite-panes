@@ -991,6 +991,23 @@ button.tw-sprite-messages__node:focus-visible {
     overflow-wrap: anywhere;
 }
 
+.tw-sprite-messages__icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    margin-inline-end: .3em;
+    vertical-align: -.15em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-messages__edge-label .tw-sprite-messages__icon {
+    margin-inline-end: 0;
+    vertical-align: baseline;
+}
+
 .tw-sprite-messages__edge-label svg {
     flex: none;
     inline-size: 1em;
