@@ -1404,10 +1404,11 @@
     font-size: .7rem;
 }
 
-/* Hovering or focusing a function: its callers' links come in blue, its callees' go out in orange. */
+/* Hovering or focusing a function: its callers' links come in blue, its callees' go out in orange.
+   Both stay at 3:1 or more against the graph in the light theme (#e6f0ff) and the dark theme (#111). */
 .tw-sprite-functions__graph {
-    --tw-call-in: #4c97ff;
-    --tw-call-out: #ff8c1a;
+    --tw-call-in: #3373cc;
+    --tw-call-out: #c96b00;
 }
 
 .tw-sprite-functions__edges path,
