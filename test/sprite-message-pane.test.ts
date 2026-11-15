@@ -160,7 +160,9 @@ test('the stage draws all used broadcasts as labelled arrows between thumbnails'
     assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__headings span')), ['送信元', '受信先']);
     assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__edge')), ['go', 'bark']);
     assert.equal(figure.querySelectorAll('.tw-sprite-messages__edge-label svg').length, 2);
-    assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__node')), ['Cat', '背景', 'Cat', 'Dog']);
+    // Senders also name the scripts that send; receivers are named alone.
+    assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__node')),
+        ['Cat緑の旗が押されたとき', '背景', 'Cat', 'Dog緑の旗が押されたとき']);
     assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')), ['背景']);
     assert.deepEqual([...figure.querySelectorAll('.tw-sprite-messages__node img')].map(img => img.getAttribute('src')),
         ['/thumb/cat', '/thumb/stage', '/thumb/cat', '/thumb/dog']);
@@ -185,7 +187,46 @@ test('a sprite diagram shows the broadcasts involving that sprite and highlights
     });
     const rows = container.querySelectorAll('.tw-sprite-messages__connection');
     assert.equal(rows.length, 2);
-    assert.deepEqual(text(rows[0].querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')), ['Cat', 'Cat']);
+    assert.deepEqual(text(rows[0].querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')),
+        ['Cat緑の旗が押されたとき', 'Cat']);
     assert.equal(rows[1].querySelector('.tw-sprite-messages__missing').textContent.trim(),
         '送るブロックがありません');
+});
+
+test('a sender lists each script that sends: the hat, the function or the named function', t => {
+    const key = use({blockId: 'send-1', scriptId: 'key', scriptOpcode: 'event_whenkeypressed'});
+    const again = use({blockId: 'send-2', scriptId: 'key', scriptOpcode: 'event_whenkeypressed'});
+    const jump = use({blockId: 'send-3', scriptId: 'jump', scriptOpcode: 'procedures_definition'});
+    const named = use({blockId: 'send-4', scriptId: 'add', scriptOpcode: 'kubohiroyanamedfunctions_defineFunction'});
+    const relay = use({blockId: 'send-5', scriptId: 'relay', scriptOpcode: 'event_whenbroadcastreceived',
+        scriptMessageName: 'ready'});
+    const starts = {
+        key: {id: 'key', opcode: 'event_whenkeypressed', kind: 'hat', text: ['space']},
+        jump: {id: 'jump', opcode: 'procedures_definition', kind: 'function', label: 'jump (height)', text: []},
+        add: {id: 'add', opcode: 'kubohiroyanamedfunctions_defineFunction', kind: 'named-function', label: 'add', text: []},
+        relay: {id: 'relay', opcode: 'event_whenbroadcastreceived', kind: 'hat', text: ['ready']}
+    };
+    const drawn: string[] = [];
+    const sends = [key, again, jump, named, relay];
+    const container = render(t, {
+        data: {
+            targetId: 'cat', isStage: false, sends, receives: [], elsewhere: [],
+            messages: [message({status: 'sendOnly', sends})],
+            describeScript: (targetId: string, blockId: string) => targetId === 'cat' ? starts[blockId] : undefined,
+            getBlockImage: (targetId: string, blockId: string) => {
+                drawn.push(targetId + '/' + blockId);
+                return window.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            }
+        }
+    });
+    const sources = [...container.querySelectorAll('.tw-sprite-messages__sources li')];
+    assert.deepEqual(sources.map(item => [item.getAttribute('data-script-id'),
+        item.querySelector('.tw-sprite-messages__source-text').textContent,
+        item.querySelector('.tw-block-image svg') ? 'drawn' : 'none']), [
+        ['key', 'キーが押されたとき space', 'drawn'],
+        ['jump', '関数 jump (height)', 'drawn'],
+        ['add', '名前付き関数 「add」', 'drawn'],
+        ['relay', '「ready」を受け取ったとき', 'drawn']
+    ]);
+    assert.deepEqual([...new Set(drawn)], ['cat/key', 'cat/jump', 'cat/add', 'cat/relay']);
 });

@@ -7,7 +7,7 @@
  * extension instance. They are read while the debugger has paused the project, when they hold still.
  */
 
-import {functionLabel} from './sprite-function-pane.tsx';
+import {scriptStartOf} from './script-start.ts';
 
 export const temporaryVariablesExtensionId = 'lmsTempVars2';
 
@@ -138,43 +138,13 @@ export const isRuntimePaused = (runtime: TemporaryVariablesRuntime) => runtime.i
 type Use = {read: number; write: number} & Record<Role, TemporaryVariableFunction[]>;
 type Uses = Map<string, Use>;
 
-function argumentNames(argumentnames = '[]') {
-    try {
-        const parsed = JSON.parse(argumentnames);
-        return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-        // Keep the label without argument names when they cannot be read.
-        return [];
-    }
-}
-
-/** The values of a block's fields and of the fields of its shadow inputs, as the block shows them. */
-function fieldText(blocks: Record<string, Block>, block: Block) {
-    const text: string[] = [];
-    for (const input of Object.values(block.inputs ?? {})) {
-        const shadow = input?.shadow && input.block === input.shadow ? blocks[input.shadow] : undefined;
-        if (shadow) text.push(...fieldText(blocks, shadow));
-    }
-    for (const field of Object.values(block.fields ?? {})) {
-        if (field?.value !== undefined && field.value !== null && field.value !== '') text.push(String(field.value));
-    }
-    return text;
-}
-
 /** The custom block definition a block belongs to, or the top block of its script outside any function. */
 function functionOf(blocks: Record<string, Block>, id: string): TemporaryVariableFunction {
-    const seen = new Set<string>();
-    let current = id;
-    while (blocks[current]?.parent && !seen.has(current)) {
-        seen.add(current);
-        current = blocks[current].parent;
-    }
-    const top = blocks[current];
-    const mutation = top?.opcode === 'procedures_definition' ? blocks[top.inputs?.custom_block?.block ?? '']?.mutation : undefined;
-    if (mutation?.proccode) {
-        return {id: current, label: functionLabel({proccode: mutation.proccode, argumentNames: argumentNames(mutation.argumentnames)})};
-    }
-    return top ? {script: {id: current, opcode: top.opcode, text: fieldText(blocks, top)}} : {};
+    const start = scriptStartOf(blocks, id);
+    if (!start) return {};
+    if (start.kind === 'function') return {id: start.id, label: start.label};
+    // A named function is a script of its own. Its name tells it apart, as a message does for a hat.
+    return {script: {id: start.id, opcode: start.opcode, text: start.kind === 'named-function' ? [start.label] : start.text}};
 }
 
 function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, uses: Uses, withTarget = false) {

@@ -1530,3 +1530,43 @@ button.tw-sprite-messages__node:focus-visible {
     background: var(--ui-black-transparent, #e8ecf2);
     font-size: .85em;
 }
+
+/* A sender in the message diagram lists the scripts that send: the hat drawn small, then words. */
+.tw-sprite-messages__node-text {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    min-inline-size: 0;
+}
+
+.tw-sprite-messages__sources {
+    display: grid;
+    gap: .15rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: .78rem;
+    --tw-block-image-height: 1.8rem;
+}
+
+.tw-sprite-messages__sources li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .1rem .4rem;
+}
+
+/* The connector lines of the diagram belong to the endpoint items, not to these. */
+.tw-sprite-messages__endpoints .tw-sprite-messages__sources li {
+    position: static;
+    padding: 0;
+}
+
+.tw-sprite-messages__endpoints .tw-sprite-messages__sources li::before,
+.tw-sprite-messages__endpoints .tw-sprite-messages__sources li::after {
+    content: none;
+}
+
+.tw-sprite-messages__source-text {
+    color: var(--text-primary-transparent, #575e75);
+}

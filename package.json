@@ -35,6 +35,10 @@
       "types": "./dist/block-image.d.ts",
       "default": "./dist/block-image.js"
     },
+    "./script-start": {
+      "types": "./dist/script-start.d.ts",
+      "default": "./dist/script-start.js"
+    },
     "./sprite-properties": {
       "types": "./dist/sprite-properties.d.ts",
       "default": "./dist/sprite-properties.js"
