@@ -37,7 +37,6 @@ const english = {
     panel: 'Messages',
     sent: 'Sent',
     received: 'Received',
-    elsewhere: 'Used elsewhere in this project',
     message: 'Message',
     block: 'Block',
     scriptStart: 'Script starts with %1',
@@ -54,7 +53,6 @@ const english = {
     noReceives: 'This sprite receives no messages.',
     noSendsStage: 'The stage sends no messages.',
     noReceivesStage: 'The stage receives no messages.',
-    noElsewhere: 'Every message in this project is used here.',
     emptyName: 'Enter a message name.',
     duplicateName: 'A message with this name already exists.',
     unavailable: 'This message can no longer be renamed.',
@@ -77,7 +75,6 @@ const japanese: typeof english = {
     panel: 'メッセージ',
     sent: '送信',
     received: '受信',
-    elsewhere: 'この作品の他の場所のメッセージ',
     message: 'メッセージ',
     block: 'ブロック',
     scriptStart: '「%1」から始まるスクリプト',
@@ -94,7 +91,6 @@ const japanese: typeof english = {
     noReceives: 'このスプライトはメッセージを受け取っていません。',
     noSendsStage: '背景はメッセージを送っていません。',
     noReceivesStage: '背景はメッセージを受け取っていません。',
-    noElsewhere: 'この作品のメッセージはすべてここで使われています。',
     emptyName: 'メッセージ名を入力してください。',
     duplicateName: '同じ名前のメッセージがすでにあります。',
     unavailable: 'このメッセージの名前を変更できなくなりました。',
@@ -126,17 +122,25 @@ const blockLabel = (labels: Labels, use: MessageUse) => {
 const scriptLabel = (locale: string, use: MessageUse) =>
     hatName(locale, use.scriptOpcode, use.scriptOpcode === receiveOpcode ? use.scriptMessageName : undefined);
 
+/** The warning before a message that nothing receives, or that nothing sends. */
+const WarningIcon = () => <svg className="tw-sprite-messages__warning" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+    <path d="M12 3 2.5 20h19Z" /><path d="M12 9.5v5M12 17.2v.3" />
+</svg>;
+
+/** Warns when a message has no receivers, or no senders. A message used at both ends needs no mark. */
 function Status({labels, status}: {labels: Labels; status: MessageStatus}) {
     if (status === 'both') return null;
-    return <span className="tw-sprite-messages__status" data-status={status}>{labels[status]}</span>;
+    return <span className="tw-sprite-messages__status" data-status={status} role="note">
+        <WarningIcon />{labels[status]}
+    </span>;
 }
 
-/** The pencil after a message name. It shows while the row is pointed at or focused, and opens the rename dialog. */
 /** The speech bubble that marks a message, in the tables as on the arrows of the diagram. */
 const MessageIcon = () => <svg className="tw-sprite-messages__icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
     <path d="M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10l-5 4v-4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
 </svg>;
 
+/** The pencil after a message name. It shows while the row is pointed at or focused, and opens the rename dialog. */
 function RenameButton({labels, editable, onClick}: {labels: Labels; editable: boolean; onClick(): void}) {
     return <button type="button" className="tw-pane-name-edit" disabled={!editable}
         aria-label={labels.rename} title={labels.rename} onClick={onClick}>
@@ -216,7 +220,7 @@ function DiagramTargets({locale, labels, uses, current, direction, getThumbnailU
 }) {
     if (!uses.length) {
         return <span className="tw-sprite-messages__missing">
-            {direction === 'send' ? labels.receiveOnly : labels.sendOnly}
+            <WarningIcon />{direction === 'send' ? labels.receiveOnly : labels.sendOnly}
         </span>;
     }
     const targets = new Map(uses.map(use => [use.targetId, use]));
@@ -396,17 +400,6 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
             {group(title, uses, empty)}
             <Diagram side={each} locale={locale} labels={labels} data={data} onOpenTarget={onOpenTarget} />
         </div>)}
-        <section className="tw-sprite-messages__group" aria-label={labels.elsewhere}>
-            <h3 className="tw-sprite-messages__title">{labels.elsewhere}</h3>
-            {data.elsewhere.length ? <ul className="tw-sprite-messages__list">
-                {data.elsewhere.map(message => <li key={message.key}>
-                    <MessageIcon />
-                    <span data-message-key={message.key} tabIndex={-1}>{message.name}</span>
-                    {rename && <RenameButton labels={labels} editable={editable} onClick={() => setRenaming(message.key)} />}
-                    <Status labels={labels} status={message.status} />
-                </li>)}
-            </ul> : <p className="tw-sprite-messages__empty">{labels.noElsewhere}</p>}
-        </section>
         {rename && renamingMessage && <RenameDialog key={renamingMessage.key} labels={labels} message={renamingMessage}
             onSubmit={name => rename(renamingMessage, name)} onClose={() => setRenaming(null)} />}
     </section>;

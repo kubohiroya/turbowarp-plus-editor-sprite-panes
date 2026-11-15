@@ -308,8 +308,8 @@
         .tw-sprite-variables__actions-cell > div, .tw-sprite-variables__list-edit
     ),
     /* The pencil after a name shows while its row is pointed at or holds the focus. */
-    :is(.tw-sprite-variables__table tbody tr, .tw-sprite-messages__table tbody tr,
-        .tw-sprite-messages__list > li):not(:hover, :focus-within) .tw-pane-name-edit {
+    :is(.tw-sprite-variables__table tbody tr, .tw-sprite-messages__table tbody tr):not(:hover, :focus-within)
+        .tw-pane-name-edit {
         opacity: 0;
         pointer-events: none;
     }
@@ -772,22 +772,37 @@
 }
 
 .tw-sprite-messages__status {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
     margin-inline-start: .4rem;
-    padding: .05rem .35rem;
+    padding: .05rem .4rem;
     border-radius: .75rem;
-    background: var(--ui-black-transparent, #ccd5e2);
+    color: var(--tw-message-warning-text, #8a5a00);
+    background: var(--tw-message-warning-background, #fff3d6);
     font-size: .72rem;
     white-space: nowrap;
 }
 
-.tw-sprite-messages__list {
-    margin: 0;
-    padding-inline-start: 1.1rem;
+/* The warning sign of a message without receivers or senders. */
+.tw-sprite-messages__warning {
+    flex: none;
+    inline-size: 1.1em;
+    block-size: 1.1em;
+    margin-inline-end: .25em;
+    vertical-align: -.2em;
+    fill: none;
+    stroke: var(--tw-message-warning, #e0a100);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
-.tw-sprite-messages__list li {
-    margin-block: .2rem;
+.tw-sprite-messages__status .tw-sprite-messages__warning {
+    margin-inline-end: 0;
 }
+
+
 
 .tw-sprite-messages__empty,
 .tw-sprite-messages__hint {

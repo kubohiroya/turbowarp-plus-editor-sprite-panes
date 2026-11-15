@@ -54,14 +54,14 @@ test('the pane lists what the sprite sends and receives, with the block and the 
 
     assert.deepEqual([...container.querySelectorAll('section[aria-label]')]
         .map(node => node.getAttribute('aria-label')),
-    ['メッセージ', '送信', '受信', 'この作品の他の場所のメッセージ']);
+    ['メッセージ', '送信', '受信']);
     const rows = [...container.querySelectorAll('tbody tr')].map(row => text(row.querySelectorAll('th, td')));
     assert.deepEqual(rows, [
         ['go', '「go」を送る「緑の旗が押されたとき」から始まるスクリプト'],
         ['go', '「go」を受け取ったとき']
     ]);
-    assert.equal(container.querySelector('.tw-sprite-messages__empty').textContent,
-        'この作品のメッセージはすべてここで使われています。');
+    // Messages this sprite does not use are not listed: it is about what this sprite sends and receives.
+    assert.equal(container.textContent.includes('この作品の他の場所'), false);
 });
 
 test('a send that waits is told apart from a plain send', t => {
@@ -73,21 +73,27 @@ test('a send that waits is told apart from a plain send', t => {
     assert.match(container.querySelector('tbody td').textContent, /^「go」を送って待つ/);
 });
 
-test('a message sent but never received, and one the sprite does not use, are marked', t => {
-    const sent = use({key: 'shout', id: 'shout', name: 'shout'});
+test('a message that nothing receives, or that nothing sends, is marked with a warning', t => {
+    const shout = use({key: 'shout', id: 'shout', name: 'shout'});
+    const hear = use({key: 'hear', id: 'hear', name: 'hear', direction: 'receive', blockId: 'hear-hat'});
     const idle = message({key: 'idle', id: 'idle', name: 'idle', status: 'unused'});
     const container = render(t, {
         data: {
-            targetId: 'cat', isStage: false, sends: [sent], receives: [], elsewhere: [idle], messages: [
-                message({key: 'shout', id: 'shout', name: 'shout', status: 'sendOnly', sends: [sent]}),
+            targetId: 'cat', isStage: false, sends: [shout], receives: [hear], elsewhere: [idle], messages: [
+                message({key: 'shout', id: 'shout', name: 'shout', status: 'sendOnly', sends: [shout]}),
+                message({key: 'hear', id: 'hear', name: 'hear', status: 'receiveOnly', receives: [hear]}),
                 idle
             ]
         }
     });
-    assert.deepEqual([...container.querySelectorAll('.tw-sprite-messages__status')]
-        .map(node => [node.dataset.status, node.textContent]),
-    [['sendOnly', '受け取るブロックがありません'], ['unused', '使われていません']]);
-    assert.equal(container.querySelector('.tw-sprite-messages__list li span').textContent, 'idle');
+    const marks = (panel: Element) => [...panel.querySelectorAll('tbody .tw-sprite-messages__status')]
+        .map(node => [node.dataset.status, node.textContent, Boolean(node.querySelector('svg.tw-sprite-messages__warning'))]);
+    const [sending, receiving] = container.querySelectorAll('[role="tabpanel"]');
+    assert.deepEqual(marks(sending), [['sendOnly', '受け取るブロックがありません', true]]);
+    assert.deepEqual(marks(receiving), [['receiveOnly', '送るブロックがありません', true]]);
+    // The diagram warns at the empty end as well.
+    assert.ok(sending.querySelector('.tw-sprite-messages__missing svg.tw-sprite-messages__warning'));
+    assert.equal(container.textContent.includes('idle'), false, 'a message this sprite does not use is not listed');
 });
 
 test('renaming refuses a name another message already has and reports why', t => {
