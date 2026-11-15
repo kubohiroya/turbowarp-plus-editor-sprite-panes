@@ -79,16 +79,17 @@ export interface FunctionPaneSettings {
     mode: FunctionPaneMode;
     order: FunctionOrder;
     direction: CallGraphDirection;
-    /** Which kind of function the create button makes. */
+    /** Which kind of function the add dialog starts with: the kind added last. */
     create: FunctionKind;
 }
 const defaultSettings: FunctionPaneSettings = {mode: 'list', order: 'name', direction: 'LR', create: 'procedure'};
 
 /**
- * Why creating a function failed: `duplicate` when the definition already exists, `unavailable`
- * when the named-functions extension cannot be loaded.
+ * Why creating a function failed: `duplicate` when a function of that name already exists, `invalid`
+ * when the name cannot be used, `unavailable` when the named-functions extension cannot be loaded.
  */
-export type FunctionCreateError = 'duplicate' | 'unavailable' | 'failed';
+export type FunctionCreateError = 'duplicate' | 'invalid' | 'unavailable' | 'failed';
+const createErrors: readonly FunctionCreateError[] = ['duplicate', 'invalid', 'unavailable', 'failed'];
 
 /**
  * Mount an editor of one definition script into `element`. The host owns the editor;
@@ -124,10 +125,13 @@ export interface SpriteFunctionPaneProps {
      */
     view?: FunctionPaneMode;
     /**
-     * Make a new function of this kind in the target and resolve with the id of its hat, or with
-     * nothing when the person cancels. A rejection may carry a `code` of {@link FunctionCreateError}.
+     * Make a new function of this kind and name in the target and resolve with the id of its hat, or with
+     * nothing when nothing was made. The name is trimmed and not empty: a custom block's block text,
+     * or a named function's name. A rejection may carry a `code` of {@link FunctionCreateError}.
+     * With it the pane shows an add button below the list and in a corner of the call graph,
+     * and opens the function it makes.
      */
-    onCreate?(kind: FunctionKind): Promise<string | void> | string | void;
+    onCreate?(kind: FunctionKind, name: string): Promise<string | void> | string | void;
 }
 
 interface RuntimeBlock {
@@ -269,6 +273,8 @@ export function orderFunctions<T extends Pick<SpriteFunction, 'id' | 'proccode' 
 export interface CallGraphNode {
     fn: SpriteFunction;
     layer: number;
+    /** A function that calls no function and that no function calls, set apart below the others. */
+    isolated?: boolean;
     x: number;
     y: number;
 }
@@ -291,14 +297,26 @@ export const callGraphNodeSize = {width: 176, height: 44};
 const graphPadding = 24;
 const layerGap = 64;
 const siblingGap = 18;
+// Wider than the bend of a back edge under the lowest row, so the isolated functions stand apart.
+const isolatedGap = 72;
+const isolatedMinColumns = 4;
 
 /**
  * Lay out who calls whom: callers come before the functions they call, from left to right (LR)
  * or from top to bottom (TD). Calls that close a cycle are kept as back edges so every function
  * gets one place. Within a layer, functions follow their callers and then the chosen order.
+ * Functions that call no function and that no function calls go in rows of their own below,
+ * apart from the rest, whichever the direction.
  */
-export function layoutCallGraph(functions: readonly SpriteFunction[], direction: CallGraphDirection,
+export function layoutCallGraph(all: readonly SpriteFunction[], direction: CallGraphDirection,
     order: FunctionOrder = 'name', locale = 'en'): CallGraphLayout {
+    const known = new Set(all.map(fn => fn.id));
+    const linked = new Set(all.flatMap(fn => {
+        const callees = fn.callees.filter(id => known.has(id));
+        return callees.length ? [fn.id, ...callees] : [];
+    }));
+    const functions = all.filter(fn => linked.has(fn.id));
+    const isolated = orderFunctions(all.filter(fn => !linked.has(fn.id)), order, locale);
     const ordered = orderFunctions(functions, order, locale);
     const rank = new Map(ordered.map((fn, index) => [fn.id, index]));
     const byId = new Map(functions.map(fn => [fn.id, fn]));
@@ -355,7 +373,7 @@ export function layoutCallGraph(functions: readonly SpriteFunction[], direction:
     const {width, height} = callGraphNodeSize;
     const across = direction === 'LR' ? height + siblingGap : width + siblingGap;
     const along = direction === 'LR' ? width + layerGap : height + layerGap;
-    const nodes = ordered.map(fn => {
+    const nodes: CallGraphNode[] = ordered.map(fn => {
         const layer = layers.get(fn.id);
         const main = graphPadding + layer * along;
         const cross = graphPadding + slot.get(fn.id) * across;
@@ -369,7 +387,24 @@ export function layoutCallGraph(functions: readonly SpriteFunction[], direction:
     const depth = columns.length;
     const mainSize = graphPadding * 2 + Math.max(0, depth * along - layerGap);
     const crossSize = graphPadding * 2 + Math.max(0, longest * across - siblingGap);
-    return {nodes, edges, width: direction === 'LR' ? mainSize : crossSize, height: direction === 'LR' ? crossSize : mainSize};
+    let graphWidth = direction === 'LR' ? mainSize : crossSize;
+    let graphHeight = direction === 'LR' ? crossSize : mainSize;
+    if (!isolated.length) return {nodes, edges, width: graphWidth, height: graphHeight};
+
+    // As wide as the graph above, and at least a few functions to a row.
+    const step = width + siblingGap;
+    const perRow = Math.max(isolatedMinColumns, Math.floor((graphWidth - graphPadding * 2 + siblingGap) / step));
+    const top = nodes.length ? graphHeight - graphPadding + isolatedGap : graphPadding;
+    isolated.forEach((fn, index) => nodes.push({
+        fn, layer: depth, isolated: true,
+        x: graphPadding + (index % perRow) * step,
+        y: top + Math.floor(index / perRow) * (height + siblingGap)
+    }));
+    const rows = Math.ceil(isolated.length / perRow);
+    graphWidth = Math.max(nodes.length > isolated.length ? graphWidth : 0,
+        graphPadding * 2 + Math.min(perRow, isolated.length) * step - siblingGap);
+    graphHeight = top + rows * (height + siblingGap) - siblingGap + graphPadding;
+    return {nodes, edges, width: graphWidth, height: graphHeight};
 }
 
 /** Order hat scripts as `orderFunctions` orders functions, by their labels or by where they sit. */
@@ -419,10 +454,15 @@ const english = {
     zoomIn: 'Zoom in',
     zoomReset: 'Reset zoom',
     close: 'Close',
-    create: {procedure: 'New function (standard)', named: 'New function (TurboWarp-Plus)'} as Record<FunctionKind, string>,
-    createKind: 'Switch the kind of function to create',
+    add: 'Add a new function',
+    addName: 'Function name',
+    addKind: 'Kind',
+    addKinds: {procedure: 'Standard (My Blocks)', named: 'TurboWarp-Plus named function'} as Record<FunctionKind, string>,
+    addSubmit: 'Add',
+    cancel: 'Cancel',
     createErrors: {
-        duplicate: 'A block with this definition already exists.',
+        duplicate: 'A function with this name already exists.',
+        invalid: 'This name cannot be used.',
         unavailable: 'The TurboWarp-Named-Functions extension could not be loaded.',
         failed: 'The function could not be created.'
     } as Record<FunctionCreateError, string>
@@ -462,10 +502,15 @@ const japanese: typeof english = {
     zoomIn: '拡大',
     zoomReset: '元の大きさに戻す',
     close: '閉じる',
-    create: {procedure: '新しい関数(標準)を作成', named: '新しい関数(TurboWarp-Plus)を作成'},
-    createKind: '作成する関数の種類を切り替える',
+    add: '新しい関数を追加',
+    addName: '関数名',
+    addKind: '種類',
+    addKinds: {procedure: '標準（ブロック定義）', named: 'TurboWarp-Plus の名前付き関数'},
+    addSubmit: '追加',
+    cancel: 'キャンセル',
     createErrors: {
-        duplicate: '同じ定義のブロックがすでにあります。',
+        duplicate: '同じ名前の関数がすでにあります。',
+        invalid: 'この名前は使えません。',
         unavailable: '拡張機能「TurboWarp-Named-Functions」を読み込めませんでした。',
         failed: '関数を作成できませんでした。'
     }
@@ -774,11 +819,14 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
+function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, onOpen}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
     settings: FunctionPaneSettings;
+    selectedId?: string;
+    /** Drawn in the bottom left corner, over the graph. */
+    corner?: React.ReactNode;
     onOpen(fn: SpriteFunction): void;
 }) {
     // Functions in the same column or row follow their names.
@@ -786,8 +834,9 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
         [functions, settings.direction]);
     const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
     const marker = `${idPrefix}-arrow`;
-    const reading = [...layout.nodes].sort((a, b) => a.layer - b.layer ||
-        (settings.direction === 'LR' ? a.y - b.y : a.x - b.x));
+    // Isolated functions keep their rows; the sort is stable.
+    const reading = [...layout.nodes].sort((a, b) => a.layer - b.layer || (a.isolated ? 0 :
+        settings.direction === 'LR' ? a.y - b.y : a.x - b.x));
 
     const frame = React.useRef<HTMLElement>(null);
     const minimap = React.useRef<HTMLDivElement>(null);
@@ -831,7 +880,7 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
     React.useEffect(() => {
         const element = frame.current;
         const wheel = (event: WheelEvent) => {
-            if ((event.target as Element).closest?.('.tw-sprite-functions__zoom')) return;
+            if ((event.target as Element).closest?.('.tw-sprite-functions__zoom, .tw-sprite-functions__corner')) return;
             event.preventDefault();
             const delta = wheelPixels(event, element.clientHeight);
             if (event.ctrlKey || event.metaKey) {
@@ -849,7 +898,8 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
     }, [move]);
 
     function startPan(event: React.PointerEvent) {
-        if (event.button !== 0 || (event.target as Element).closest('.tw-sprite-functions__zoom, .tw-sprite-functions__minimap')) return;
+        if (event.button !== 0 || (event.target as Element)
+            .closest('.tw-sprite-functions__zoom, .tw-sprite-functions__minimap, .tw-sprite-functions__corner')) return;
         const window = frame.current.ownerDocument.defaultView;
         const start = {x: event.clientX, y: event.clientY, view: current.current.view};
         let dragging = false;
@@ -941,6 +991,12 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
         });
     }
 
+    // Bring the function shown beside the pane, such as one just added, into view.
+    const selectedNode = selectedId ? byId.get(selectedId) : undefined;
+    React.useEffect(() => {
+        if (selectedNode && size.width) reveal(selectedNode);
+    }, [selectedNode?.fn.id, selectedNode?.x, selectedNode?.y, size.width > 0]);
+
     const highlightId = pointed ?? focused;
     const highlight = highlightId && byId.has(highlightId) ? callGraphHighlight(layout.edges, highlightId) : null;
     // Draw the highlighted links over the others.
@@ -990,9 +1046,10 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
                 {reading.map(node => {
                     const {fn, x, y} = node;
                     const label = functionLabel(fn);
-                    return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: callGraphNodeSize.height}}>
+                    return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: callGraphNodeSize.height}}
+                        data-isolated={node.isolated || undefined}>
                         <button type="button" className="tw-sprite-functions__node" data-function-key={fn.id}
-                            data-kind={fn.kind}
+                            data-kind={fn.kind} aria-current={selectedId === fn.id || undefined}
                             data-unused={fn.calls === 0 || undefined} data-entry={fn.scriptCalls > 0 || undefined}
                             data-highlight={highlight?.nodes.get(fn.id)}
                             title={[labels.openCode.replace('%1', () => label), fn.kind === 'named' && labels.named,
@@ -1031,48 +1088,116 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
             <button type="button" data-zoom="reset" aria-label={labels.zoomReset} title={labels.zoomReset}
                 onClick={() => zoomButton(null)}><ZoomIcon action="reset" /></button>
         </div>
+        {corner && <div className="tw-sprite-functions__corner">{corner}</div>}
     </figure>;
 }
 
-function CreateButton({labels, kind, editable, onKind, onCreate}: {
+function PlusIcon() {
+    return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M8 3v10M3 8h10" /></svg>;
+}
+
+function AddButton({labels, editable, onClick}: {labels: Labels; editable: boolean; onClick(): void}) {
+    return <button type="button" className="tw-sprite-functions__add" disabled={!editable} onClick={onClick}>
+        <PlusIcon />
+        <span>{labels.add}</span>
+    </button>;
+}
+
+/** Ask for the name and the kind of a new function, and make it. */
+function AddDialog({labels, kind: initialKind, onKind, onCreate, onClose}: {
     labels: Labels;
     kind: FunctionKind;
-    editable: boolean;
     onKind(kind: FunctionKind): void;
-    onCreate(kind: FunctionKind): Promise<string | void> | string | void;
+    onCreate(kind: FunctionKind, name: string): Promise<string | void> | string | void;
+    onClose(): void;
 }) {
+    const dialog = React.useRef<HTMLDialogElement>(null);
+    const input = React.useRef<HTMLInputElement>(null);
+    const [name, setName] = React.useState('');
+    const [kind, setKind] = React.useState(initialKind);
     const [busy, setBusy] = React.useState(false);
     const [error, setError] = React.useState<FunctionCreateError>();
+    const [idPrefix] = React.useState(() => `tw-sprite-functions-add-${++paneCount}`);
     const mounted = React.useRef(true);
-    React.useEffect(() => () => {
-        mounted.current = false;
+    const close = React.useRef(onClose);
+    close.current = onClose;
+    React.useLayoutEffect(() => {
+        mounted.current = true;
+        const element = dialog.current;
+        if (typeof element.showModal === 'function') element.showModal();
+        else element.setAttribute('open', '');
+        input.current?.focus();
+        const cancel = (event: Event) => {
+            event.preventDefault();
+            close.current();
+        };
+        element.addEventListener('cancel', cancel);
+        return () => {
+            mounted.current = false;
+            element.removeEventListener('cancel', cancel);
+            if (element.open && typeof element.close === 'function') element.close();
+        };
     }, []);
-    async function create() {
+    const trimmed = name.trim();
+
+    async function submit(event: React.FormEvent) {
+        event.preventDefault();
+        if (!trimmed || busy) return;
         setBusy(true);
         setError(undefined);
         try {
-            await onCreate(kind);
+            await onCreate(kind, trimmed);
+            if (mounted.current) close.current();
         } catch (reason) {
-            const code = (reason as {code?: unknown})?.code;
-            if (mounted.current) setError(code === 'duplicate' || code === 'unavailable' ? code : 'failed');
+            const code = (reason as {code?: unknown})?.code as FunctionCreateError;
+            if (mounted.current) setError(createErrors.includes(code) ? code : 'failed');
         } finally {
             if (mounted.current) setBusy(false);
         }
     }
-    return <div className="tw-sprite-functions__create">
-        <div className="tw-sprite-functions__split" data-kind={kind}>
-            <button type="button" className="tw-sprite-functions__create-main" disabled={!editable || busy}
-                aria-busy={busy || undefined} onClick={create}>{labels.create[kind]}</button>
-            <button type="button" className="tw-sprite-functions__create-kind" disabled={!editable || busy}
-                aria-label={labels.createKind} title={labels.createKind} onClick={() => {
-                    setError(undefined);
-                    onKind(kind === 'procedure' ? 'named' : 'procedure');
-                }}>
-                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4" /></svg>
-            </button>
-        </div>
-        {error && <p className="tw-sprite-functions__create-error" role="alert">{labels.createErrors[error]}</p>}
-    </div>;
+
+    return <dialog ref={dialog} className="tw-sprite-functions__uses tw-sprite-functions__add-dialog"
+        aria-labelledby={`${idPrefix}-title`} onClick={event => {
+            if (event.target === event.currentTarget && !busy) onClose();
+        }}>
+        <form onSubmit={submit}>
+            <header className="tw-sprite-functions__uses-header">
+                <h2 id={`${idPrefix}-title`}>{labels.add}</h2>
+                <button type="button" className="tw-sprite-functions__close" aria-label={labels.close} title={labels.close}
+                    onClick={onClose}>
+                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4 4 8 8m0-8-8 8" /></svg>
+                </button>
+            </header>
+            <div className="tw-sprite-functions__add-body">
+                <label className="tw-sprite-functions__add-name">
+                    <span>{labels.addName}</span>
+                    <input ref={input} type="text" value={name} disabled={busy} autoComplete="off" spellCheck={false}
+                        aria-invalid={error === 'duplicate' || error === 'invalid' || undefined}
+                        onChange={event => {
+                            setName(event.currentTarget.value);
+                            setError(undefined);
+                        }} />
+                </label>
+                <fieldset className="tw-sprite-functions__add-kind" disabled={busy}>
+                    <legend>{labels.addKind}</legend>
+                    {(Object.keys(labels.addKinds) as FunctionKind[]).map(id => <label key={id}>
+                        <input type="radio" name={`${idPrefix}-kind`} value={id} checked={kind === id} onChange={() => {
+                            setKind(id);
+                            setError(undefined);
+                            onKind(id);
+                        }} />
+                        <span>{labels.addKinds[id]}</span>
+                    </label>)}
+                </fieldset>
+                {error && <p className="tw-sprite-functions__create-error" role="alert">{labels.createErrors[error]}</p>}
+            </div>
+            <footer className="tw-sprite-functions__add-actions">
+                <button type="button" onClick={onClose}>{labels.cancel}</button>
+                <button type="submit" className="tw-sprite-functions__add-submit" disabled={!trimmed || busy}
+                    aria-busy={busy || undefined}>{labels.addSubmit}</button>
+            </footer>
+        </form>
+    </dialog>;
 }
 
 export function SpriteFunctionPane({locale, editable, data, defaultSettings: initial, onSettingsChange, mountEditor,
@@ -1082,6 +1207,9 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
     const [settings, setSettings] = React.useState<FunctionPaneSettings>(() => ({...defaultSettings, ...initial}));
     const [dialogId, setDialogId] = React.useState<string | null>(null);
     const [usesId, setUsesId] = React.useState<string | null>(null);
+    const [adding, setAdding] = React.useState(false);
+    // A function just added, picked out in the graph until the host shows what is selected.
+    const [added, setAdded] = React.useState<string>();
     const usesFunction = usesId ? data.functions.find(fn => fn.id === usesId) : undefined;
     const list = React.useRef<HTMLElement>(null);
     // Keep the item shown beside the pane in view, as when a tab there was picked.
@@ -1104,6 +1232,8 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         setDialogId(null);
         openFunction.current(dialogFunction);
     }, [dialogFunction]);
+
+    const addButton = onCreate ? <AddButton labels={labels} editable={editable} onClick={() => setAdding(true)} /> : null;
 
     function change(patch: Partial<FunctionPaneSettings>) {
         const next = {...settings, ...patch};
@@ -1167,7 +1297,11 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
             {!editable && ordered.length > 0 && <p className="tw-sprite-functions__hint">{labels.readOnly}</p>}
         </div>
         {mode === 'graph' ? (ordered.length ? <CallGraph labels={labels} idPrefix={idPrefix} functions={data.functions}
-            settings={settings} onOpen={fn => setDialogId(fn.id)} /> : <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p>) :
+            settings={settings} selectedId={selectedId ?? added} corner={addButton}
+            onOpen={fn => setDialogId(fn.id)} /> : <>
+                <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p>
+                {addButton && <div className="tw-sprite-functions__create">{addButton}</div>}
+            </>) :
             !hats.length && !ordered.length ? <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p> :
             !hats.length && !grouped ? functionList(ordered) : <>
                 {hats.length > 0 && <>
@@ -1191,11 +1325,13 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
                     {functionList(named)}
                 </>}
             </>}
-        {onCreate && <CreateButton labels={labels} kind={settings.create} editable={editable}
-            onKind={create => change({create})} onCreate={async kind => {
-                const id = await onCreate(kind);
+        {mode === 'list' && addButton && <div className="tw-sprite-functions__create">{addButton}</div>}
+        {adding && onCreate && <AddDialog labels={labels} kind={settings.create} onKind={create => change({create})}
+            onClose={() => setAdding(false)} onCreate={async (kind, name) => {
+                const id = await onCreate(kind, name);
                 if (!id) return;
                 // The new function joins the data when the host refreshes; open it then.
+                setAdded(id);
                 setDialogId(id);
             }} />}
         {usesFunction && <UsesDialog labels={labels} fn={usesFunction} describe={describe} onPick={openUse}
