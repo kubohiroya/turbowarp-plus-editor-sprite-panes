@@ -378,9 +378,9 @@
 
 .tw-sprite-variables__add {
     flex: none;
-    align-self: start;
-    max-inline-size: calc(100% - 1.5rem);
-    margin: .5rem .75rem .75rem;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    margin: .6rem 0 0;
     display: flex;
     align-items: center;
     gap: .5rem;

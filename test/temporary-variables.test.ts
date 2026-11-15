@@ -406,3 +406,17 @@ test('pressing a function name opens it in the code, only while the pane is edit
     assert.equal(readOnly.querySelector('.tw-sprite-variables__temporary-open'), null);
     assert.deepEqual(text(readOnly.querySelectorAll('[data-column] code')), ['jump (height)', 'show score']);
 });
+
+test('the add button closes the global variables, before the temporary variables', t => {
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'ja', editable: true, global: {canAddCloudVariable: true},
+        variables: [{id: 'v', name: 'score', value: 0}], onWrite() {}, onEdit() {},
+        temporaryVariables: {paused: false, thread: [], runtime: []}
+    }));
+    const scroll = container.querySelector('.tw-sprite-variables__scroll');
+    const order = [...scroll.children].map(node => node.matches('table') ? 'table' :
+        node.matches('.tw-sprite-variables__add') ? node.textContent :
+        node.getAttribute('data-temporary-scope') ?? node.className);
+    assert.deepEqual(order, ['tw-sprite-variables__intro', 'table', '新しいグローバル変数を追加', 'thread', 'runtime']);
+    assert.equal(container.querySelectorAll('.tw-sprite-variables__add').length, 1);
+});

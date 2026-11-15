@@ -913,6 +913,12 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                     </tr>;
                 })}</tbody>
             </table> : <p>{labels.emptyVariables}</p>}
+            {/* The add button closes the sprite or global variables, before the temporary variables. */}
+            {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
+                onClick={() => start({type: 'create', name: ''})}>
+                <span className="tw-sprite-variables__add-icon"><PlusIcon /></span>
+                <span className="tw-sprite-variables__add-label">{global ? labels.addGlobal : labels.addSprite}</span>
+            </button>}
             {temporaryVariables && <>
                 <TemporaryVariableSection scope="thread" variables={temporaryVariables.thread}
                     paused={temporaryVariables.paused} labels={labels} collator={collator}
@@ -922,11 +928,6 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                     labels={labels} collator={collator} onOpenFunction={editable ? onOpenFunction : undefined} />}
             </>}
         </div>
-        {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
-            onClick={() => start({type: 'create', name: ''})}>
-            <span className="tw-sprite-variables__add-icon"><PlusIcon /></span>
-            <span className="tw-sprite-variables__add-label">{global ? labels.addGlobal : labels.addSprite}</span>
-        </button>}
         {editable && action && <VariableDialog key={action.type === 'create' ? 'create' : action.type + action.id}
             action={action} labels={labels} error={error} clone={clone} global={global} onSubmit={submit}
             onClose={() => start(null)} onClearError={() => setError(undefined)}
