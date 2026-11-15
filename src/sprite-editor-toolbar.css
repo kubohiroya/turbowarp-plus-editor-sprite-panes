@@ -294,3 +294,8 @@
     outline: 2px solid var(--looks-secondary, #855cd6);
     outline-offset: 1px;
 }
+
+.tw-sprite-clone-pages__actors {
+    max-inline-size: 14rem;
+    text-overflow: ellipsis;
+}

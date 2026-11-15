@@ -3,7 +3,7 @@ import {PenIcon} from './pen-icon.tsx';
 import {observeTileNameTitles} from './native-tile-title.ts';
 import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from './sprite-properties.tsx';
 import {PaneDialog, PaneDialogActions, useDialogIds} from './pane-dialog.tsx';
-import type {TemporaryVariable, TemporaryVariableFunction, TemporaryVariableOwner, TemporaryVariables} from './temporary-variables.ts';
+import type {ExtensionVariableGroup, TemporaryVariable, TemporaryVariableFunction, TemporaryVariableOwner, TemporaryVariables} from './temporary-variables.ts';
 import {BlockImage, hatName, type GetBlockImage} from './block-image.tsx';
 import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError, type SpriteVariableValue, type SpriteListItem} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
 
@@ -227,7 +227,8 @@ const english = {
     runtimeDefinedInTitle: 'The functions (custom blocks) that set this runtime variable',
     referredInTitle: 'The functions (custom blocks) that read this runtime variable or ask whether it exists',
     rewrittenInTitle: 'The functions (custom blocks) that change or delete this runtime variable',
-    functionCount: '%1 functions', openFunction: 'Open “%1” in the code', openScript: 'Open this script in the code'
+    functionCount: '%1 functions', openFunction: 'Open “%1” in the code', openScript: 'Open this script in the code',
+    extensionEmpty: 'No values at this pause.'
 };
 const japanese: typeof english = {
     costumes: 'コスチューム', sounds: '音', name: '変数名', value: '値',
@@ -272,7 +273,8 @@ const japanese: typeof english = {
     runtimeDefinedInTitle: 'このランタイム変数に値を入れる（〜にする）ブロックがある関数（ブロック定義）',
     referredInTitle: 'このランタイム変数を読む、または有無を調べるブロックがある関数（ブロック定義）',
     rewrittenInTitle: 'このランタイム変数を変える（〜ずつ変える）、または削除するブロックがある関数（ブロック定義）',
-    functionCount: '関数 %1 個', openFunction: '「%1」をコードで開く', openScript: 'このスクリプトをコードで開く'
+    functionCount: '関数 %1 個', openFunction: '「%1」をコードで開く', openScript: 'このスクリプトをコードで開く',
+    extensionEmpty: 'この一時停止の時点で値はありません。'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -761,6 +763,36 @@ function TemporaryVariableSection({scope, variables, paused, labels, locale, col
     </section>;
 }
 
+/** Variables an extension provides, such as the story variables of TurboWarp Kamishibai, by name and value. */
+function ExtensionVariableSection({group, paused, labels, collator}: {
+    group: ExtensionVariableGroup;
+    paused: boolean;
+    labels: VariableLabels;
+    collator: Intl.Collator;
+}) {
+    const [direction, setDirection] = React.useState<SortDirection | null>(null);
+    const values = (group.values ?? []).slice().sort((a, b) => direction ?
+        (direction === 'ascending' ? 1 : -1) * collator.compare(a.value, b.value) || collator.compare(a.name, b.name) :
+        collator.compare(a.name, b.name));
+    return <section className="tw-sprite-variables__temporary" aria-label={group.title} data-extension-variables={group.id}>
+        <div className="tw-sprite-variables__intro">
+            <h3>{group.title}</h3>
+            {group.description && <p>{group.description}</p>}
+            {!paused && <p className="tw-sprite-variables__temporary-hint">{labels.temporaryNotPaused}</p>}
+        </div>
+        {paused && (values.length ? <table className="tw-sprite-variables__table">
+            <thead><tr>
+                <th scope="col">{labels.name}</th>
+                <SortHeader label={labels.value} direction={direction ?? undefined} onSort={setDirection} />
+            </tr></thead>
+            <tbody>{values.map(entry => <tr key={entry.name} data-extension-variable={entry.name}>
+                <th scope="row">{entry.name}</th>
+                <td><output className="tw-sprite-variables__temporary-value">{entry.value}</output></td>
+            </tr>)}</tbody>
+        </table> : <p className="tw-sprite-variables__temporary-empty">{labels.extensionEmpty}</p>)}
+    </section>;
+}
+
 function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties,
     clone, notice, global, temporaryVariables, onOpenFunction, getBlockImage}: SpriteVariablePaneProps) {
     const labels = labelsFor(locale);
@@ -880,13 +912,17 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                 <span className="tw-sprite-variables__add-label">{global ? labels.addGlobal : labels.addSprite}</span>
             </button>}
             {temporaryVariables && <>
+                {/* With only extension variables, the project does not use the Temporary Variables extension. */}
+                {(temporaryVariables.runtime || !temporaryVariables.extensions) &&
                 <TemporaryVariableSection scope="thread" variables={temporaryVariables.thread}
                     paused={temporaryVariables.paused} labels={labels} locale={locale} collator={collator}
-                    onOpenFunction={editable ? onOpenFunction : undefined} getBlockImage={getBlockImage} />
-                {temporaryVariables.runtime && <TemporaryVariableSection scope="runtime"
+                    onOpenFunction={editable ? onOpenFunction : undefined} getBlockImage={getBlockImage} />}
+                {temporaryVariables.runtime &&<TemporaryVariableSection scope="runtime"
                     variables={temporaryVariables.runtime} paused={temporaryVariables.paused}
                     labels={labels} locale={locale} collator={collator} onOpenFunction={editable ? onOpenFunction : undefined}
                     getBlockImage={getBlockImage} />}
+                {temporaryVariables.extensions?.map(group => <ExtensionVariableSection key={group.id} group={group}
+                    paused={temporaryVariables.paused} labels={labels} collator={collator} />)}
             </>}
         </div>
         {editable && action && <VariableDialog key={action.type === 'create' ? 'create' : action.type + action.id}

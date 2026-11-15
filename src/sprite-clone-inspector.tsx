@@ -35,14 +35,18 @@ const labels = {
         clone: (n: number) => `クローン ${n}`, selected: (n: number) => `クローン ${n} を編集中`,
         previous: '前のクローン', next: '次のクローン', choose: 'クローン番号を選ぶ',
         temporary: 'プロパティと変数の値の変更はこの実行中だけ有効',
-        removed: 'クローンが消えたため、元のスプライトに戻りました。'
+        removed: 'クローンが消えたため、元のスプライトに戻りました。',
+        actors: 'アクターを切り替える', chooseActor: 'アクターを選ぶ', actorPlaceholder: 'アクターを選ぶ…',
+        actorSelected: (name: string) => `アクター「${name}」を編集中`
     },
     en: {
         navigation: 'Switch clones', original: 'Original sprite', count: (n: number) => `${n} clones`,
         clone: (n: number) => `Clone ${n}`, selected: (n: number) => `Editing clone ${n}`,
         previous: 'Previous clone', next: 'Next clone', choose: 'Choose clone number',
         temporary: 'Property and variable value edits apply only to this run',
-        removed: 'The clone disappeared. The original sprite is selected.'
+        removed: 'The clone disappeared. The original sprite is selected.',
+        actors: 'Switch actors', chooseActor: 'Choose actor', actorPlaceholder: 'Choose an actor…',
+        actorSelected: (name: string) => `Editing actor "${name}"`
     }
 };
 const textFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? labels.ja : labels.en;
@@ -70,6 +74,22 @@ export function editClonedSpriteVariable(vm: SpriteCloneVm, targetId: string, ed
     }
 }
 
+/**
+ * A sprite-local variable that names the actor a clone plays. TurboWarp Kamishibai runs several
+ * actors as clones of one sprite and tells them apart by this variable.
+ */
+export const cloneActorNameVariable = 'actorName';
+
+/** The actor name a clone holds, or null when it holds none. */
+export function cloneActorName(target: Pick<Target, 'variables'>): string | null {
+    for (const variable of Object.values(target.variables ?? {})) {
+        if (variable?.type !== '' || variable.name !== cloneActorNameVariable) continue;
+        const value = typeof variable.value === 'string' ? variable.value.trim() : '';
+        return value || null;
+    }
+    return null;
+}
+
 function readClone(target: Target) {
     const {id, x, y, size, direction, visible, rotationStyle} = target;
     const properties: Properties = {name: target.getName(), x, y, size, direction, visible, rotationStyle};
@@ -81,6 +101,7 @@ function createView(vm: SpriteCloneVm, targetId: string) {
     const {runtime} = vm;
     const listeners = new Set<Listener>();
     let ids: string[] = [];
+    let names: (string | null)[] = [];
     let selectedId: string | null = null;
     let removed = false;
     let clone: ReturnType<typeof readClone> | undefined;
@@ -105,6 +126,15 @@ function createView(vm: SpriteCloneVm, targetId: string) {
         cloneKey = key;
         return true;
     }
+    function readNames() {
+        const next = ids.map(id => {
+            const target = runtime.getTargetById(id);
+            return target ? cloneActorName(target) : null;
+        });
+        const changed = next.length !== names.length || next.some((name, index) => name !== names[index]);
+        if (changed) names = next;
+        return changed;
+    }
     function refreshTargets() {
         const original = runtime.getTargetById(targetId);
         const next = original?.isOriginal && !original.isStage ? original.sprite.clones
@@ -115,8 +145,9 @@ function createView(vm: SpriteCloneVm, targetId: string) {
             selectedId = null;
             removed = true;
         }
+        const changedNames = readNames();
         const changedSelection = readSelection();
-        if (changed || changedSelection) notify();
+        if (changed || changedNames || changedSelection) notify();
     }
     const queueRefresh = () => {
         // The VM notifies listeners during creation and disposal, before it updates its target list.
@@ -128,16 +159,18 @@ function createView(vm: SpriteCloneVm, targetId: string) {
         });
     };
     const refreshValues = () => {
-        if (!selectedId) return;
+        if (!selectedId && !ids.length) return;
         const now = Date.now();
         if (now - lastRead < 100) return;
         lastRead = now;
-        if (readSelection()) notify();
+        // A clone usually sets its actor name just after it is created, so names are read as it runs.
+        const changedNames = readNames();
+        if (readSelection() || changedNames) notify();
     };
     const events = ['targetWasCreated', 'targetWasRemoved', 'PROJECT_STOP_ALL', 'PROJECT_CHANGED'];
     refreshTargets();
     return {
-        snapshot: () => ({ids, selectedId, removed, clone}),
+        snapshot: () => ({ids, names, selectedId, removed, clone}),
         subscribe(listener: Listener) {
             if (!listeners.size) {
                 for (const event of events) runtime.on(event, queueRefresh);
@@ -208,13 +241,34 @@ function useCloneView({viewId, targetId}: ViewProps) {
     return view;
 }
 
+/** Option labels: the actor name, told apart by clone number when two clones share it. */
+export function actorLabels(names: readonly (string | null)[], text: Pick<typeof labels.ja, 'clone'>) {
+    const counts = new Map<string, number>();
+    for (const name of names) if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+    return names.map((name, index) => !name ? text.clone(index + 1) :
+        counts.get(name) > 1 ? `${name} (${text.clone(index + 1)})` : name);
+}
+
 export function SpriteClonePagination(props: ViewProps) {
     const view = useCloneView(props);
     const state = view?.snapshot();
     if (!state?.ids.length) return null;
-    const {ids, selectedId} = state;
+    const {ids, names, selectedId} = state;
     const text = textFor(props.locale);
     const index = selectedId ? ids.indexOf(selectedId) : -1;
+
+    if (names.some(Boolean)) {
+        const labels = actorLabels(names, text);
+        return <nav className="tw-sprite-clone-pages" aria-label={text.actors}>
+            <button type="button" className="tw-sprite-clone-pages__original"
+                aria-current={selectedId === null ? 'true' : undefined} onClick={() => view.select(null)}>{text.original}</button>
+            <select className="tw-sprite-clone-pages__actors" aria-label={text.chooseActor} value={selectedId ?? ''}
+                onChange={event => view.select(event.currentTarget.value || null)}>
+                {index < 0 && <option value="" disabled>{text.actorPlaceholder}</option>}
+                {ids.map((id, offset) => <option key={id} value={id}>{labels[offset]}</option>)}
+            </select>
+        </nav>;
+    }
 
     return <nav className="tw-sprite-clone-pages" aria-label={text.navigation}>
         <button type="button" className="tw-sprite-clone-pages__original"
@@ -269,6 +323,8 @@ export function SpriteCloneVariables(props: ViewProps & {
         getBlockImage={getBlockImage}
         onWriteProperties={view.writeProperties} onWrite={(id, value) => view.writeVariable(clone.id, id, value)}
         notice={<p className="tw-sprite-clone-notice" role="status">
-            <strong>{text.selected(state.ids.indexOf(clone.id) + 1)}</strong><span>{text.temporary}</span>
+            <strong>{state.names[state.ids.indexOf(clone.id)] ?
+                text.actorSelected(state.names[state.ids.indexOf(clone.id)]) :
+                text.selected(state.ids.indexOf(clone.id) + 1)}</strong><span>{text.temporary}</span>
         </p>} />;
 }

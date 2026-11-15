@@ -92,11 +92,41 @@ export interface TemporaryVariable {
     values?: readonly TemporaryVariableValue[];
 }
 
+/**
+ * What an extension lists for the variable pane: its own variables, which are not Scratch variables.
+ * `variables` maps each name to its value; null or absent while the extension has none to show.
+ */
+export interface InspectorVariableList {
+    title: string;
+    description?: string;
+    variables?: Readonly<Record<string, unknown>> | null;
+}
+
+/**
+ * An extension instance (`runtime.ext_<id>`) that shows its own variables in the stage's variable
+ * pane. The pane asks while the debugger has paused the project, and once to learn the title.
+ */
+export interface InspectorVariableProvider {
+    getInspectorVariables(): InspectorVariableList | null | undefined;
+}
+
+/** One extension's variables, listed on the stage after the runtime variables. */
+export interface ExtensionVariableGroup {
+    /** The extension id, without the `ext_` prefix. */
+    id: string;
+    title: string;
+    description?: string;
+    /** Values at the pause. Absent while the project is not paused. */
+    values?: readonly {name: string; value: string}[];
+}
+
 export interface TemporaryVariables {
     paused: boolean;
     thread: readonly TemporaryVariable[];
     /** Runtime variables belong to the whole project, so only the stage lists them. */
     runtime?: readonly TemporaryVariable[];
+    /** Variables that extensions provide, which belong to the whole project like runtime variables. */
+    extensions?: readonly ExtensionVariableGroup[];
 }
 
 type BlockInput = {block?: string | null; shadow?: string | null};
@@ -130,6 +160,36 @@ export interface TemporaryVariablesRuntime {
     ext_lmsTempVars2?: {runtimeVariables?: Record<string, unknown> | null};
     on(event: string, listener: Listener): void;
     removeListener(event: string, listener: Listener): void;
+}
+
+const providerPrefix = 'ext_';
+
+function readProviders(runtime: TemporaryVariablesRuntime) {
+    const lists: {id: string; list: InspectorVariableList}[] = [];
+    for (const [key, extension] of Object.entries(runtime)) {
+        if (!key.startsWith(providerPrefix) || key === providerPrefix + temporaryVariablesExtensionId) continue;
+        const provider = extension as Partial<InspectorVariableProvider> | null;
+        if (typeof provider?.getInspectorVariables !== 'function') continue;
+        let list: InspectorVariableList | null | undefined;
+        try {
+            list = provider.getInspectorVariables();
+        } catch {
+            // An extension that fails to answer is left out rather than breaking the pane.
+            continue;
+        }
+        if (!list || typeof list.title !== 'string' || !list.title) continue;
+        lists.push({id: key.slice(providerPrefix.length), list});
+    }
+    return lists;
+}
+
+/** The variables that extensions provide, with their values while the project is paused. */
+export function readExtensionVariables(runtime: TemporaryVariablesRuntime, paused = isRuntimePaused(runtime)): ExtensionVariableGroup[] {
+    return readProviders(runtime).map(({id, list}) => ({
+        id, title: list.title,
+        ...typeof list.description === 'string' && list.description && {description: list.description},
+        ...paused && {values: Object.entries(list.variables ?? {}).map(([name, value]) => ({name, value: displayStructured(value)}))}
+    }));
 }
 
 /** The debugger pauses the project clock together with every thread. */
@@ -174,6 +234,15 @@ function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, use
 }
 
 const display = (value: unknown) => typeof value === 'string' ? value : String(value);
+/** Extension variables may hold lists and records, which read better as JSON than as [object Object]. */
+function displayStructured(value: unknown) {
+    if (typeof value !== 'object' || value === null) return display(value);
+    try {
+        return JSON.stringify(value) ?? display(value);
+    } catch {
+        return display(value);
+    }
+}
 
 function merge(uses: Uses, values: Map<string, TemporaryVariableValue[]> | undefined,
     scope: TemporaryVariableScope): TemporaryVariable[] {
@@ -211,8 +280,9 @@ export function readTemporaryVariables(runtime: TemporaryVariablesRuntime, targe
             used = scanBlocks(each, runtimeOpcodes, runtimeUses, true) || used;
         }
     }
-    if (!used && !extension) return undefined;
     const paused = isRuntimePaused(runtime);
+    const extensions = target.isStage ? readExtensionVariables(runtime, paused) : [];
+    if (!used && !extension && !extensions.length) return undefined;
     let threadValues: Map<string, TemporaryVariableValue[]> | undefined;
     let runtimeValues: Map<string, TemporaryVariableValue[]> | undefined;
     if (paused) {
@@ -238,13 +308,15 @@ export function readTemporaryVariables(runtime: TemporaryVariablesRuntime, targe
     return {
         paused,
         thread: merge(threadUses, threadValues, 'thread'),
-        ...target.isStage && {runtime: merge(runtimeUses, runtimeValues, 'runtime')}
+        ...target.isStage && (used || extension) && {runtime: merge(runtimeUses, runtimeValues, 'runtime')},
+        ...extensions.length && {extensions}
     };
 }
 
 function pausedSnapshot(runtime: TemporaryVariablesRuntime) {
     const threads = runtime.threads.map(thread => thread.variables ? Object.entries(thread.variables) : null);
-    return JSON.stringify([threads, Object.entries(runtime.ext_lmsTempVars2?.runtimeVariables ?? {})]);
+    return JSON.stringify([threads, Object.entries(runtime.ext_lmsTempVars2?.runtimeVariables ?? {}),
+        readExtensionVariables(runtime, true)]);
 }
 
 /**
