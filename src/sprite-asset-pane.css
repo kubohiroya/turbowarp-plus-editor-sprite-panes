@@ -1460,3 +1460,22 @@ button.tw-sprite-messages__node:focus-visible {
     font-weight: bold;
     color: var(--tw-temporary-function, #ff6680);
 }
+
+/* Named functions take the colour of the named-functions extension's blocks. */
+.tw-sprite-functions__node[data-kind="named"] {
+    border-color: #7442c4;
+    background: #8a55d7;
+}
+
+.tw-sprite-functions__dialog[data-kind="named"] .tw-sprite-functions__dialog-header {
+    background: #8a55d7;
+}
+
+.tw-sprite-functions__badge[data-kind="named"] {
+    color: var(--ui-white, #fff);
+    background: #8a55d7;
+}
+
+.tw-sprite-functions__dialog-header .tw-sprite-functions__badge[data-kind="named"] {
+    color: #8a55d7;
+}

@@ -1,9 +1,14 @@
 import React from 'react';
 
-/** A custom block definition ("function") of one sprite or the stage. */
+/**
+ * A function of one sprite or the stage: a Scratch custom block (`procedure`) or a function of the
+ * named-functions extension (`named`), which TurboWarp Plus offers in its extension library.
+ */
 export interface SpriteFunction {
-    /** The id of the `procedures_definition` block. */
+    /** The id of the definition hat: `procedures_definition`, or the extension's `define function`. */
     id: string;
+    kind: 'procedure' | 'named';
+    /** A custom block's proccode, or the name of a named function. */
     proccode: string;
     argumentNames: readonly string[];
     warp: boolean;
@@ -16,7 +21,18 @@ export interface SpriteFunction {
     scriptCalls: number;
     /** The functions this definition calls, by definition id, in the order first met. */
     callees: readonly string[];
+    /** Who may call a named function: scripts of this sprite only, or every sprite. */
+    scope?: 'sprite' | 'global';
+    /** The description a named function gives in its `define function` hat. */
+    description?: string;
 }
+
+/**
+ * The extensions whose `define function`, `call function`, `call [menu]` and `start function` blocks
+ * are read as named functions. An extension that carries those blocks through the named-functions
+ * Composition API under its own ID can be added here.
+ */
+export const namedFunctionExtensions: readonly string[] = ['kubohiroyanamedfunctions'];
 
 export interface FunctionPaneData {
     targetId: string;
@@ -61,14 +77,23 @@ interface RuntimeBlock {
     topLevel?: boolean;
     x?: number;
     y?: number;
-    inputs?: Record<string, {block?: string | null}>;
+    inputs?: Record<string, {block?: string | null; shadow?: string | null}>;
+    fields?: Record<string, {value?: unknown}>;
     mutation?: {proccode?: string; argumentnames?: string; warp?: string | boolean};
 }
 
 /** Read the custom block definitions of a VM target. Only the shape of its blocks container is used. */
-export function readTargetFunctions(target: {id: string; isStage?: boolean; blocks: {_blocks: Record<string, RuntimeBlock>}}):
-    FunctionPaneData {
+export function readTargetFunctions(target: {id: string; isStage?: boolean; blocks: {_blocks: Record<string, RuntimeBlock>}},
+    {extensions = namedFunctionExtensions}: {extensions?: readonly string[]} = {}): FunctionPaneData {
     const blocks = target.blocks._blocks;
+    // A name counts only as literal text: a reporter dropped on the input decides it while the project runs.
+    function literal(block: RuntimeBlock, name: string) {
+        const input = block.inputs?.[name];
+        if (!input?.block || (input.shadow && input.block !== input.shadow)) return undefined;
+        const value = blocks[input.block]?.fields?.TEXT?.value;
+        return value === undefined || value === null ? undefined : String(value);
+    }
+    const named = (block: RuntimeBlock, opcode: string) => extensions.some(id => block.opcode === `${id}_${opcode}`);
     const tops = new Map<string, string>();
     function topOf(id: string) {
         const path: string[] = [];
@@ -98,7 +123,7 @@ export function readTargetFunctions(target: {id: string; isStage?: boolean; bloc
             // Keep the definition listed even when its argument names cannot be read.
         }
         const fn = {
-            id: block.id, proccode: mutation.proccode, argumentNames,
+            id: block.id, kind: 'procedure' as const, proccode: mutation.proccode, argumentNames,
             warp: mutation.warp === true || mutation.warp === 'true',
             x: Number(block.x) || 0, y: Number(block.y) || 0,
             calls: 0, scriptCalls: 0, callees: [] as string[]
@@ -106,9 +131,32 @@ export function readTargetFunctions(target: {id: string; isStage?: boolean; bloc
         functions.push(fn);
         if (!byCode.has(fn.proccode)) byCode.set(fn.proccode, fn);
     }
-    const definitions = new Map(functions.map(fn => [fn.id, fn]));
+    const byName = new Map<string, Reading>();
     for (const block of Object.values(blocks)) {
-        const callee = block.opcode === 'procedures_call' ? byCode.get(block.mutation?.proccode) : undefined;
+        if (block.topLevel === false || !named(block, 'defineFunction')) continue;
+        // named-functions cannot call a hat whose NAME is not literal text either.
+        const name = literal(block, 'NAME')?.trim();
+        if (!name) continue;
+        const scope = block.fields?.SCOPE?.value;
+        const fn = {
+            id: block.id, kind: 'named' as const, proccode: name, argumentNames: [], warp: false,
+            x: Number(block.x) || 0, y: Number(block.y) || 0, calls: 0, scriptCalls: 0, callees: [] as string[],
+            // Hats saved before SCOPE existed are for all sprites.
+            scope: scope === 'sprite' ? 'sprite' as const : 'global' as const,
+            description: literal(block, 'DESCRIPTION')?.trim() || undefined
+        };
+        functions.push(fn);
+        if (!byName.has(name)) byName.set(name, fn);
+    }
+    const definitions = new Map(functions.map(fn => [fn.id, fn]));
+    function calleeOf(block: RuntimeBlock) {
+        if (block.opcode === 'procedures_call') return byCode.get(block.mutation?.proccode);
+        if (named(block, 'callFunction') || named(block, 'startFunction')) return byName.get(literal(block, 'NAME')?.trim());
+        if (named(block, 'callFunctionFromMenu')) return byName.get(String(block.fields?.FUNCTION?.value ?? '').trim());
+        return undefined;
+    }
+    for (const block of Object.values(blocks)) {
+        const callee = calleeOf(block);
         if (!callee) continue;
         callee.calls++;
         const caller = definitions.get(topOf(block.id));
@@ -275,6 +323,8 @@ const english = {
     emptyStage: 'The stage has no functions. Make one with “Make a Block” in My Blocks.',
     calls: (count: number) => count === 0 ? 'Not used' : count === 1 ? 'Used once' : `Used ${count} times`,
     fromScripts: 'Called from other scripts',
+    named: 'Named function',
+    global: 'All sprites',
     warp: 'Runs without screen refresh',
     editor: 'Code of %1',
     readOnly: 'Click this view to edit.',
@@ -295,6 +345,8 @@ const japanese: typeof english = {
     emptyStage: 'ステージには関数がありません。「ブロック定義」の「ブロックを作る」で作れます。',
     calls: (count: number) => count === 0 ? '未使用' : `${count}か所で使用`,
     fromScripts: '関数以外のスクリプトから呼ばれる',
+    named: '名前付き関数',
+    global: 'すべてのスプライト',
     warp: '画面を再描画せずに実行',
     editor: '%1 のコード',
     readOnly: 'このビューをクリックすると編集できます。',
@@ -337,6 +389,9 @@ function Choice<T extends string>({label, value, options, onChange}: {
 
 function Badges({labels, fn}: {labels: Labels; fn: SpriteFunction}) {
     return <>
+        {fn.kind === 'named' && <span className="tw-sprite-functions__badge" data-kind="named">{labels.named}</span>}
+        {fn.kind === 'named' && fn.scope === 'global' &&
+            <span className="tw-sprite-functions__badge" data-scope="global">{labels.global}</span>}
         {fn.warp && <span className="tw-sprite-functions__badge" title={labels.warp}>⚡
             <span className="tw-sprite-functions__visually-hidden">{labels.warp}</span></span>}
         <span className="tw-sprite-functions__badge" data-unused={fn.calls === 0 || undefined}>{labels.calls(fn.calls)}</span>
@@ -368,7 +423,7 @@ function FunctionDialog({labels, fn, children, onClose}: {
         };
     }, []);
     const title = functionLabel(fn);
-    return <dialog ref={dialog} className="tw-sprite-functions__dialog" aria-label={labels.editor.replace('%1', () => title)}
+    return <dialog ref={dialog} className="tw-sprite-functions__dialog" data-kind={fn.kind} aria-label={labels.editor.replace('%1', () => title)}
         onClick={event => {
             if (event.target === event.currentTarget) onClose();
         }}>
@@ -457,8 +512,10 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
                     const label = functionLabel(fn);
                     return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: callGraphNodeSize.height}}>
                         <button type="button" className="tw-sprite-functions__node" data-function-key={fn.id}
+                            data-kind={fn.kind}
                             data-unused={fn.calls === 0 || undefined} data-entry={fn.scriptCalls > 0 || undefined}
-                            title={labels.openCode.replace('%1', () => label)} onClick={() => onOpen(fn)}>
+                            title={[labels.openCode.replace('%1', () => label), fn.kind === 'named' && labels.named,
+                                fn.description].filter(Boolean).join('\n')} onClick={() => onOpen(fn)}>
                             <span className="tw-sprite-functions__name">{label}</span>
                             {fn.scriptCalls > 0 && <span className="tw-sprite-functions__entry" title={labels.fromScripts}>▶
                                 <span className="tw-sprite-functions__visually-hidden">{labels.fromScripts}</span></span>}
@@ -518,14 +575,14 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
                     const open = expanded.has(fn.id);
                     const label = functionLabel(fn);
                     const panelId = `${idPrefix}-${fn.id}`;
-                    return <li key={fn.id} className="tw-sprite-functions__item" data-function-id={fn.id}>
+                    return <li key={fn.id} className="tw-sprite-functions__item" data-function-id={fn.id} data-kind={fn.kind}>
                         <h3 className="tw-sprite-functions__heading">
                             <button type="button" className="tw-sprite-functions__toggle" aria-expanded={open}
                                 aria-controls={open ? panelId : undefined} data-function-key={fn.id}
                                 onClick={() => toggle(fn.id)}>
                                 <svg className="tw-sprite-functions__chevron" viewBox="0 0 16 16" aria-hidden="true"
                                     focusable="false"><path d="m6 4 4 4-4 4" /></svg>
-                                <span className="tw-sprite-functions__name">{label}</span>
+                                <span className="tw-sprite-functions__name" title={fn.description}>{label}</span>
                                 <Badges labels={labels} fn={fn} />
                             </button>
                         </h3>

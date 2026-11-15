@@ -14,7 +14,7 @@ Object.assign(globalThis, {
 const {createRoot} = await import('react-dom/client');
 
 const fn = (id: string, proccode: string, x: number, y: number, patch: object = {}) =>
-    ({id, proccode, argumentNames: [], warp: false, x, y, calls: 1, scriptCalls: 1, callees: [], ...patch});
+    ({id, kind: 'procedure', proccode, argumentNames: [], warp: false, x, y, calls: 1, scriptCalls: 1, callees: [], ...patch});
 
 function render(t: TestContext, props: object) {
     const container = window.document.createElement('div');
@@ -48,7 +48,7 @@ test('definitions are read with their arguments, warp and how often this sprite 
     }}});
 
     assert.deepEqual(data, {targetId: 'cat', isStage: false, functions: [{
-        id: 'def', proccode: 'jump %s times %b', argumentNames: ['height', 'fast'], warp: true, x: 40, y: 300, calls: 2,
+        id: 'def', kind: 'procedure', proccode: 'jump %s times %b', argumentNames: ['height', 'fast'], warp: true, x: 40, y: 300, calls: 2,
         scriptCalls: 1, callees: ['def']
     }]}, 'a call inside the definition is recursion; the green flag call comes from another script');
     assert.equal(functionLabel(data.functions[0]), 'jump (height) times <fast>');
@@ -201,4 +201,69 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
     act(() => container.querySelector<HTMLButtonElement>('[data-choice="list"]').click());
     assert.equal(container.querySelector('figure'), null);
     assert.equal(container.querySelectorAll('.tw-sprite-functions__toggle').length, 2);
+});
+
+// The NAME of a named-functions block is a text input; a reporter dropped on it leaves the shadow below.
+const text = (id: string, value: string, parent: string) =>
+    ({[id]: {id, opcode: 'text', shadow: true, parent, fields: {TEXT: {name: 'TEXT', value}}}});
+const input = (id: string, block = id) => ({block, shadow: id});
+
+test('named functions are read with Scratch functions, and calls between the two kinds become edges', () => {
+    const data = readTargetFunctions({id: 'cat', blocks: {_blocks: {
+        greet: {id: 'greet', opcode: 'kubohiroyanamedfunctions_defineFunction', topLevel: true, x: 10, y: 20,
+            inputs: {NAME: input('greet-name'), DESCRIPTION: input('greet-text')},
+            fields: {SCOPE: {value: 'sprite'}, EXPORT: {value: 'tool'}}},
+        ...text('greet-name', ' greet ', 'greet'),
+        ...text('greet-text', 'Says hello.', 'greet'),
+        // Saved before SCOPE existed: for all sprites.
+        old: {id: 'old', opcode: 'kubohiroyanamedfunctions_defineFunction', topLevel: true, inputs: {NAME: input('old-name')}},
+        ...text('old-name', 'legacy', 'old'),
+        // A reporter decides this name at run time, so it cannot be listed.
+        dynamic: {id: 'dynamic', opcode: 'kubohiroyanamedfunctions_defineFunction', topLevel: true,
+            inputs: {NAME: input('dynamic-name', 'answer')}},
+        ...text('dynamic-name', 'hidden', 'dynamic'),
+        answer: {id: 'answer', opcode: 'sensing_answer', parent: 'dynamic'},
+        // greet calls the custom block, which starts greet back and calls legacy from the menu.
+        say: {id: 'say', opcode: 'procedures_call', parent: 'greet', mutation: {proccode: 'say hi'}},
+        def: {id: 'def', opcode: 'procedures_definition', topLevel: true, inputs: {custom_block: {block: 'proto'}}},
+        proto: {id: 'proto', opcode: 'procedures_prototype', parent: 'def',
+            mutation: {proccode: 'say hi', argumentnames: '[]', warp: 'false'}},
+        start: {id: 'start', opcode: 'kubohiroyanamedfunctions_startFunction', parent: 'def', inputs: {NAME: input('start-name')}},
+        ...text('start-name', 'greet', 'start'),
+        menu: {id: 'menu', opcode: 'kubohiroyanamedfunctions_callFunctionFromMenu', parent: 'start', fields: {FUNCTION: {value: 'legacy'}}},
+        // The green flag calls greet by name.
+        flag: {id: 'flag', opcode: 'event_whenflagclicked', topLevel: true},
+        call: {id: 'call', opcode: 'kubohiroyanamedfunctions_callFunction', parent: 'flag', inputs: {NAME: input('call-name')}},
+        ...text('call-name', 'greet', 'call'),
+        // Another extension's block of the same shape is not read unless asked for.
+        other: {id: 'other', opcode: 'someoneelse_defineFunction', topLevel: true, inputs: {NAME: input('other-name')}},
+        ...text('other-name', 'other', 'other')
+    }}});
+    const byId = Object.fromEntries(data.functions.map(item => [item.id, item]));
+    assert.deepEqual(Object.keys(byId).sort(), ['def', 'greet', 'old']);
+    assert.deepEqual(byId.greet, {id: 'greet', kind: 'named', proccode: 'greet', argumentNames: [], warp: false, x: 10, y: 20,
+        calls: 2, scriptCalls: 1, callees: ['def'], scope: 'sprite', description: 'Says hello.'});
+    assert.equal(byId.old.scope, 'global');
+    assert.equal(byId.old.calls, 1);
+    assert.deepEqual(byId.def.callees.sort(), ['greet', 'old']);
+    assert.equal(functionLabel(byId.greet), 'greet');
+
+    const composed = readTargetFunctions({id: 'cat', blocks: {_blocks: {
+        other: {id: 'other', opcode: 'someoneelse_defineFunction', topLevel: true, inputs: {NAME: input('other-name')}},
+        ...text('other-name', 'other', 'other')
+    }}}, {extensions: ['someoneelse']});
+    assert.deepEqual(composed.functions.map(item => item.proccode), ['other']);
+});
+
+test('a named function shows its kind, its scope and its description', t => {
+    const {container} = render(t, {data: {targetId: 'cat', isStage: false, functions: [
+        fn('greet', 'greet', 0, 0, {kind: 'named', scope: 'global', description: 'Says hello.'}),
+        fn('jump', 'jump', 0, 0)
+    ]}});
+    const [greet, jump] = container.querySelectorAll('.tw-sprite-functions__item');
+    assert.deepEqual([...greet.querySelectorAll('.tw-sprite-functions__badge')].map(node => node.textContent),
+        ['名前付き関数', 'すべてのスプライト', '1か所で使用']);
+    assert.equal(greet.querySelector('.tw-sprite-functions__name').getAttribute('title'), 'Says hello.');
+    assert.equal(greet.getAttribute('data-kind'), 'named');
+    assert.deepEqual([...jump.querySelectorAll('.tw-sprite-functions__badge')].map(node => node.textContent), ['1か所で使用']);
 });
