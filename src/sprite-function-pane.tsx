@@ -45,12 +45,22 @@ export const functionOrders: readonly FunctionOrder[] = ['name', 'z', 'n'];
 export type FunctionPaneMode = 'list' | 'graph';
 export type CallGraphDirection = 'LR' | 'TD';
 
+export type FunctionKind = SpriteFunction['kind'];
+
 export interface FunctionPaneSettings {
     mode: FunctionPaneMode;
     order: FunctionOrder;
     direction: CallGraphDirection;
+    /** Which kind of function the create button makes. */
+    create: FunctionKind;
 }
-const defaultSettings: FunctionPaneSettings = {mode: 'list', order: 'name', direction: 'LR'};
+const defaultSettings: FunctionPaneSettings = {mode: 'list', order: 'name', direction: 'LR', create: 'procedure'};
+
+/**
+ * Why creating a function failed: `duplicate` when the definition already exists, `unavailable`
+ * when the named-functions extension cannot be loaded.
+ */
+export type FunctionCreateError = 'duplicate' | 'unavailable' | 'failed';
 
 /**
  * Mount an editor of one definition script into `element`. The host owns the editor;
@@ -68,6 +78,11 @@ export interface SpriteFunctionPaneProps {
     defaultSettings?: Partial<FunctionPaneSettings>;
     onSettingsChange?(settings: FunctionPaneSettings): void;
     mountEditor?: MountFunctionEditor;
+    /**
+     * Make a new function of this kind in the target and resolve with the id of its hat, or with
+     * nothing when the person cancels. A rejection may carry a `code` of {@link FunctionCreateError}.
+     */
+    onCreate?(kind: FunctionKind): Promise<string | void> | string | void;
 }
 
 interface RuntimeBlock {
@@ -330,7 +345,14 @@ const english = {
     readOnly: 'Click this view to edit.',
     graph: 'Which function calls which',
     openCode: 'Open the code of %1',
-    close: 'Close'
+    close: 'Close',
+    create: {procedure: 'New function (standard)', named: 'New function (TurboWarp-Plus)'} as Record<FunctionKind, string>,
+    createKind: 'Switch the kind of function to create',
+    createErrors: {
+        duplicate: 'A block with this definition already exists.',
+        unavailable: 'The TurboWarp-Named-Functions extension could not be loaded.',
+        failed: 'The function could not be created.'
+    } as Record<FunctionCreateError, string>
 };
 
 const japanese: typeof english = {
@@ -352,7 +374,14 @@ const japanese: typeof english = {
     readOnly: 'このビューをクリックすると編集できます。',
     graph: '関数の呼び出し関係',
     openCode: '%1 のコードを開く',
-    close: '閉じる'
+    close: '閉じる',
+    create: {procedure: '新しい関数(標準)を作成', named: '新しい関数(TurboWarp-Plus)を作成'},
+    createKind: '作成する関数の種類を切り替える',
+    createErrors: {
+        duplicate: '同じ定義のブロックがすでにあります。',
+        unavailable: '拡張機能「TurboWarp-Named-Functions」を読み込めませんでした。',
+        failed: '関数を作成できませんでした。'
+    }
 };
 type Labels = typeof english;
 
@@ -527,7 +556,49 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
     </figure>;
 }
 
-export function SpriteFunctionPane({locale, editable, data, defaultSettings: initial, onSettingsChange, mountEditor}:
+function CreateButton({labels, kind, editable, onKind, onCreate}: {
+    labels: Labels;
+    kind: FunctionKind;
+    editable: boolean;
+    onKind(kind: FunctionKind): void;
+    onCreate(kind: FunctionKind): Promise<string | void> | string | void;
+}) {
+    const [busy, setBusy] = React.useState(false);
+    const [error, setError] = React.useState<FunctionCreateError>();
+    const mounted = React.useRef(true);
+    React.useEffect(() => () => {
+        mounted.current = false;
+    }, []);
+    async function create() {
+        setBusy(true);
+        setError(undefined);
+        try {
+            await onCreate(kind);
+        } catch (reason) {
+            const code = (reason as {code?: unknown})?.code;
+            if (mounted.current) setError(code === 'duplicate' || code === 'unavailable' ? code : 'failed');
+        } finally {
+            if (mounted.current) setBusy(false);
+        }
+    }
+    return <div className="tw-sprite-functions__create">
+        <div className="tw-sprite-functions__split" data-kind={kind}>
+            <button type="button" className="tw-sprite-functions__create-main" disabled={!editable || busy}
+                aria-busy={busy || undefined} onClick={create}>{labels.create[kind]}</button>
+            <button type="button" className="tw-sprite-functions__create-kind" disabled={!editable || busy}
+                aria-label={labels.createKind} title={labels.createKind} onClick={() => {
+                    setError(undefined);
+                    onKind(kind === 'procedure' ? 'named' : 'procedure');
+                }}>
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4 6 4 4 4-4" /></svg>
+            </button>
+        </div>
+        {error && <p className="tw-sprite-functions__create-error" role="alert">{labels.createErrors[error]}</p>}
+    </div>;
+}
+
+export function SpriteFunctionPane({locale, editable, data, defaultSettings: initial, onSettingsChange, mountEditor,
+    onCreate}:
     SpriteFunctionPaneProps) {
     const labels = /^ja(?:-|$)/i.test(locale) ? japanese : english;
     const [settings, setSettings] = React.useState<FunctionPaneSettings>(() => ({...defaultSettings, ...initial}));
@@ -593,6 +664,14 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
                     </li>;
                 })}
             </ul>}
+        {onCreate && <CreateButton labels={labels} kind={settings.create} editable={editable}
+            onKind={create => change({create})} onCreate={async kind => {
+                const id = await onCreate(kind);
+                if (!id) return;
+                // The new function joins the data when the host refreshes; open it then.
+                if (settings.mode === 'graph') setDialogId(id);
+                else setExpanded(current => new Set(current).add(id));
+            }} />}
         {dialogFunction && settings.mode === 'graph' && <FunctionDialog labels={labels} fn={dialogFunction}
             onClose={() => setDialogId(null)}>
             <FunctionEditor targetId={data.targetId} functionId={dialogFunction.id} editable={editable} large

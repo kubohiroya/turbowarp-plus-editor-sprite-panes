@@ -1479,3 +1479,70 @@ button.tw-sprite-messages__node:focus-visible {
 .tw-sprite-functions__dialog-header .tw-sprite-functions__badge[data-kind="named"] {
     color: #8a55d7;
 }
+
+/* Below the list or the graph, at the start of the line. */
+.tw-sprite-functions__create {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+}
+
+.tw-sprite-functions__split {
+    display: inline-flex;
+    border-radius: .35rem;
+    overflow: hidden;
+    color: var(--ui-white, #fff);
+    background: var(--looks-secondary, #855cd6);
+}
+
+.tw-sprite-functions__split button {
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.tw-sprite-functions__create-main {
+    padding: .4rem .75rem;
+}
+
+.tw-sprite-functions__create-kind {
+    display: grid;
+    place-items: center;
+    padding: 0 .45rem;
+    border-inline-start: 1px solid hsla(0, 0%, 100%, .45) !important;
+}
+
+.tw-sprite-functions__create-kind svg {
+    inline-size: 1rem;
+    block-size: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-functions__split button:hover:not(:disabled) {
+    background: hsla(0, 0%, 0%, .12);
+}
+
+.tw-sprite-functions__split button:focus-visible {
+    outline: 2px solid var(--ui-white, #fff);
+    outline-offset: -4px;
+}
+
+.tw-sprite-functions__split button:disabled {
+    cursor: default;
+    opacity: .55;
+}
+
+.tw-sprite-functions__create-error {
+    margin: 0;
+    color: var(--error-primary, #d9001b);
+    font-size: .82rem;
+}

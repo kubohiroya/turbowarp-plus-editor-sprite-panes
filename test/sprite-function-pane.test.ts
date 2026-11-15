@@ -184,7 +184,7 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
 
     act(() => container.querySelector<HTMLButtonElement>('[data-choice="TD"]').click());
     assert.equal(container.querySelector('figure').getAttribute('data-direction'), 'TD');
-    assert.deepEqual(settings.at(-1), {mode: 'graph', order: 'name', direction: 'TD'});
+    assert.deepEqual(settings.at(-1), {mode: 'graph', order: 'name', direction: 'TD', create: 'procedure'});
 
     act(() => container.querySelector<HTMLButtonElement>('[data-function-key="draw"]').click());
     const dialog = container.querySelector('dialog');
@@ -266,4 +266,66 @@ test('a named function shows its kind, its scope and its description', t => {
     assert.equal(greet.querySelector('.tw-sprite-functions__name').getAttribute('title'), 'Says hello.');
     assert.equal(greet.getAttribute('data-kind'), 'named');
     assert.deepEqual([...jump.querySelectorAll('.tw-sprite-functions__badge')].map(node => node.textContent), ['1か所で使用']);
+});
+
+test('the create button switches between the two kinds and opens what it makes', async t => {
+    const made: string[] = [];
+    const settings: object[] = [];
+    let reply: () => Promise<string | void> = async () => 'new-jump';
+    const {container, draw} = render(t, {
+        onSettingsChange: (next: object) => settings.push(next),
+        onCreate: (kind: string) => {
+            made.push(kind);
+            return reply();
+        },
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)]}
+    });
+    const main = () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main');
+    const kind = container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-kind');
+    // Below the list, at its start.
+    assert.equal(container.querySelector('.tw-sprite-functions__list').nextElementSibling,
+        container.querySelector('.tw-sprite-functions__create'));
+    assert.equal(main().textContent, '新しい関数(標準)を作成');
+    assert.equal(kind.getAttribute('aria-label'), '作成する関数の種類を切り替える');
+
+    await act(async () => main().click());
+    assert.deepEqual(made, ['procedure']);
+    // The host refreshes the data with the new function, which opens in place.
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0), fn('new-jump', 'hop', 0, 50)]}});
+    assert.equal(container.querySelector('[data-function-key="new-jump"]').getAttribute('aria-expanded'), 'true');
+
+    act(() => kind.click());
+    assert.equal(main().textContent, '新しい関数(TurboWarp-Plus)を作成');
+    assert.equal(container.querySelector('.tw-sprite-functions__split').getAttribute('data-kind'), 'named');
+    assert.deepEqual(settings.at(-1), {mode: 'list', order: 'name', direction: 'LR', create: 'named'});
+
+    // A cancelled dialog makes nothing and says nothing.
+    reply = async () => undefined;
+    await act(async () => main().click());
+    assert.deepEqual(made, ['procedure', 'named']);
+    assert.equal(container.querySelector('[role="alert"]'), null);
+
+    reply = async () => { throw Object.assign(new Error('no extension'), {code: 'unavailable'}); };
+    await act(async () => main().click());
+    assert.equal(container.querySelector('[role="alert"]').textContent,
+        '拡張機能「TurboWarp-Named-Functions」を読み込めませんでした。');
+    act(() => kind.click());
+    assert.equal(container.querySelector('[role="alert"]'), null, 'switching the kind clears the message');
+    assert.equal(main().textContent, '新しい関数(標準)を作成');
+
+    draw({editable: false});
+    assert.ok(main().disabled && kind.disabled, 'an inactive view cannot create');
+});
+
+test('in the call graph a new function opens in the dialog', async t => {
+    const {container, draw} = render(t, {
+        defaultSettings: {mode: 'graph', create: 'named'},
+        onCreate: async () => 'made',
+        mountEditor: () => undefined,
+        data: {targetId: 'cat', isStage: false, functions: []}
+    });
+    assert.equal(container.querySelector('.tw-sprite-functions__create-main').textContent, '新しい関数(TurboWarp-Plus)を作成');
+    await act(async () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main').click());
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('made', 'function1', 0, 0, {kind: 'named', scope: 'sprite'})]}});
+    assert.equal(container.querySelector('dialog').getAttribute('aria-label'), 'function1 のコード');
 });
