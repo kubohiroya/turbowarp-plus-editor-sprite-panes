@@ -1294,7 +1294,7 @@
 }
 
 .tw-sprite-functions__choice button[aria-pressed="true"] {
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: var(--looks-secondary, #855cd6);
 }
 
@@ -1369,7 +1369,7 @@
     padding: .25rem .55rem;
     border: 2px solid #ff4d6a;
     border-radius: .5rem;
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: #ff6680;
     font: inherit;
     font-size: .8rem;
@@ -1620,7 +1620,7 @@
     gap: .5rem;
     align-items: center;
     padding: .5rem .75rem;
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: #ff6680;
 }
 
@@ -1740,7 +1740,7 @@
 }
 
 .tw-sprite-functions__badge[data-kind="named"] {
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: #8a55d7;
 }
 
@@ -1763,7 +1763,7 @@
     padding: .4rem .75rem;
     border: 0;
     border-radius: .35rem;
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: var(--looks-secondary, #855cd6);
     font: inherit;
     font-size: .85rem;
@@ -1944,7 +1944,7 @@
 
 .tw-sprite-functions__add-actions .tw-sprite-functions__add-submit {
     border-color: transparent;
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: var(--looks-secondary, #855cd6);
     font-weight: 600;
 }
@@ -1971,7 +1971,7 @@
     min-inline-size: 1.4em;
     padding: .05em .4em;
     border-radius: 999px;
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: var(--tw-variables-accent, #ff8c1a);
     font-size: .8em;
     font-weight: bold;
@@ -2243,6 +2243,6 @@ button.tw-sprite-messages__source:focus-visible {
 
 .tw-sprite-messages__menu-item:hover,
 .tw-sprite-messages__menu-item:focus-visible {
-    color: var(--ui-white, #fff);
+    color: #fff;
     background: var(--message-accent);
 }
