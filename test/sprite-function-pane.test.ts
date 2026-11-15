@@ -491,9 +491,20 @@ test('in the call graph the add button sits in the bottom left corner, and a new
     assert.equal(container.querySelector('[data-function-key="made"]').getAttribute('aria-current'), 'true',
         'and is picked out in the graph');
 
-    // A graph without functions still offers the button.
+    // Without functions the graph stays, blank, with a notice that points to the button in its corner.
     draw({data: {targetId: 'cat', isStage: false, functions: []}});
-    assert.ok(container.querySelector('.tw-sprite-functions__create .tw-sprite-functions__add'));
+    const figure = container.querySelector('figure');
+    assert.ok(figure, 'the graph is still drawn');
+    assert.equal(figure.querySelectorAll('[data-function-key]').length, 0);
+    assert.equal(figure.querySelector('.tw-sprite-functions__notice[role="status"]').textContent,
+        'このスプライトには関数がありません。左下の「＋ 新しい関数を追加」から作れます。');
+    assert.ok(figure.querySelector('.tw-sprite-functions__corner .tw-sprite-functions__add'));
+    assert.ok(figure.querySelector('.tw-sprite-functions__flow'));
+    assert.equal(container.querySelector('.tw-sprite-functions__empty'), null, 'no line about My Blocks');
+    // The list points below, to its own button.
+    draw({view: 'list', data: {targetId: 'stage', isStage: true, functions: []}});
+    assert.equal(container.querySelector('.tw-sprite-functions__empty').textContent,
+        'ステージには関数がありません。下の「＋ 新しい関数を追加」から作れます。');
 });
 
 test('with a host opener the call graph opens functions there instead of in its dialog', async t => {

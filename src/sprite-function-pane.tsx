@@ -531,6 +531,10 @@ const english = {
     orders: {name: 'Name (A–Z)', z: 'Z order (rows)', n: 'N order (columns)'} as Record<FunctionOrder, string>,
     empty: 'This sprite has no functions. Make one with “Make a Block” in My Blocks.',
     emptyStage: 'The stage has no functions. Make one with “Make a Block” in My Blocks.',
+    none: 'This sprite has no functions.',
+    noneStage: 'The stage has no functions.',
+    addFrom: {graph: 'Make one with “Add a new function” at the bottom left.',
+        list: 'Make one with “Add a new function” below.'} as Record<FunctionPaneMode, string>,
     calls: (count: number) => count === 0 ? 'Not used' : count === 1 ? 'Used once' : `Used ${count} times`,
     fromScripts: 'Called from other scripts',
     named: 'Named function',
@@ -581,6 +585,9 @@ const japanese: typeof english = {
     orders: {name: '名前順', z: 'Z順（行ごと）', n: 'N順（列ごと）'},
     empty: 'このスプライトには関数がありません。「ブロック定義」の「ブロックを作る」で作れます。',
     emptyStage: 'ステージには関数がありません。「ブロック定義」の「ブロックを作る」で作れます。',
+    none: 'このスプライトには関数がありません。',
+    noneStage: 'ステージには関数がありません。',
+    addFrom: {graph: '左下の「＋ 新しい関数を追加」から作れます。', list: '下の「＋ 新しい関数を追加」から作れます。'},
     calls: (count: number) => count === 0 ? '未使用' : `${count}か所で使用`,
     fromScripts: '関数以外のスクリプトから呼ばれる',
     named: '名前付き関数',
@@ -914,7 +921,7 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, flow, onOpen}: {
+function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, flow, notice, onOpen}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
@@ -924,6 +931,8 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
     corner?: React.ReactNode;
     /** The switch of the flow, drawn in the top right corner over the graph. */
     flow?: React.ReactNode;
+    /** Shown over the middle of the graph, as when it has no functions. */
+    notice?: React.ReactNode;
     onOpen(fn: SpriteFunction): void;
 }) {
     // Functions in the same column or row follow their names.
@@ -1196,6 +1205,7 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
                 onClick={() => zoomButton(null)}><ZoomIcon action="reset" /></button>
         </div>
         {corner && <div className="tw-sprite-functions__corner">{corner}</div>}
+        {notice && <div className="tw-sprite-functions__notice" role="status">{notice}</div>}
         {flow && <div className="tw-sprite-functions__flow">{flow}</div>}
     </figure>;
 }
@@ -1341,6 +1351,17 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         openFunction.current(dialogFunction);
     }, [dialogFunction]);
 
+    /** Why the pane is empty, and where to make a function: the add button when there is one. */
+    function emptyText(where: FunctionPaneMode): React.ReactNode {
+        if (!onCreate) return data.isStage ? labels.emptyStage : labels.empty;
+        const none = data.isStage ? labels.noneStage : labels.none;
+        if (where === 'graph') return <>
+            <strong className="tw-sprite-functions__notice-title">{none}</strong>
+            <span>{labels.addFrom.graph}</span>
+        </>;
+        return `${none}${labels === english ? ' ' : ''}${labels.addFrom.list}`;
+    }
+
     const addButton = onCreate ? <AddButton labels={labels} editable={editable} onClick={() => setAdding(true)} /> : null;
 
     function change(patch: Partial<FunctionPaneSettings>) {
@@ -1409,13 +1430,11 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
             </label>}
             {hint && <p className="tw-sprite-functions__hint">{labels.readOnly}</p>}
         </div>}
-        {mode === 'graph' ? (ordered.length ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graphFunctions}
+        {/* Without functions the graph stays, blank, and points to the button that makes one. */}
+        {mode === 'graph' ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graphFunctions}
             settings={settings} selectedId={selectedId ?? added} corner={addButton} flow={flowChoice}
-            onOpen={fn => setDialogId(fn.id)} /> : <>
-                <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p>
-                {addButton && <div className="tw-sprite-functions__create">{addButton}</div>}
-            </>) :
-            !hats.length && !ordered.length ? <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p> :
+            notice={ordered.length ? undefined : emptyText('graph')} onOpen={fn => setDialogId(fn.id)} /> :
+            !hats.length && !ordered.length ? <p className="tw-sprite-functions__empty">{emptyText('list')}</p> :
             !hats.length && !grouped ? functionList(ordered) : <>
                 {hats.length > 0 && <>
                     <h3 className="tw-sprite-functions__group">{labels.hats}</h3>
@@ -1432,7 +1451,7 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
                     </ul>
                 </>}
                 <h3 className="tw-sprite-functions__group">{labels.functions}</h3>
-                {standard.length ? functionList(standard) : <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p>}
+                {standard.length ? functionList(standard) : <p className="tw-sprite-functions__empty">{emptyText('list')}</p>}
                 {grouped && <>
                     <h3 className="tw-sprite-functions__group">{labels.namedFunctions}</h3>
                     {functionList(named)}

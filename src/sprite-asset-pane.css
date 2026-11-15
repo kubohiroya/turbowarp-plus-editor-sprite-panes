@@ -1800,6 +1800,31 @@
     cursor: default;
 }
 
+/* Over the middle of a call graph without functions, pointing to the add button. */
+.tw-sprite-functions__notice {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    display: grid;
+    gap: .3rem;
+    box-sizing: border-box;
+    max-inline-size: calc(100% - 2rem);
+    padding: .75rem 1rem;
+    border: 1px solid #f0b429;
+    border-radius: .5rem;
+    color: var(--text-primary, #575e75);
+    background: #fff8e1;
+    box-shadow: 0 1px 4px hsla(0, 0%, 0%, .12);
+    font-size: .85rem;
+    text-align: center;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.tw-sprite-functions__notice-title::before {
+    content: "⚠ ";
+}
+
 /* The top right corner of the call graph, above the minimap and the zoom buttons. */
 .tw-sprite-functions__flow {
     position: absolute;
