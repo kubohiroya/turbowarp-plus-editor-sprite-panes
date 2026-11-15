@@ -98,11 +98,11 @@
 }
 
 /* The sections that edit the project are kept apart from the ones that survey the sprite. */
-.tw-plus-sprite-toolbar-sections button[data-section-group="native"] + button[data-section-group="own"] {
+.tw-plus-sprite-toolbar-sections button[data-group-start] {
     margin-block-start: 9px;
 }
 
-.tw-plus-sprite-toolbar-sections button[data-section-group="native"] + button[data-section-group="own"]::after {
+.tw-plus-sprite-toolbar-sections button[data-group-start]::after {
     content: "";
     position: absolute;
     inset-inline: 1px 3px;

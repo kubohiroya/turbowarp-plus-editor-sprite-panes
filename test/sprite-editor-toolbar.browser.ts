@@ -52,7 +52,7 @@ test('the sprite toolbar selects one section and searches in the active section'
     // Functions sit with the panes that survey the sprite, before variables and messages.
     assert.deepEqual(await tabs.evaluateAll(nodes => nodes.map(node => node.id.replace(/^.*-section-/, ''))),
         ['code', 'costumes', 'sounds', 'functions', 'variables', 'messages']);
-    await expect(selected).toHaveAccessibleName('コード');
+    await expect(selected).toHaveAccessibleName('自由配置');
     const tabBounds = await Promise.all((await tabs.all()).map(async tab => {
         await expect(tab).toHaveText('');
         await expect(tab).toHaveCSS('padding', '0px');
@@ -73,7 +73,7 @@ test('the sprite toolbar selects one section and searches in the active section'
     const lastTab = tabBounds.at(-1);
     assert.ok(lastTab.y + lastTab.height < rail.y + rail.height - 40, 'the rail is not divided among its buttons');
     await selected.hover();
-    await expect(tooltip).toHaveText('コード');
+    await expect(tooltip).toHaveText('自由配置');
     assert.ok((await tooltip.boundingBox()).x >= panel.x);
     await page.mouse.move(800, 400);
     await expect(tooltip).toHaveCount(0);
@@ -91,7 +91,7 @@ test('the sprite toolbar selects one section and searches in the active section'
     await selected.press('Escape');
     await expect(tooltip).toHaveCount(0);
     await expect(selected).toHaveCount(1);
-    await expect(unselected.first()).toHaveAccessibleName('コード');
+    await expect(unselected.first()).toHaveAccessibleName('自由配置');
     await expect(unselected.first()).toHaveCSS('color', 'rgb(89, 89, 89)');
     const search = page.getByRole('combobox');
     await expect(search).toHaveAttribute('placeholder', '検索');
