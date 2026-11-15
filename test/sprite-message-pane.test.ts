@@ -40,63 +40,29 @@ function render(t: TestContext, props: object) {
 
 const text = (nodes: Iterable<Element>) => [...nodes].map(node => node.textContent.trim());
 
-test('the pane lists what the sprite sends and receives, with the block and the script', t => {
+test('each tab shows only the diagram of its side, or says the sprite uses none', t => {
     const sent = use({});
-    const received = use({direction: 'receive', blockId: 'block-2', scriptId: 'block-2',
-        scriptOpcode: 'event_whenbroadcastreceived', scriptMessageName: 'go'});
     const container = render(t, {
         data: {
-            targetId: 'cat', isStage: false, sends: [sent], receives: [received], elsewhere: [],
-            messages: [message({sends: [sent], receives: [received]})]
-        },
-        onOpen: () => {}
-    });
-
-    assert.deepEqual([...container.querySelectorAll('section[aria-label]')]
-        .map(node => node.getAttribute('aria-label')),
-    ['メッセージ', '送信', '受信']);
-    const rows = [...container.querySelectorAll('tbody tr')].map(row => text(row.querySelectorAll('th, td')));
-    assert.deepEqual(rows, [
-        ['go', '「go」を送る「緑の旗が押されたとき」から始まるスクリプト'],
-        ['go', '「go」を受け取ったとき']
-    ]);
-    // Messages this sprite does not use are not listed: it is about what this sprite sends and receives.
-    assert.equal(container.textContent.includes('この作品の他の場所'), false);
-});
-
-test('a send that waits is told apart from a plain send', t => {
-    const sent = use({wait: true, opcode: 'event_broadcastandwait'});
-    const container = render(t, {
-        data: {targetId: 'cat', isStage: false, sends: [sent], receives: [], elsewhere: [],
-            messages: [message({sends: [sent]})]}
-    });
-    assert.match(container.querySelector('tbody td').textContent, /^「go」を送って待つ/);
-});
-
-test('a message that nothing receives, or that nothing sends, is marked with a warning', t => {
-    const shout = use({key: 'shout', id: 'shout', name: 'shout'});
-    const hear = use({key: 'hear', id: 'hear', name: 'hear', direction: 'receive', blockId: 'hear-hat'});
-    const idle = message({key: 'idle', id: 'idle', name: 'idle', status: 'unused'});
-    const container = render(t, {
-        data: {
-            targetId: 'cat', isStage: false, sends: [shout], receives: [hear], elsewhere: [idle], messages: [
-                message({key: 'shout', id: 'shout', name: 'shout', status: 'sendOnly', sends: [shout]}),
-                message({key: 'hear', id: 'hear', name: 'hear', status: 'receiveOnly', receives: [hear]}),
-                idle
-            ]
+            targetId: 'cat', isStage: false, sends: [sent, use({blockId: 'block-2'})], receives: [], elsewhere: [],
+            messages: [message({status: 'sendOnly', sends: [sent]})]
         }
     });
-    const marks = (panel: Element) => [...panel.querySelectorAll('tbody .tw-sprite-messages__status')]
-        .map(node => [node.dataset.status, node.textContent, Boolean(node.querySelector('svg.tw-sprite-messages__warning'))]);
+    // No tables: the diagram already says who sends what to whom.
+    assert.equal(container.querySelector('table'), null);
     const [sending, receiving] = container.querySelectorAll('[role="tabpanel"]');
-    assert.deepEqual(marks(sending), [['sendOnly', '受け取るブロックがありません', true]]);
-    assert.deepEqual(marks(receiving), [['receiveOnly', '送るブロックがありません', true]]);
-    // The diagram warns at the empty end as well.
-    assert.ok(sending.querySelector('.tw-sprite-messages__missing svg.tw-sprite-messages__warning'));
-    assert.equal(container.textContent.includes('idle'), false, 'a message this sprite does not use is not listed');
+    assert.equal(sending.querySelectorAll('.tw-sprite-messages__diagram').length, 1);
+    assert.equal(receiving.querySelector('.tw-sprite-messages__diagram'), null);
+    assert.equal(receiving.querySelector('.tw-sprite-messages__empty').textContent, 'このスプライトはメッセージを受け取っていません。');
+    // The tabs count messages, not blocks.
+    assert.deepEqual(text(container.querySelectorAll('[role="tab"]')), ['送信1', '受信0']);
+    // The empty end of a message nobody receives is marked with a warning.
+    const missing = sending.querySelector('.tw-sprite-messages__missing');
+    assert.equal(missing.textContent.trim(), '受け取るブロックがありません');
+    assert.ok(missing.querySelector('svg.tw-sprite-messages__warning'));
 });
 
-test('renaming refuses a name another message already has and reports why', t => {
+test('the ▼ after a message name opens a menu that leads to the rename dialog', t => {
     const sent = use({});
     const renames: [string, string][] = [];
     const container = render(t, {
@@ -110,38 +76,63 @@ test('renaming refuses a name another message already has and reports why', t =>
             renames.push([target.name, name]);
         }
     });
+    const label = container.querySelector('.tw-sprite-messages__edge-label');
+    const toggle = label.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]');
+    assert.equal(toggle.getAttribute('aria-label'), '「go」の操作');
+    assert.equal(toggle.parentElement.previousElementSibling.textContent, 'go', 'the ▼ follows the name');
+    assert.equal(label.querySelector('[role="menu"]'), null);
 
-    // The rename button is a pencil right after the message name, not a column of its own.
-    assert.deepEqual([...container.querySelectorAll('.tw-sprite-messages__table thead th')].map(th => th.textContent),
-        ['メッセージ', 'ブロック']);
-    const button = container.querySelector('tbody th .tw-pane-name-edit');
-    assert.equal(button.getAttribute('aria-label'), 'メッセージ名を変更');
-    assert.equal(button.previousElementSibling.textContent, 'go', 'the pencil follows the name');
-    // A speech bubble before the name marks the row as a message.
-    assert.ok(container.querySelector('tbody th').firstElementChild.matches('svg.tw-sprite-messages__icon'));
-    act(() => button.dispatchEvent(new window.MouseEvent('click', {bubbles: true})));
+    act(() => toggle.click());
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    const item = label.querySelector<HTMLButtonElement>('[role="menu"] [role="menuitem"]');
+    assert.equal(item.textContent, 'メッセージ名を変更');
+    assert.equal(window.document.activeElement, item, 'the menu takes the focus');
+
+    // Escape closes the menu and returns to the ▼.
+    act(() => item.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Escape', bubbles: true})));
+    assert.equal(label.querySelector('[role="menu"]'), null);
+    assert.equal(window.document.activeElement, toggle);
+
+    act(() => toggle.click());
+    act(() => label.querySelector<HTMLButtonElement>('[role="menuitem"]').click());
+    assert.equal(label.querySelector('[role="menu"]'), null, 'choosing an item closes the menu');
     const dialog = container.querySelector('dialog');
-    assert.equal(dialog.getAttribute('aria-labelledby') &&
-        container.querySelector('#' + dialog.getAttribute('aria-labelledby')).textContent, 'メッセージ名を変更');
+    assert.equal(container.querySelector('#' + dialog.getAttribute('aria-labelledby')).textContent, 'メッセージ名を変更');
     assert.equal(dialog.querySelector('input[name="name"]').value, 'go');
     assert.equal(dialog.querySelector('.tw-sprite-messages__hint').textContent,
         'メッセージの名前を変えると、作品全体で変わります。');
 
     const submit = (value: string) => {
-        const form = container.querySelector('form');
+        const form = dialog.querySelector('form');
         form.querySelector('input[name="name"]').value = value;
         act(() => form.dispatchEvent(new window.Event('submit', {bubbles: true, cancelable: true})));
     };
-
     submit('done');
     assert.equal(container.querySelector('[role="alert"]').textContent, '同じ名前のメッセージがすでにあります。');
     submit('   ');
     assert.equal(container.querySelector('[role="alert"]').textContent, 'メッセージ名を入力してください。');
     assert.deepEqual(renames, []);
-
     submit('  start  ');
     assert.deepEqual(renames, [['go', 'start']]);
     assert.equal(container.querySelector('dialog'), null, 'the dialog closes after renaming');
+});
+
+test('a press outside the menu closes it, and the menu is disabled while the pane cannot edit', t => {
+    const sent = use({});
+    const props = (editable: boolean) => ({
+        editable, onRename() {},
+        data: {targetId: 'cat', isStage: false, sends: [sent], receives: [], elsewhere: [], messages: [message({sends: [sent]})]}
+    });
+    const container = render(t, props(true));
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]');
+    act(() => toggle.click());
+    act(() => {
+        window.document.body.dispatchEvent(new window.Event('pointerdown', {bubbles: true}));
+    });
+    assert.equal(container.querySelector('[role="menu"]'), null);
+
+    const readOnly = render(t, props(false));
+    assert.equal(readOnly.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]').disabled, true);
 });
 
 test('the pane splits what the sprite sends from what it receives, each tab with its own diagram', t => {
@@ -172,9 +163,10 @@ test('the pane splits what the sprite sends from what it receives, each tab with
 
     // The sending tab draws only the messages the sprite sends, with every receiver of them.
     const sending = panels[0].querySelector('.tw-sprite-messages__diagram');
-    assert.equal(sending.querySelector('figcaption').textContent, 'スプライト・背景とメッセージの関係');
+    assert.equal(sending.querySelector('figcaption'), null, 'the diagram has no visible heading');
+    assert.equal(sending.getAttribute('aria-label'), 'スプライト・背景とメッセージの関係');
     assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__headings span')), ['送信元', '受信先']);
-    assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__edge')), ['go']);
+    assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__edge [data-message-key]')), ['go']);
     assert.deepEqual([...sending.querySelectorAll('.tw-sprite-messages__node img')].map(img => img.getAttribute('src')),
         ['/thumb/cat', '/thumb/dog']);
     assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')),
@@ -184,9 +176,9 @@ test('the pane splits what the sprite sends from what it receives, each tab with
     act(() => tabs[1].click());
     assert.deepEqual(panels.map(panel => panel.hidden), [true, false]);
     const receiving = panels[1].querySelector('.tw-sprite-messages__diagram');
-    assert.deepEqual(text(receiving.querySelectorAll('.tw-sprite-messages__edge')), ['listen']);
+    assert.deepEqual(text(receiving.querySelectorAll('.tw-sprite-messages__edge [data-message-key]')), ['listen']);
     assert.deepEqual(text(receiving.querySelectorAll('.tw-sprite-messages__node')), ['Dog緑の旗が押されたとき', 'Cat']);
-    receiving.querySelector('button[aria-current="true"]').click();
+    receiving.querySelector<HTMLButtonElement>('[aria-current="true"] .tw-sprite-messages__node-name').click();
     assert.deepEqual(opened, ['cat']);
 
     act(() => tabs[1].dispatchEvent(new window.KeyboardEvent('keydown', {key: 'ArrowLeft', bubbles: true})));
@@ -198,16 +190,16 @@ test('a sprite that only receives opens on the receiving tab, and a self-send sh
     const sent = use({});
     const self = use({direction: 'receive', blockId: 'cat-hat'});
     const unanswered = use({key: 'listen', id: 'listen', name: 'listen', direction: 'receive', blockId: 'listen-hat'});
-    const stage = render(t, {
+    const only = render(t, {
         data: {
             targetId: 'cat', isStage: false, sends: [], receives: [unanswered], elsewhere: [],
             messages: [message({key: 'listen', id: 'listen', name: 'listen', status: 'receiveOnly', receives: [unanswered]})]
         }
     });
-    assert.equal(stage.querySelector('[role="tab"][aria-selected="true"]').textContent, '受信1');
-    assert.equal(stage.querySelector('[role="tabpanel"]:not([hidden]) .tw-sprite-messages__missing').textContent.trim(),
+    assert.equal(only.querySelector('[role="tab"][aria-selected="true"]').textContent, '受信1');
+    assert.equal(only.querySelector('[role="tabpanel"]:not([hidden]) .tw-sprite-messages__missing').textContent.trim(),
         '送るブロックがありません');
-    assert.equal(stage.querySelectorAll('.tw-sprite-messages__diagram').length, 1, 'nothing is sent, so no sending diagram');
+    assert.equal(only.querySelectorAll('.tw-sprite-messages__diagram').length, 1, 'nothing is sent, so no sending diagram');
 
     const both = render(t, {
         data: {
@@ -219,6 +211,24 @@ test('a sprite that only receives opens on the receiving tab, and a self-send sh
         assert.deepEqual(text(panel.querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')),
             ['Cat緑の旗が押されたとき', 'Cat']);
     }
+});
+
+test('pressing a sending script opens its first block that sends the message', t => {
+    const opened: string[] = [];
+    const first = use({blockId: 'send-1'});
+    const second = use({blockId: 'send-2'});
+    const container = render(t, {
+        data: {
+            targetId: 'cat', isStage: false, sends: [first, second], receives: [], elsewhere: [],
+            messages: [message({status: 'sendOnly', sends: [first, second]})]
+        },
+        onOpen: (target: {blockId: string}) => opened.push(target.blockId)
+    });
+    const sources = container.querySelectorAll<HTMLButtonElement>('button.tw-sprite-messages__source');
+    assert.equal(sources.length, 1, 'two sends in one script are one source');
+    assert.equal(sources[0].title, 'このブロックを開く');
+    act(() => sources[0].click());
+    assert.deepEqual(opened, ['send-1']);
 });
 
 test('a sender lists each script that sends: the hat, the function or the named function', t => {

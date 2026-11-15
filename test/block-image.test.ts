@@ -138,7 +138,7 @@ test('hats are named the same way in every pane', () => {
     assert.equal(hatName('en', 'pen_unknown_hat'), 'pen unknown hat');
 });
 
-test('the message pane draws the receiving hats and the hats that scripts start with', t => {
+test('the message diagram draws the hats that sending scripts start with', t => {
     const use = (patch: object) => ({
         direction: 'send', id: 'go', fieldValue: 'go', name: 'go', wait: false, key: 'go',
         targetId: 'cat', targetName: 'Cat', isStage: false, blockId: 'send', opcode: 'event_broadcast',
@@ -159,12 +159,8 @@ test('the message pane draws the receiving hats and the hats that scripts start 
             }
         }
     }));
-    const images = [...container.querySelectorAll('.tw-sprite-messages__table .tw-block-image')];
-    assert.deepEqual(images.map(node => [node.querySelector('svg')?.dataset.drawn, node.getAttribute('aria-label')]), [
-        ['flag', '「緑の旗が押されたとき」から始まるスクリプト'],
-        ['receive', '「go」を受け取ったとき']
-    ]);
-    assert.deepEqual([...new Set(drawn)], ['cat/flag', 'cat/receive']);
-    // The send block itself is not a hat, so it stays text.
-    assert.match(container.querySelector('.tw-sprite-messages__table tbody td').textContent, /「go」を送る/);
+    const images = [...container.querySelectorAll('[role="tabpanel"]:not([hidden]) .tw-sprite-messages__sources .tw-block-image')];
+    assert.deepEqual(images.map(node => [node.querySelector('svg')?.dataset.drawn, node.getAttribute('aria-label')]),
+        [['flag', '緑の旗が押されたとき']]);
+    assert.deepEqual([...new Set(drawn)], ['cat/flag'], 'receivers are named alone, without their hats');
 });
