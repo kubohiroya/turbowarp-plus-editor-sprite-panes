@@ -1261,6 +1261,17 @@
     inset: 0;
 }
 
+.tw-sprite-functions__choice[data-icons] button {
+    display: grid;
+    place-items: center;
+    padding-inline: .35rem;
+}
+
+.tw-sprite-functions__choice[data-icons] svg {
+    inline-size: 1rem;
+    block-size: 1rem;
+}
+
 .tw-sprite-functions__choice {
     display: inline-flex;
     border: 1px solid var(--ui-black-transparent, #ccd5e2);

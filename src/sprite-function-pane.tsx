@@ -491,15 +491,29 @@ function FunctionEditor({targetId, functionId, editable, label, mountEditor, lar
         role="group" aria-label={label} data-function-editor={functionId} data-editable={editable || undefined} />;
 }
 
-function Choice<T extends string>({label, value, options, onChange}: {
+/** The flow of the call graph drawn as two boxes and the arrow between them. */
+const flowGlyphs: Record<CallGraphDirection, string> = {
+    LR: 'M1.5 5.5h4v5h-4Zm9 0h4v5h-4ZM5.5 8h4.5m-1.5-1.5L10 8 8.5 9.5',
+    TD: 'M5.5 1.5h5v4h-5Zm0 9h5v4h-5ZM8 5.5V10m-1.5-1.5L8 10l1.5-1.5'
+};
+
+/** Buttons for one of a few choices. With `icons`, each shows its icon and keeps its name for tooltips and readers. */
+function Choice<T extends string>({label, value, options, icons, onChange}: {
     label: string;
     value: T;
     options: Record<T, string>;
+    icons?: Record<T, string>;
     onChange(value: T): void;
 }) {
-    return <div className="tw-sprite-functions__choice" role="group" aria-label={label}>
+    return <div className="tw-sprite-functions__choice" role="group" aria-label={label} data-icons={icons ? '' : undefined}>
         {(Object.keys(options) as T[]).map(id => <button key={id} type="button" aria-pressed={value === id}
-            data-choice={id} onClick={() => onChange(id)}>{options[id]}</button>)}
+            data-choice={id} title={icons ? options[id] : undefined} onClick={() => onChange(id)}>
+            {icons ? <>
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor"
+                    strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d={icons[id]} /></svg>
+                <span className="tw-sprite-functions__visually-hidden">{options[id]}</span>
+            </> : options[id]}
+        </button>)}
     </div>;
 }
 
@@ -767,8 +781,9 @@ function CallGraph({labels, idPrefix, functions, settings, onOpen}: {
     settings: FunctionPaneSettings;
     onOpen(fn: SpriteFunction): void;
 }) {
-    const layout = React.useMemo(() => layoutCallGraph(functions, settings.direction, settings.order),
-        [functions, settings.direction, settings.order]);
+    // Functions in the same column or row follow their names.
+    const layout = React.useMemo(() => layoutCallGraph(functions, settings.direction, 'name'),
+        [functions, settings.direction]);
     const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
     const marker = `${idPrefix}-arrow`;
     const reading = [...layout.nodes].sort((a, b) => a.layer - b.layer ||
@@ -1140,14 +1155,15 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
     return <section ref={list} className="tw-sprite-functions" aria-label={view ? labels.panels[view] : labels.panel} data-mode={mode}>
         <div className="tw-sprite-functions__bar">
             {!view && <Choice label={labels.view} value={settings.mode} options={labels.modes} onChange={next => change({mode: next})} />}
-            {mode === 'graph' && <Choice label={labels.flow} value={settings.direction}
+            {mode === 'graph' && <Choice label={labels.flow} value={settings.direction} icons={flowGlyphs}
                 options={labels.directions} onChange={direction => change({direction})} />}
-            <label className="tw-sprite-functions__order">
+            {/* The graph places functions by who calls whom, so only the list can be ordered. */}
+            {mode === 'list' && <label className="tw-sprite-functions__order">
                 <span>{labels.order}</span>
                 <select value={settings.order} onChange={event => change({order: event.currentTarget.value as FunctionOrder})}>
                     {functionOrders.map(id => <option key={id} value={id}>{labels.orders[id]}</option>)}
                 </select>
-            </label>
+            </label>}
             {!editable && ordered.length > 0 && <p className="tw-sprite-functions__hint">{labels.readOnly}</p>}
         </div>
         {mode === 'graph' ? (ordered.length ? <CallGraph labels={labels} idPrefix={idPrefix} functions={data.functions}
