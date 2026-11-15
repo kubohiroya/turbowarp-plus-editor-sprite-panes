@@ -7,7 +7,7 @@
  * extension instance. They are read while the debugger has paused the project, when they hold still.
  */
 
-import {functionLabel} from './sprite-function-pane.tsx';
+import {scriptStartOf} from './script-start.ts';
 
 export const temporaryVariablesExtensionId = 'lmsTempVars2';
 
@@ -42,14 +42,32 @@ export interface TemporaryVariableValue {
     value: string;
 }
 
-/** A custom block definition that uses a variable. Without id, the variable is used outside any function. */
+/** The top block of a script outside any function, usually a hat such as `when I receive [go]`. */
+export interface TemporaryVariableScript {
+    /** Id of the top block. */
+    id: string;
+    opcode: string;
+    /**
+     * The values that tell this hat apart from others of its kind, in the order the block shows
+     * them: the message of `when I receive`, the key of `when key pressed`, and so on.
+     */
+    text: readonly string[];
+}
+
+/**
+ * A custom block definition that uses a variable. Without id, the variable is used outside any
+ * function, in the script that `script` names.
+ */
 export interface TemporaryVariableFunction {
     /** Id of the `procedures_definition` block. */
     id?: string;
     /** The block as it reads, such as `jump (height) times`. */
     label?: string;
-    /** Runtime variables only: the sprite or stage whose code holds the function. */
+    /** For a use outside any function: the script's top block. */
+    script?: TemporaryVariableScript;
+    /** The sprite or stage whose code holds the function. */
     targetId?: string;
+    /** Runtime variables only, since their functions can be in any sprite. */
     targetName?: string;
     /** The function is in the stage, which the editor names in the viewer's language. */
     stage?: boolean;
@@ -120,29 +138,13 @@ export const isRuntimePaused = (runtime: TemporaryVariablesRuntime) => runtime.i
 type Use = {read: number; write: number} & Record<Role, TemporaryVariableFunction[]>;
 type Uses = Map<string, Use>;
 
-function argumentNames(argumentnames = '[]') {
-    try {
-        const parsed = JSON.parse(argumentnames);
-        return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-        // Keep the label without argument names when they cannot be read.
-        return [];
-    }
-}
-
-/** The custom block definition a block belongs to, or an entry without id for a script outside any function. */
+/** The custom block definition a block belongs to, or the top block of its script outside any function. */
 function functionOf(blocks: Record<string, Block>, id: string): TemporaryVariableFunction {
-    const seen = new Set<string>();
-    let current = id;
-    while (blocks[current]?.parent && !seen.has(current)) {
-        seen.add(current);
-        current = blocks[current].parent;
-    }
-    const top = blocks[current];
-    if (top?.opcode !== 'procedures_definition') return {};
-    const mutation = blocks[top.inputs?.custom_block?.block ?? '']?.mutation;
-    return mutation?.proccode ?
-        {id: current, label: functionLabel({proccode: mutation.proccode, argumentNames: argumentNames(mutation.argumentnames)})} : {};
+    const start = scriptStartOf(blocks, id);
+    if (!start) return {};
+    if (start.kind === 'function') return {id: start.id, label: start.label};
+    // A named function is a script of its own. Its name tells it apart, as a message does for a hat.
+    return {script: {id: start.id, opcode: start.opcode, text: start.kind === 'named-function' ? [start.label] : start.text}};
 }
 
 function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, uses: Uses, withTarget = false) {
@@ -161,9 +163,11 @@ function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, use
         const name = String(shadow.fields?.TEXT?.value ?? '');
         const use = uses.get(name) ?? {read: 0, write: 0, define: [], refer: [], rewrite: []};
         use[role === 'refer' ? 'read' : 'write']++;
-        const owner = {...functionOf(blocks, id),
-            ...withTarget && {targetId: target.id, targetName: target.getName(), ...target.isStage && {stage: true}}};
-        if (!use[role].some(each => each.id === owner.id && each.targetId === owner.targetId)) use[role].push(owner);
+        const owner = {...functionOf(blocks, id), targetId: target.id,
+            ...withTarget && {targetName: target.getName(), ...target.isStage && {stage: true}}};
+        // One entry per function or per script outside any function.
+        const key = owner.id ?? owner.script?.id;
+        if (!use[role].some(each => (each.id ?? each.script?.id) === key && each.targetId === owner.targetId)) use[role].push(owner);
         uses.set(name, use);
     }
     return found;

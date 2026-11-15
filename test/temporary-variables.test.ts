@@ -28,9 +28,17 @@ function block(blocks: Blocks, opcode: string, name: string | null, parent?: str
         input = 'r' + nextId;
         blocks[input] = {opcode: 'operator_join', inputs: {}};
     }
+    // A block given no parent sits in a script under a green flag hat.
+    if (parent === undefined) {
+        blocks.flag ??= {opcode: 'event_whenflagclicked', parent: null, inputs: {}, fields: {}};
+        parent = 'flag';
+    }
     blocks[id] = {opcode: 'lmsTempVars2_' + opcode, parent, inputs: {VAR: {block: input, shadow}}};
     return id;
 }
+
+/** The script of the green flag hat that blocks without a parent sit under. */
+const flag = {id: 'flag', opcode: 'event_whenflagclicked', text: []};
 
 /** A custom block definition, with a block under it so a temporary variable block can sit deeper. */
 function definition(blocks: Blocks, id: string, proccode: string, argumentnames: string[]) {
@@ -74,8 +82,8 @@ test('a sprite lists the thread variables its code names with fixed text, with t
     assert.deepEqual(readTemporaryVariables(runtime, 'cat'), {
         paused: false,
         thread: [
-            {name: 'i', fixed: true, read: 1, write: 2, functions: [{}]},
-            {name: 'n', fixed: true, read: 0, write: 1, functions: [{}]}
+            {name: 'i', fixed: true, read: 1, write: 2, functions: [{targetId: 'cat', script: flag}]},
+            {name: 'n', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat', script: flag}]}
         ]
     });
 });
@@ -93,9 +101,35 @@ test('a thread variable names the functions whose code sets it', () => {
 
     assert.deepEqual(readTemporaryVariables(runtime, 'cat').thread, [
         {name: 'i', fixed: true, read: 0, write: 4, functions: [
-            {id: 'jump', label: 'jump (height) times <fast>'}, {id: 'walk', label: 'walk'}, {}
+            {id: 'jump', label: 'jump (height) times <fast>', targetId: 'cat'}, {id: 'walk', label: 'walk', targetId: 'cat'},
+            {targetId: 'cat', script: flag}
         ]},
         {name: 'only read', fixed: true, read: 1, write: 0, functions: []}
+    ]);
+});
+
+test('a use outside any function names its script by the hat, with the values that tell the hat apart', () => {
+    const {runtime, cat} = project();
+    const blocks = cat.blocks._blocks;
+    blocks.receive = {opcode: 'event_whenbroadcastreceived', parent: null, inputs: {},
+        fields: {BROADCAST_OPTION: {name: 'BROADCAST_OPTION', id: 'message-go', value: 'go'}}};
+    blocks.key = {opcode: 'event_whenkeypressed', parent: null, inputs: {}, fields: {KEY_OPTION: {value: 'space'}}};
+    blocks.louder = {opcode: 'event_whengreaterthan', parent: null,
+        inputs: {VALUE: {block: 'louder-value', shadow: 'louder-value'}}, fields: {WHENGREATERTHANMENU: {value: 'LOUDNESS'}}};
+    blocks['louder-value'] = {opcode: 'math_number', parent: 'louder', inputs: {}, fields: {NUM: {value: '10'}}};
+    blocks.wait = {opcode: 'control_wait', parent: 'receive', inputs: {}, fields: {}};
+    block(blocks, 'setThreadVariable', 'i', 'wait');
+    block(blocks, 'changeThreadVariable', 'i', 'receive');
+    block(blocks, 'setThreadVariable', 'i', 'key');
+    block(blocks, 'setThreadVariable', 'i', 'louder');
+    block(blocks, 'setThreadVariable', 'i', 'clone');
+    blocks.clone = {opcode: 'control_start_as_clone', parent: null, inputs: {}, fields: {}};
+
+    assert.deepEqual(readTemporaryVariables(runtime, 'cat').thread[0].functions, [
+        {targetId: 'cat', script: {id: 'receive', opcode: 'event_whenbroadcastreceived', text: ['go']}},
+        {targetId: 'cat', script: {id: 'key', opcode: 'event_whenkeypressed', text: ['space']}},
+        {targetId: 'cat', script: {id: 'louder', opcode: 'event_whengreaterthan', text: ['10', 'LOUDNESS']}},
+        {targetId: 'cat', script: {id: 'clone', opcode: 'control_start_as_clone', text: []}}
     ]);
 });
 
@@ -107,11 +141,11 @@ test('the stage also lists the runtime variables named anywhere in the project',
     block(stage.blocks._blocks, 'setThreadVariable', 'tmp');
 
     const result = readTemporaryVariables(runtime, 'stage');
-    assert.deepEqual(result.thread, [{name: 'tmp', fixed: true, read: 0, write: 1, functions: [{}]}]);
-    const stageScript = {targetId: 'stage', targetName: 'Stage', stage: true};
+    assert.deepEqual(result.thread, [{name: 'tmp', fixed: true, read: 0, write: 1, functions: [{targetId: 'stage', script: flag}]}]);
+    const stageScript = {targetId: 'stage', targetName: 'Stage', stage: true, script: flag};
     assert.deepEqual(result.runtime, [
         {name: 'score', fixed: true, read: 1, write: 1,
-            functions: [{targetId: 'cat', targetName: 'Cat'}], readers: [stageScript], writers: []},
+            functions: [{targetId: 'cat', targetName: 'Cat', script: flag}], readers: [stageScript], writers: []},
         {name: 'level', fixed: true, read: 0, write: 1, functions: [], readers: [], writers: [stageScript]}
     ]);
 });
@@ -136,7 +170,7 @@ test('a runtime variable names the functions that define, read and rewrite it, i
     assert.deepEqual(readTemporaryVariables(runtime, 'stage').runtime, [{
         name: 'score', fixed: true, read: 3, write: 3,
         functions: [at('cat', 'Cat', {id: 'reset', label: 'reset score'})],
-        readers: [at('stage', 'Stage', {id: 'show', label: 'show score'}), at('stage', 'Stage'),
+        readers: [at('stage', 'Stage', {id: 'show', label: 'show score'}), at('stage', 'Stage', {script: flag}),
             at('cat', 'Cat', {id: 'add', label: 'add (points)'})],
         writers: [at('cat', 'Cat', {id: 'add', label: 'add (points)'}), at('cat', 'Cat', {id: 'reset', label: 'reset score'})]
     }]);
@@ -163,11 +197,11 @@ test('while paused, the values of the sprite and its clones are read, including 
     assert.deepEqual(readTemporaryVariables(runtime, 'cat'), {
         paused: true,
         thread: [
-            {name: 'i', fixed: true, read: 0, write: 1, functions: [{}], values: [
+            {name: 'i', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat', script: flag}], values: [
                 {owner: {targetName: 'Cat', thread: 2}, value: '3'},
                 {owner: {targetName: 'Cat', clone: 1, thread: 3}, value: 'a'}
             ]},
-            {name: 'unused', fixed: true, read: 0, write: 1, functions: [{}], values: []},
+            {name: 'unused', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat', script: flag}], values: []},
             {name: 'item_2', fixed: false, read: 0, write: 0, functions: [], values: [
                 {owner: {targetName: 'Cat', clone: 1, thread: 3}, value: 'true'}
             ]}
@@ -231,8 +265,10 @@ test('the pane lists thread and runtime variables after the global variables', t
     }));
     const sections = [...container.querySelectorAll('section[data-temporary-scope]')];
     assert.deepEqual(sections.map(node => node.getAttribute('aria-label')), ['スレッド変数', 'ランタイム変数']);
-    assert.deepEqual(text(sections[0].querySelectorAll('thead th')), ['変数名', '定義した関数', '読み取り', '変更']);
-    assert.deepEqual(rows(sections[0]), [['i', 'jump (height)関数の外', '1', '2']]);
+    assert.deepEqual(text(sections[0].querySelectorAll('thead th')), ['変数名', '定義した関数']);
+    assert.deepEqual(rows(sections[0]), [['i', 'jump (height)関数の外']]);
+    // The defining column of thread variables has no count badge.
+    assert.equal(sections[0].querySelector('.tw-sprite-variables__temporary-count'), null);
     assert.deepEqual([...sections[0].querySelectorAll('[data-function-id]')].map(node => node.getAttribute('data-function-id')),
         ['jump']);
     assert.match(sections[0].textContent, /一時停止すると/);
@@ -259,11 +295,11 @@ test('while paused, the pane shows each value with the thread that holds it', t 
     }));
     const section = container.querySelector('section[data-temporary-scope="thread"]');
     assert.equal(container.querySelector('section[data-temporary-scope="runtime"]'), null);
-    assert.deepEqual(text(section.querySelectorAll('thead th')), ['変数名', '定義した関数', '値', '読み取り', '変更']);
+    assert.deepEqual(text(section.querySelectorAll('thead th')), ['変数名', '定義した関数', '値']);
     assert.deepEqual(rows(section), [
-        ['i', '', 'Cat・スレッド 13Cat（クローン 2）・スレッド 45', '1', '1'],
-        ['j', '', '未定義', '0', '1'],
-        ['tmp実行時の名前', '', 'Cat・スレッド 2x', '0', '0']
+        ['i', '', 'Cat・スレッド 13Cat（クローン 2）・スレッド 45'],
+        ['j', '', '未定義'],
+        ['tmp実行時の名前', '', 'Cat・スレッド 2x']
     ]);
 });
 
@@ -281,8 +317,13 @@ test('the runtime variables show the functions that define, read and rewrite the
     }));
     const section = container.querySelector('section[data-temporary-scope="runtime"]');
     assert.deepEqual(text(section.querySelectorAll('thead th')),
-        ['変数名', '定義した関数', '参照している関数', '書き換えている関数', '読み取り', '変更']);
-    assert.deepEqual(rows(section), [['score', 'Catreset score', '背景関数の外', 'Catadd (points)Cat関数の外', '1', '2']]);
+        ['変数名', '定義した関数', '参照している関数', '書き換えている関数']);
+    // The reading and rewriting columns lead with how many functions they name; uses outside any
+    // function are not counted.
+    assert.deepEqual(rows(section), [['score', 'Catreset score', '0背景関数の外', '1Catadd (points)Cat関数の外']]);
+    const badges = [...section.querySelectorAll('.tw-sprite-variables__temporary-count')];
+    assert.deepEqual(badges.map(badge => [badge.closest('td').getAttribute('data-column'), badge.getAttribute('aria-label')]),
+        [['readers', '関数 0 個'], ['writers', '関数 1 個']]);
     const cells = (column: string) => [...section.querySelectorAll(`[data-column="${column}"] li`)]
         .map(item => [item.getAttribute('data-target-id'), item.getAttribute('data-function-id')]);
     assert.deepEqual(cells('writers'), [['cat', 'add'], ['cat', null]]);
@@ -311,15 +352,20 @@ test('a clone’s variable pane keeps the temporary variables of its sprite', t 
     };
     const pane = React.createElement(SpriteAssetPane, {
         kind: 'variables', locale: 'en', editable: true, variables: [], onWrite() {},
-        temporaryVariables: {paused: false, thread: [{name: 'i', fixed: true, read: 0, write: 1}]}
+        temporaryVariables: {paused: false, thread: [{name: 'i', fixed: true, read: 0, write: 1,
+            functions: [{id: 'jump', label: 'jump', targetId: 'cat'}]}]},
+        onOpenFunction: (targetId: string, blockId: string) => opened.push([targetId, blockId])
     });
+    const opened: string[][] = [];
     const view = {viewId: 'view', targetId: 'cat', locale: 'en'};
     const container = render(t, React.createElement(SpriteCloneInspector, {vm},
         React.createElement(SpriteClonePagination, view),
         React.createElement(SpriteCloneVariables, {...view, editable: true}, pane)));
     act(() => (container.querySelector('button[aria-label="Clone 1"]') as HTMLElement).click());
     assert.match(container.textContent, /Editing clone 1/);
-    assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')), [['i', '', '0', '1']]);
+    assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')), [['i', 'jump']]);
+    act(() => container.querySelector<HTMLButtonElement>('.tw-sprite-variables__temporary-open').click());
+    assert.deepEqual(opened, [['cat', 'jump']], 'the clone opens the function of its original sprite');
 });
 
 test('each column header sorts the whole table, ascending and then descending', t => {
@@ -329,10 +375,10 @@ test('each column header sorts the whole table, ascending and then descending', 
         temporaryVariables: {
             paused: true, thread: [],
             runtime: [
-                {name: 'b', fixed: true, read: 5, write: 1, functions: [at('reset')], readers: [], writers: [],
-                    values: [{value: '10'}]},
-                {name: 'a', fixed: true, read: 1, write: 3, functions: [at()], readers: [], writers: [],
-                    values: [{value: '2'}]},
+                {name: 'b', fixed: true, read: 5, write: 1, functions: [at('reset')],
+                    readers: [at('show'), at('hud'), at()], writers: [], values: [{value: '10'}]},
+                {name: 'a', fixed: true, read: 1, write: 3, functions: [at()],
+                    readers: [at('show')], writers: [at('add')], values: [{value: '2'}]},
                 {name: 'c', fixed: false, read: 0, write: 0, functions: [], readers: [], writers: [],
                     values: [{value: 'x'}]}
             ]
@@ -347,14 +393,16 @@ test('each column header sorts the whole table, ascending and then descending', 
 
     // Before any choice, names written in the code come first.
     assert.deepEqual(names(), ['a', 'b', 'c']);
-    assert.deepEqual(text(section.querySelectorAll('thead th')),
-        ['Variable name', 'Defined in', 'Read in', 'Changed in', 'Value', 'Read', 'Write']);
-    press('Read');
-    assert.deepEqual(names(), ['c', 'a', 'b']);
-    assert.deepEqual(sortState(), [['Read', 'ascending']]);
-    press('Read');
+    assert.deepEqual(text(section.querySelectorAll('thead th')), ['Variable name', 'Defined in', 'Read in', 'Changed in', 'Value']);
+    press('Read in');
+    assert.deepEqual(names(), ['c', 'a', 'b'], 'by how many functions read it');
+    assert.deepEqual(sortState(), [['Read in', 'ascending']]);
+    press('Read in');
     assert.deepEqual(names(), ['b', 'a', 'c']);
-    assert.deepEqual(sortState(), [['Read', 'descending']]);
+    assert.deepEqual(sortState(), [['Read in', 'descending']]);
+    press('Changed in');
+    press('Changed in');
+    assert.deepEqual(names(), ['a', 'b', 'c'], 'one rewriting function, then none');
     press('Value');
     assert.deepEqual(names(), ['a', 'b', 'c'], 'numbers in their numeric order');
     press('Variable name');
@@ -362,4 +410,85 @@ test('each column header sorts the whole table, ascending and then descending', 
     assert.deepEqual(names(), ['c', 'b', 'a']);
     press('Defined in');
     assert.deepEqual(names(), ['c', 'a', 'b'], 'no function, then Cat outside functions, then Cat reset');
+});
+
+test('pressing a function name opens it in the code, only while the pane is editable', t => {
+    const opened: string[][] = [];
+    const props = (editable: boolean) => ({
+        kind: 'variables', locale: 'ja', editable, variables: [], onWrite() {},
+        onOpenFunction: (targetId: string, blockId: string) => opened.push([targetId, blockId]),
+        temporaryVariables: {
+            paused: false,
+            thread: [{name: 'i', fixed: true, read: 0, write: 1,
+                functions: [{id: 'jump', label: 'jump (height)', targetId: 'cat'}, {targetId: 'cat'}]}],
+            runtime: [{name: 'score', fixed: true, read: 1, write: 1, functions: [],
+                readers: [{id: 'show', label: 'show score', targetId: 'stage', targetName: 'Stage', stage: true}],
+                writers: []}]
+        }
+    });
+    const container = render(t, React.createElement(SpriteAssetPane, props(true)));
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('.tw-sprite-variables__temporary-open')];
+    // Uses outside any function have nothing to open.
+    assert.deepEqual(buttons.map(button => [button.textContent, button.title]),
+        [['jump (height)', '「jump (height)」をコードで開く'], ['show score', '「show score」をコードで開く']]);
+    act(() => buttons[0].click());
+    act(() => buttons[1].click());
+    assert.deepEqual(opened, [['cat', 'jump'], ['stage', 'show']]);
+
+    const readOnly = render(t, React.createElement(SpriteAssetPane, props(false)));
+    assert.equal(readOnly.querySelector('.tw-sprite-variables__temporary-open'), null);
+    assert.deepEqual(text(readOnly.querySelectorAll('[data-column] code')), ['jump (height)', 'show score']);
+});
+
+test('the add button closes the global variables, before the temporary variables', t => {
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'ja', editable: true, global: {canAddCloudVariable: true},
+        variables: [{id: 'v', name: 'score', value: 0}], onWrite() {}, onEdit() {},
+        temporaryVariables: {paused: false, thread: [], runtime: []}
+    }));
+    const scroll = container.querySelector('.tw-sprite-variables__scroll');
+    const order = [...scroll.children].map(node => node.matches('table') ? 'table' :
+        node.matches('.tw-sprite-variables__add') ? node.textContent :
+        node.getAttribute('data-temporary-scope') ?? node.className);
+    assert.deepEqual(order, ['tw-sprite-variables__intro', 'table', '新しいグローバル変数を追加', 'thread', 'runtime']);
+    assert.equal(container.querySelectorAll('.tw-sprite-variables__add').length, 1);
+});
+
+test('a script outside any function shows its hat as drawn, with the values that tell it apart', t => {
+    const opened: string[][] = [];
+    const drawn: string[] = [];
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'ja', editable: true, variables: [], onWrite() {},
+        onOpenFunction: (targetId: string, blockId: string) => opened.push([targetId, blockId]),
+        getBlockImage: (targetId: string, blockId: string) => {
+            drawn.push(targetId + '/' + blockId);
+            const svg = window.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.dataset.drawn = blockId;
+            return svg;
+        },
+        temporaryVariables: {
+            paused: false,
+            thread: [{name: 'i', fixed: true, read: 0, write: 1, functions: [
+                {targetId: 'cat', script: {id: 'receive', opcode: 'event_whenbroadcastreceived', text: ['go']}},
+                {targetId: 'cat', script: {id: 'flag', opcode: 'event_whenflagclicked', text: []}}
+            ]}]
+        }
+    }));
+    const hats = [...container.querySelectorAll('[data-script-id] .tw-block-image')];
+    assert.deepEqual(hats.map(node => [node.querySelector('svg').dataset.drawn, node.getAttribute('aria-label')]),
+        [['receive', '「go」を受け取ったとき'], ['flag', '緑の旗が押されたとき']]);
+    assert.deepEqual(text(container.querySelectorAll('.tw-sprite-variables__temporary-hat-text')), ['go']);
+    assert.ok(drawn.includes('cat/receive') && drawn.includes('cat/flag'));
+    act(() => container.querySelector<HTMLButtonElement>('[data-script-id="receive"] button').click());
+    assert.deepEqual(opened, [['cat', 'receive']]);
+});
+
+test('without a renderer, a hat is named in words', t => {
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'ja', editable: false, variables: [], onWrite() {},
+        temporaryVariables: {paused: false, thread: [{name: 'i', fixed: true, read: 0, write: 1, functions: [
+            {targetId: 'cat', script: {id: 'key', opcode: 'event_whenkeypressed', text: ['space']}}]}]}
+    }));
+    assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')),
+        [['i', 'キーが押されたときspace']]);
 });

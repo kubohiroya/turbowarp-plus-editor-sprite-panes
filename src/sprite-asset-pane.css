@@ -306,10 +306,39 @@
 @media (hover: hover) {
     .tw-sprite-variables__table tbody tr:not(:hover, :has(:focus-visible)) :is(
         .tw-sprite-variables__actions-cell > div, .tw-sprite-variables__list-edit
-    ) {
+    ),
+    /* The pencil after a name shows while its row is pointed at or holds the focus. */
+    .tw-sprite-variables__table tbody tr:not(:hover, :focus-within) .tw-pane-name-edit {
         opacity: 0;
         pointer-events: none;
     }
+}
+
+/* Renames the variable or message named just before it. */
+.tw-pane-name-edit {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.6rem;
+    block-size: 1.6rem;
+    margin-inline-start: .3rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: .3rem;
+    color: inherit;
+    background: transparent;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.tw-pane-name-edit:hover:not(:disabled),
+.tw-pane-name-edit:focus-visible {
+    border-color: var(--ui-black-transparent, #ccd5e2);
+    color: var(--tw-variables-accent, #ff4c4c);
+}
+
+.tw-pane-name-edit:disabled {
+    opacity: .4;
+    cursor: default;
 }
 
 @container (max-width: 30rem) {
@@ -378,9 +407,9 @@
 
 .tw-sprite-variables__add {
     flex: none;
-    align-self: start;
-    max-inline-size: calc(100% - 1.5rem);
-    margin: .5rem .75rem .75rem;
+    inline-size: fit-content;
+    max-inline-size: 100%;
+    margin: .6rem 0 0;
     display: flex;
     align-items: center;
     gap: .5rem;
@@ -698,66 +727,29 @@
     background: var(--ui-white, #fff);
 }
 
-.tw-sprite-messages__title {
-    margin: 0 0 .35rem;
-    font-size: .9rem;
+
+
+
+
+
+
+
+/* The warning sign of a message without receivers or senders. */
+.tw-sprite-messages__warning {
+    flex: none;
+    inline-size: 1.1em;
+    block-size: 1.1em;
+    margin-inline-end: .25em;
+    vertical-align: -.2em;
+    fill: none;
+    stroke: var(--tw-message-warning, #e0a100);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
-.tw-sprite-messages__table {
-    inline-size: 100%;
-    border-collapse: collapse;
-    text-align: start;
-}
 
-.tw-sprite-messages__table th,
-.tw-sprite-messages__table td {
-    padding: .3rem .4rem;
-    border-block-end: 1px solid var(--ui-black-transparent, #ccd5e2);
-    font-weight: normal;
-    text-align: start;
-    vertical-align: top;
-}
 
-.tw-sprite-messages__table thead th {
-    color: var(--text-primary-transparent, #575e75);
-    font-size: .8rem;
-}
-
-.tw-sprite-messages__script-start {
-    display: block;
-    margin-block-start: .15em;
-    color: var(--text-primary-transparent, #575e75);
-    font-size: .875em;
-}
-
-.tw-sprite-messages__link {
-    padding: 0;
-    border: 0;
-    color: inherit;
-    background: none;
-    font: inherit;
-    text-align: start;
-    text-decoration: underline;
-    cursor: pointer;
-}
-
-.tw-sprite-messages__status {
-    margin-inline-start: .4rem;
-    padding: .05rem .35rem;
-    border-radius: .75rem;
-    background: var(--ui-black-transparent, #ccd5e2);
-    font-size: .72rem;
-    white-space: nowrap;
-}
-
-.tw-sprite-messages__list {
-    margin: 0;
-    padding-inline-start: 1.1rem;
-}
-
-.tw-sprite-messages__list li {
-    margin-block: .2rem;
-}
 
 .tw-sprite-messages__empty,
 .tw-sprite-messages__hint {
@@ -766,52 +758,15 @@
     font-size: .82rem;
 }
 
-.tw-sprite-messages__editor {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .35rem;
-    align-items: center;
-    margin-block: .35rem;
-}
 
-.tw-sprite-messages__editor [role="alert"] {
-    flex-basis: 100%;
-    margin: 0;
-}
 
 .tw-sprite-messages__hint {
-    flex-basis: 100%;
+    margin-block: .5rem 0;
 }
 
-.tw-sprite-messages__button {
-    padding: .25rem .5rem;
-    border: 1px solid var(--ui-black-transparent, #ccd5e2);
-    border-radius: .25rem;
-    color: inherit;
-    background: var(--input-background, #fff);
-    font: inherit;
-}
 
-.tw-sprite-messages__rename {
-    display: inline-flex;
-    align-items: center;
-    gap: .3rem;
-}
 
-.tw-sprite-messages__button:disabled {
-    opacity: .55;
-}
 
-.tw-sprite-messages__input {
-    box-sizing: border-box;
-    inline-size: min(100%, 16rem);
-    padding: .3rem .45rem;
-    border: 1px solid var(--ui-black-transparent, #ccd5e2);
-    border-radius: .25rem;
-    color: inherit;
-    background: var(--input-background, #fff);
-    font: inherit;
-}
 
 .tw-sprite-messages__diagram {
     --message-columns: minmax(7rem, 1fr) minmax(8rem, 1.4fr) minmax(7rem, 1fr);
@@ -822,10 +777,6 @@
     overflow-x: auto;
 }
 
-.tw-sprite-messages__diagram figcaption {
-    margin-block-end: .5rem;
-    font-weight: bold;
-}
 
 .tw-sprite-messages__connections {
     min-inline-size: 22rem;
@@ -858,9 +809,6 @@
     padding: .65rem .25rem;
 }
 
-.tw-sprite-messages__connection + .tw-sprite-messages__connection {
-    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
-}
 
 .tw-sprite-messages__endpoints li {
     position: relative;
@@ -935,14 +883,7 @@
     padding: calc(.2rem - 2px) calc(.35rem - 2px);
 }
 
-button.tw-sprite-messages__node {
-    cursor: pointer;
-}
 
-button.tw-sprite-messages__node:hover,
-button.tw-sprite-messages__node:focus-visible {
-    border-color: var(--message-accent);
-}
 
 .tw-sprite-messages__node img {
     flex: none;
@@ -967,7 +908,7 @@ button.tw-sprite-messages__node:focus-visible {
 .tw-sprite-messages__edge::after {
     content: "";
     grid-row: 2;
-    border-block-start: 1px solid var(--message-line);
+    border-block-start: 1.5px solid var(--message-line);
 }
 
 .tw-sprite-messages__edge[data-status="sendOnly"]::after,
@@ -981,8 +922,9 @@ button.tw-sprite-messages__node:focus-visible {
     inset-block-start: 50%;
     inset-inline-end: 100%;
     inline-size: 0;
-    border-block: .25em solid transparent;
-    border-inline-start: .45em solid var(--message-line);
+    /* A large head, so the direction of a message reads at a glance. */
+    border-block: .55em solid transparent;
+    border-inline-start: .95em solid var(--message-line);
     transform: translateY(-50%);
 }
 
@@ -991,11 +933,30 @@ button.tw-sprite-messages__node:focus-visible {
     align-self: end;
     justify-self: center;
     display: flex;
-    align-items: start;
+    align-items: center;
     gap: .3em;
     min-inline-size: 0;
-    padding: .05rem .45rem .2rem;
+    padding: .05rem .45rem .25rem;
+    font-size: 1.15rem;
+    font-weight: bold;
     overflow-wrap: anywhere;
+}
+
+.tw-sprite-messages__icon {
+    flex: none;
+    inline-size: 1em;
+    block-size: 1em;
+    margin-inline-end: .3em;
+    vertical-align: -.15em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.8;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-messages__edge-label .tw-sprite-messages__icon {
+    margin-inline-end: 0;
+    vertical-align: baseline;
 }
 
 .tw-sprite-messages__edge-label svg {
@@ -1555,7 +1516,8 @@ button.tw-sprite-messages__node:focus-visible {
 .tw-sprite-variables__temporary-functions li {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    /* Hats are taller than text, so the sprite name sits beside their middle. */
+    align-items: center;
     gap: 0 .4rem;
 }
 
@@ -1649,4 +1611,291 @@ button.tw-sprite-messages__node:focus-visible {
     margin: 0;
     color: var(--error-primary, #d9001b);
     font-size: .82rem;
+}
+
+.tw-sprite-variables__temporary-cell {
+    display: flex;
+    align-items: flex-start;
+    gap: .45rem;
+}
+
+.tw-sprite-variables__temporary-count {
+    flex: none;
+    min-inline-size: 1.4em;
+    padding: .05em .4em;
+    border-radius: 999px;
+    color: var(--ui-white, #fff);
+    background: var(--tw-variables-accent, #ff8c1a);
+    font-size: .8em;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.tw-sprite-variables__temporary-open {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.tw-sprite-variables__temporary-open code {
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: .15em;
+}
+
+.tw-sprite-variables__temporary-open:hover code,
+.tw-sprite-variables__temporary-open:focus-visible code {
+    text-decoration-color: currentColor;
+}
+
+.tw-sprite-variables__temporary-hat {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .2rem .45rem;
+}
+
+/* A block drawn by BlockImage, about as large as the code area shows it at its default zoom. */
+.tw-block-image {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.tw-block-image[hidden] {
+    display: none;
+}
+
+.tw-block-image svg {
+    display: block;
+    inline-size: auto;
+    block-size: var(--tw-block-image-height, 3rem);
+    max-inline-size: 16rem;
+}
+
+
+.tw-sprite-variables__temporary-hat-text {
+    padding: .05em .35em;
+    border-radius: .25rem;
+    background: var(--ui-black-transparent, #e8ecf2);
+    font-size: .85em;
+}
+
+/* A sender in the message diagram lists the scripts that send: the hat drawn small, then words. */
+.tw-sprite-messages__node-text {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    min-inline-size: 0;
+}
+
+.tw-sprite-messages__sources {
+    display: grid;
+    gap: .15rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: .78rem;
+    --tw-block-image-height: 1.8rem;
+}
+
+.tw-sprite-messages__sources li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .1rem .4rem;
+}
+
+/* The connector lines of the diagram belong to the endpoint items, not to these. */
+.tw-sprite-messages__endpoints .tw-sprite-messages__sources li {
+    position: static;
+    padding: 0;
+}
+
+.tw-sprite-messages__endpoints .tw-sprite-messages__sources li::before,
+.tw-sprite-messages__endpoints .tw-sprite-messages__sources li::after {
+    content: none;
+}
+
+.tw-sprite-messages__source-text {
+    color: var(--text-primary-transparent, #575e75);
+}
+
+/* The message pane shows what the target sends and what it receives on two tabs. */
+.tw-sprite-messages__tabs {
+    display: flex;
+    gap: .25rem;
+    border-block-end: 1px solid var(--ui-black-transparent, #ccd5e2);
+}
+
+.tw-sprite-messages__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    margin-block-end: -1px;
+    padding: .45rem .9rem;
+    border: 1px solid transparent;
+    border-radius: .4rem .4rem 0 0;
+    color: var(--text-primary-transparent, #575e75);
+    background: transparent;
+    font: inherit;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.tw-sprite-messages__tab:hover,
+.tw-sprite-messages__tab:focus-visible {
+    color: var(--text-primary, #273146);
+}
+
+.tw-sprite-messages__tab[aria-selected="true"] {
+    border-color: var(--ui-black-transparent, #ccd5e2);
+    border-block-end-color: var(--ui-white, #fff);
+    color: var(--message-accent, var(--tw-variables-accent, #ff4c4c));
+    background: var(--ui-white, #fff);
+}
+
+.tw-sprite-messages__tab-count {
+    min-inline-size: 1.3em;
+    padding: 0 .35em;
+    border-radius: 999px;
+    color: inherit;
+    background: var(--ui-black-transparent, #e8ecf2);
+    font-size: .8em;
+    text-align: center;
+}
+
+.tw-sprite-messages__tab-panel {
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    padding-block-start: .5rem;
+}
+
+.tw-sprite-messages__tab-panel[hidden] {
+    display: none;
+}
+
+/* A sender or receiver in the diagram: its name opens it, and a sender's scripts open their blocks. */
+.tw-sprite-messages__node-name {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    font-weight: bold;
+    text-align: start;
+}
+
+button.tw-sprite-messages__node-name,
+button.tw-sprite-messages__source {
+    cursor: pointer;
+}
+
+button.tw-sprite-messages__node-name:hover,
+button.tw-sprite-messages__node-name:focus-visible {
+    color: var(--message-accent);
+    text-decoration: underline;
+}
+
+.tw-sprite-messages__source {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .1rem .4rem;
+    padding: .1rem .2rem;
+    border: 1px solid transparent;
+    border-radius: .3rem;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+}
+
+button.tw-sprite-messages__source:hover,
+button.tw-sprite-messages__source:focus-visible {
+    border-color: var(--message-accent);
+}
+
+/* The ▼ after a message name opens its menu. */
+.tw-sprite-messages__menu {
+    position: relative;
+    display: inline-flex;
+}
+
+.tw-sprite-messages__menu-button {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.4rem;
+    block-size: 1.4rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: .3rem;
+    color: inherit;
+    background: transparent;
+    cursor: pointer;
+}
+
+.tw-sprite-messages__menu-button:hover:not(:disabled),
+.tw-sprite-messages__menu-button:focus-visible,
+.tw-sprite-messages__menu-button[aria-expanded="true"] {
+    border-color: var(--ui-black-transparent, #ccd5e2);
+    color: var(--message-accent);
+}
+
+.tw-sprite-messages__menu-button:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+.tw-sprite-messages__edge-label .tw-sprite-messages__menu-icon {
+    inline-size: .7em;
+    block-size: .7em;
+    margin: 0;
+    fill: currentColor;
+    stroke: none;
+}
+
+.tw-sprite-messages__menu-list {
+    position: absolute;
+    inset-block-start: calc(100% + .2rem);
+    inset-inline-start: 50%;
+    z-index: 2;
+    min-inline-size: max-content;
+    margin: 0;
+    padding: .25rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .4rem;
+    background: var(--ui-white, #fff);
+    box-shadow: 0 .3rem .9rem #0003;
+    list-style: none;
+    font-size: .85rem;
+    font-weight: normal;
+    transform: translateX(-50%);
+}
+
+.tw-sprite-messages__menu-item {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    inline-size: 100%;
+    padding: .35rem .6rem;
+    border: 0;
+    border-radius: .3rem;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.tw-sprite-messages__menu-item:hover,
+.tw-sprite-messages__menu-item:focus-visible {
+    color: var(--ui-white, #fff);
+    background: var(--message-accent);
 }

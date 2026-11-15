@@ -1,6 +1,6 @@
 {
   "name": "@kubohiroya/turbowarp-plus-editor-sprite-panes",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Panes of the TurboWarp Plus Editor sprite editor: assets, variables, messages, functions, properties and the section toolbar",
   "type": "module",
   "license": "MPL-2.0",
@@ -30,6 +30,14 @@
     "./temporary-variables": {
       "types": "./dist/temporary-variables.d.ts",
       "default": "./dist/temporary-variables.js"
+    },
+    "./block-image": {
+      "types": "./dist/block-image.d.ts",
+      "default": "./dist/block-image.js"
+    },
+    "./script-start": {
+      "types": "./dist/script-start.d.ts",
+      "default": "./dist/script-start.js"
     },
     "./sprite-properties": {
       "types": "./dist/sprite-properties.d.ts",
