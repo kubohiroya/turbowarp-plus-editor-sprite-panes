@@ -492,3 +492,48 @@ test('without a renderer, a hat is named in words', t => {
     assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')),
         [['i', 'キーが押されたときspace']]);
 });
+
+test('extensions list their own variables on the stage, with values only while paused', t => {
+    const {runtime, cat} = project({loaded: false});
+    let calls = 0;
+    const story = {story: {score: 3, name: '浦島', flags: {open: true}}};
+    Object.assign(runtime, {
+        ext_kamishibai: {getInspectorVariables: () => (calls++, {title: '台本の変数', description: '物語変数です。', variables: story.story})},
+        ext_broken: {getInspectorVariables() {throw new Error('no');}},
+        ext_silent: {getInspectorVariables: () => null},
+        ext_other: {}
+    });
+    assert.equal(readTemporaryVariables(runtime, 'cat'), undefined, 'sprites do not list them');
+    assert.deepEqual(readTemporaryVariables(runtime, 'stage'), {
+        paused: false, thread: [], extensions: [{id: 'kamishibai', title: '台本の変数', description: '物語変数です。'}]
+    });
+    runtime.ioDevices.clock._paused = true;
+    assert.deepEqual(readTemporaryVariables(runtime, 'stage').extensions, [{
+        id: 'kamishibai', title: '台本の変数', description: '物語変数です。',
+        values: [{name: 'score', value: '3'}, {name: 'name', value: '浦島'}, {name: 'flags', value: '{"open":true}'}]
+    }]);
+    assert.ok(calls >= 2);
+
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'ja', editable: true, variables: [], onWrite() {},
+        temporaryVariables: readTemporaryVariables(runtime, 'stage')
+    }));
+    assert.equal(container.querySelector('section[data-temporary-scope]'), null,
+        'without the Temporary Variables extension, its tables stay hidden');
+    const section = container.querySelector('section[data-extension-variables="kamishibai"]');
+    assert.equal(section.querySelector('h3').textContent, '台本の変数');
+    assert.deepEqual(rows(section), [['flags', '{"open":true}'], ['name', '浦島'], ['score', '3']]);
+});
+
+test('a change in an extension variable during a pause is reported', async () => {
+    const {runtime} = project({paused: true});
+    const values: Record<string, unknown> = {score: 1};
+    Object.assign(runtime, {ext_kamishibai: {getInspectorVariables: () => ({title: 'Story', variables: values})}});
+    let calls = 0;
+    const stop = watchTemporaryVariables(runtime, () => calls++, 5);
+    assert.equal(calls, 1);
+    values.score = 2;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    stop();
+    assert.equal(calls, 2);
+});
