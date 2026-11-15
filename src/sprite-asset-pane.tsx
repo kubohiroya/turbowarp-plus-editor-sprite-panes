@@ -2,6 +2,7 @@ import React from 'react';
 import {PenIcon} from './pen-icon.tsx';
 import {observeTileNameTitles} from './native-tile-title.ts';
 import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from './sprite-properties.tsx';
+import {PaneDialog, PaneDialogActions, useDialogIds} from './pane-dialog.tsx';
 import type {TemporaryVariable, TemporaryVariableFunction, TemporaryVariableOwner, TemporaryVariables} from './temporary-variables.ts';
 import {BlockImage, hatName, type GetBlockImage} from './block-image.tsx';
 import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError, type SpriteVariableValue, type SpriteListItem} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
@@ -379,85 +380,7 @@ const PlusIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon"
 const TrashIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon">
     <path d="M2.8 4.3h10.4M6.3 4.3V2.8h3.4v1.5M4.2 4.3l.7 8.9h6.2l.7-8.9M6.8 6.8v4.1M9.2 6.8v4.1" />
 </svg>;
-const CloseIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>;
-
-let nextDialogId = 0;
-
-/**
- * IDs for one dialog's title and input. React's own ID hook arrived in React 18, but the package
- * supports React 16.14 (see peerDependencies), and the Editor mounts this pane in the GUI's React 16.
- */
-function useDialogIds() {
-    const [ids] = React.useState(() => {
-        const id = 'tw-sprite-variables-dialog-' + ++nextDialogId;
-        return {titleId: id + '-title', inputId: id + '-input'};
-    });
-    return ids;
-}
-
-function VariableModal({title, labels, onClose, children, list}: React.PropsWithChildren<{
-    title: string;
-    labels: VariableLabels;
-    onClose(): void;
-    list?: boolean;
-}>) {
-    const dialog = React.useRef<HTMLDialogElement>(null);
-    const {titleId} = useDialogIds();
-    React.useLayoutEffect(() => {
-        const node = dialog.current;
-        if (!node) return;
-        if (typeof node.showModal === 'function') {
-            if (!node.open) node.showModal();
-        } else node.setAttribute('open', '');
-        // React sets autoFocus before the dialog opens.
-        const initial = node.querySelector<HTMLElement>('[data-initial-focus]');
-        initial?.focus();
-        if (initial instanceof HTMLInputElement) initial.select();
-        return () => {
-            if (node.open && typeof node.close === 'function') node.close();
-        };
-    }, []);
-    return <dialog ref={dialog}
-        className={list ? 'tw-sprite-variables__dialog tw-sprite-variables__dialog--list' : 'tw-sprite-variables__dialog'}
-        aria-labelledby={titleId}
-        onCancel={event => {
-            event.preventDefault();
-            onClose();
-        }}
-        onKeyDown={event => {
-            if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            event.stopPropagation();
-            onClose();
-        }}
-        onClick={event => {
-            if (event.target === event.currentTarget) onClose();
-        }}>
-        <div className="tw-sprite-variables__dialog-header">
-            <h2 id={titleId} className="tw-sprite-variables__dialog-title">{title}</h2>
-            <button type="button" className="tw-sprite-variables__dialog-close" aria-label={labels.close} onClick={onClose}>
-                <CloseIcon />
-            </button>
-        </div>
-        {children}
-    </dialog>;
-}
-
 const creationTypes = ['variable', 'list'] as const;
-
-function VariableDialogActions({cancelLabel, confirmLabel, onClose, deleting = false}: {
-    cancelLabel: string;
-    confirmLabel: string;
-    onClose(): void;
-    deleting?: boolean;
-}) {
-    return <div className="tw-sprite-variables__dialog-buttons tw-plus-dialog-actions">
-        <button type="button" className="tw-sprite-variables__dialog-button" onClick={onClose}
-            data-dialog-action="cancel" data-initial-focus={deleting ? '' : undefined}>{cancelLabel}</button>
-        <button type="submit" className="tw-sprite-variables__dialog-button tw-sprite-variables__dialog-button--ok"
-            data-dialog-action={deleting ? 'delete' : 'confirm'}>{confirmLabel}</button>
-    </div>;
-}
 
 function VariableDialog({action, labels, targetName, error, onSubmit, onClose, onClearError, clone, global}: {
     action: SpriteVariableEdit;
@@ -497,7 +420,7 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose, o
             onChange={event => setName(event.currentTarget.value)} autoComplete="off" spellCheck={false} data-initial-focus="" />
         {errorMessage}
     </>;
-    return <VariableModal title={title} labels={labels} onClose={onClose}>
+    return <PaneDialog title={title} closeLabel={labels.close} onClose={onClose}>
         <form className="tw-sprite-variables__dialog-body" onSubmit={event => onSubmit(event, list)}>
             {isCreate ? <>
                 <div className="tw-sprite-variables__creation-tabs" role="tablist" aria-label={labels.type}>
@@ -531,10 +454,10 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose, o
                 nameField}
             {clone && <p>{labels.sharedDefinition}</p>}
             {isDelete && errorMessage}
-            <VariableDialogActions cancelLabel={labels.cancel} onClose={onClose} deleting={isDelete}
+            <PaneDialogActions cancelLabel={labels.cancel} onClose={onClose} deleting={isDelete}
                 confirmLabel={isCreate ? labels.create : isDelete ? labels.confirmDelete : labels.ok} />
         </form>
-    </VariableModal>;
+    </PaneDialog>;
 }
 
 const listItemValue = ({original, text}: {original: SpriteListItem; text: string}): SpriteListItem => {
@@ -577,7 +500,7 @@ function ListValueDialog({name, value, labels, onSave, onClose}: {
         focusId.current = id;
         setItems([...items, {id, original: '', text: ''}]);
     };
-    return <VariableModal list title={labels.editListTitle.replace('%1', name)} labels={labels} onClose={onClose}>
+    return <PaneDialog list title={labels.editListTitle.replace('%1', name)} closeLabel={labels.close} onClose={onClose}>
         <form ref={form} className="tw-sprite-variables__list-form" onSubmit={event => {
             event.preventDefault();
             const next = items.map(listItemValue);
@@ -619,10 +542,10 @@ function ListValueDialog({name, value, labels, onSave, onClose}: {
             <div className="tw-sprite-variables__list-footer">
                 <button type="button" className="tw-sprite-variables__action" data-add-item=""
                     data-initial-focus={!items.length ? '' : undefined} onClick={add}><PlusIcon />{labels.addItem}</button>
-                <VariableDialogActions cancelLabel={labels.cancel} confirmLabel={labels.save} onClose={onClose} />
+                <PaneDialogActions cancelLabel={labels.cancel} confirmLabel={labels.save} onClose={onClose} />
             </div>
         </form>
-    </VariableModal>;
+    </PaneDialog>;
 }
 
 const ListArrow = ({down}: {down?: boolean}) => <svg {...iconProps} className="tw-sprite-variables__icon">
@@ -918,6 +841,10 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                             {variableName(variable)}
                             {variable.isCloud && <> <span className="tw-sprite-variables__cloud" role="img"
                                 aria-label={labels.cloudVariable} title={labels.cloudVariable}>☁︎</span></>}
+                            {onEdit && !list && <button type="button" className="tw-pane-name-edit" disabled={!editable}
+                                aria-label={labels.rename} title={labels.rename}
+                                onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
+                                <PenIcon /></button>}
                             {variable.scope && <span className="tw-sprite-variables__scope">{labels[variable.scope]}</span>}
                         </th>
                         <td>{list ? <ListPreview id={variable.id} value={value} editable={editable} labels={labels}
@@ -936,10 +863,6 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                         })}
                         {onEdit && <td className="tw-sprite-variables__actions-cell">
                             {!list && <div className="tw-sprite-variables__actions">
-                                <button type="button" className="tw-sprite-variables__action" disabled={!editable}
-                                    onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
-                                    <PenIcon />{labels.rename}
-                                </button>
                                 <button type="button" className="tw-sprite-variables__action tw-sprite-variables__action--delete"
                                     disabled={!editable || inUse} title={inUse ? labels.inUse : undefined}
                                     onClick={() => start({type: 'delete', id: variable.id})}>

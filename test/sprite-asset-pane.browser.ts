@@ -74,6 +74,7 @@ async function openPage(t) {
         ['/pen-icon.js', new URL('../dist/pen-icon.js', import.meta.url)],
         ['/sprite-asset-pane.js', new URL('../dist/sprite-asset-pane.js', import.meta.url)],
         ['/block-image.js', new URL('../dist/block-image.js', import.meta.url)],
+        ['/pane-dialog.js', new URL('../dist/pane-dialog.js', import.meta.url)],
         ['/sprite-variable-edit.js', require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit')],
         ['/native-tile-title.js', new URL('../dist/native-tile-title.js', import.meta.url)],
         ['/sprite-properties.js', new URL('../dist/sprite-properties.js', import.meta.url)],
@@ -156,9 +157,9 @@ test('variable create, rename and delete open a Scratch-style modal dialog', asy
     assert.deepEqual(await page.getByRole('columnheader').allTextContents(), ['種類', '変数名', '値', '操作']);
     assert.equal(await page.getByRole('columnheader', {name: '操作', exact: true}).getByRole('button').count(), 0);
     const add = page.getByRole('button', {name: '新しいスプライト変数を追加'});
-    const [pane, addBox] = [await page.locator('.tw-sprite-variables').boundingBox(), await add.boundingBox()];
-    assert.ok(addBox.x < pane.x + 30 && addBox.y + addBox.height > pane.y + pane.height - 30,
-        'the add button sits at the bottom-left corner of the pane');
+    const [table, addBox] = [await page.locator('.tw-sprite-variables__table').boundingBox(), await add.boundingBox()];
+    assert.ok(Math.abs(addBox.x - table.x) < 2 && addBox.y >= table.y + table.height && addBox.y < table.y + table.height + 30,
+        'the add button sits right below the variable table');
 
     await add.click();
     const dialog = page.getByRole('dialog', {name: '新しいスプライト変数'});
@@ -172,8 +173,9 @@ test('variable create, rename and delete open a Scratch-style modal dialog', asy
     await dialog.waitFor({state: 'detached'});
 
     const row = page.getByRole('row').filter({has: page.getByRole('textbox', {name: 'Speed'})});
-    const renameButton = row.getByRole('button', {name: '変数名を変更'});
-    const opacity = () => renameButton.evaluate(button => getComputedStyle(button.parentElement).opacity);
+    // The rename button is a pencil right after the variable name.
+    const renameButton = row.getByRole('rowheader').getByRole('button', {name: '変数名を変更'});
+    const opacity = () => renameButton.evaluate(button => getComputedStyle(button).opacity);
     await page.mouse.move(0, 0);
     assert.equal(await opacity(), '0');
     await row.hover();

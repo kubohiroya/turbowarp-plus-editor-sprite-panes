@@ -306,10 +306,40 @@
 @media (hover: hover) {
     .tw-sprite-variables__table tbody tr:not(:hover, :has(:focus-visible)) :is(
         .tw-sprite-variables__actions-cell > div, .tw-sprite-variables__list-edit
-    ) {
+    ),
+    /* The pencil after a name shows while its row is pointed at or holds the focus. */
+    :is(.tw-sprite-variables__table tbody tr, .tw-sprite-messages__table tbody tr,
+        .tw-sprite-messages__list > li):not(:hover, :focus-within) .tw-pane-name-edit {
         opacity: 0;
         pointer-events: none;
     }
+}
+
+/* Renames the variable or message named just before it. */
+.tw-pane-name-edit {
+    display: inline-grid;
+    place-items: center;
+    inline-size: 1.6rem;
+    block-size: 1.6rem;
+    margin-inline-start: .3rem;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: .3rem;
+    color: inherit;
+    background: transparent;
+    vertical-align: middle;
+    cursor: pointer;
+}
+
+.tw-pane-name-edit:hover:not(:disabled),
+.tw-pane-name-edit:focus-visible {
+    border-color: var(--ui-black-transparent, #ccd5e2);
+    color: var(--tw-variables-accent, #ff4c4c);
+}
+
+.tw-pane-name-edit:disabled {
+    opacity: .4;
+    cursor: default;
 }
 
 @container (max-width: 30rem) {
@@ -766,52 +796,15 @@
     font-size: .82rem;
 }
 
-.tw-sprite-messages__editor {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .35rem;
-    align-items: center;
-    margin-block: .35rem;
-}
 
-.tw-sprite-messages__editor [role="alert"] {
-    flex-basis: 100%;
-    margin: 0;
-}
 
 .tw-sprite-messages__hint {
-    flex-basis: 100%;
+    margin-block: .5rem 0;
 }
 
-.tw-sprite-messages__button {
-    padding: .25rem .5rem;
-    border: 1px solid var(--ui-black-transparent, #ccd5e2);
-    border-radius: .25rem;
-    color: inherit;
-    background: var(--input-background, #fff);
-    font: inherit;
-}
 
-.tw-sprite-messages__rename {
-    display: inline-flex;
-    align-items: center;
-    gap: .3rem;
-}
 
-.tw-sprite-messages__button:disabled {
-    opacity: .55;
-}
 
-.tw-sprite-messages__input {
-    box-sizing: border-box;
-    inline-size: min(100%, 16rem);
-    padding: .3rem .45rem;
-    border: 1px solid var(--ui-black-transparent, #ccd5e2);
-    border-radius: .25rem;
-    color: inherit;
-    background: var(--input-background, #fff);
-    font: inherit;
-}
 
 .tw-sprite-messages__diagram {
     --message-columns: minmax(7rem, 1fr) minmax(8rem, 1.4fr) minmax(7rem, 1fr);

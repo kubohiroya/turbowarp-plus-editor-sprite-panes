@@ -1,6 +1,7 @@
 import React from 'react';
 import {PenIcon} from './pen-icon.tsx';
 import {BlockImage, hatName, type GetBlockImage} from './block-image.tsx';
+import {PaneDialog, PaneDialogActions, useDialogIds} from './pane-dialog.tsx';
 import type {
     MessageRenameError, MessageStatus, MessageUse, ProjectMessage, TargetMessages
 } from '@kubohiroya/turbowarp-plus-editor-project-model/project-messages';
@@ -34,8 +35,10 @@ const english = {
     message: 'Message',
     block: 'Block',
     scriptStart: 'Script starts with %1',
-    actions: 'Actions',
     rename: 'Rename message',
+    renameConfirm: 'Rename',
+    newName: 'New message name:',
+    close: 'Close',
     cancel: 'Cancel',
     name: 'Message name',
     projectWide: 'Renaming a message changes it everywhere in the project.',
@@ -72,8 +75,10 @@ const japanese: typeof english = {
     message: 'メッセージ',
     block: 'ブロック',
     scriptStart: '「%1」から始まるスクリプト',
-    actions: '操作',
     rename: 'メッセージ名を変更',
+    renameConfirm: '変更',
+    newName: '新しいメッセージ名:',
+    close: '閉じる',
     cancel: 'キャンセル',
     name: 'メッセージ名',
     projectWide: 'メッセージの名前を変えると、作品全体で変わります。',
@@ -120,40 +125,40 @@ function Status({labels, status}: {labels: Labels; status: MessageStatus}) {
     return <span className="tw-sprite-messages__status" data-status={status}>{labels[status]}</span>;
 }
 
+/** The pencil after a message name. It shows while the row is pointed at or focused, and opens the rename dialog. */
 function RenameButton({labels, editable, onClick}: {labels: Labels; editable: boolean; onClick(): void}) {
-    return <button type="button" className="tw-sprite-messages__button tw-sprite-messages__rename"
-        disabled={!editable} onClick={onClick}>
-        <PenIcon />{labels.rename}
+    return <button type="button" className="tw-pane-name-edit" disabled={!editable}
+        aria-label={labels.rename} title={labels.rename} onClick={onClick}>
+        <PenIcon />
     </button>;
 }
 
-function RenameForm({labels, message, onSubmit, onCancel}: {
+function RenameDialog({labels, message, onSubmit, onClose}: {
     labels: Labels;
     message: ProjectMessage;
     onSubmit(name: string): MessageRenameError | void;
-    onCancel(): void;
+    onClose(): void;
 }) {
     const [error, setError] = React.useState<MessageRenameError | undefined>();
-    return <form className="tw-sprite-messages__editor" aria-label={labels.rename}
-        onSubmit={event => {
-            event.preventDefault();
-            const result = onSubmit(String(new FormData(event.currentTarget).get('name') ?? ''));
-            if (result) setError(result);
-            else onCancel();
-        }}
-        onKeyDown={event => {
-            if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            event.stopPropagation();
-            onCancel();
-        }}>
-        <input className="tw-sprite-messages__input" name="name" aria-label={labels.name}
-            defaultValue={message.name} autoFocus onChange={() => setError(undefined)} />
-        <button type="submit" className="tw-sprite-messages__button">{labels.rename}</button>
-        <button type="button" className="tw-sprite-messages__button" onClick={onCancel}>{labels.cancel}</button>
-        <p className="tw-sprite-messages__hint">{labels.projectWide}</p>
-        {error && <p role="alert">{labels[error]}</p>}
-    </form>;
+    const {inputId} = useDialogIds();
+    const errorId = inputId + '-error';
+    return <PaneDialog title={labels.rename} closeLabel={labels.close} onClose={onClose}>
+        <form className="tw-sprite-variables__dialog-body"
+            onSubmit={event => {
+                event.preventDefault();
+                const result = onSubmit(String(new FormData(event.currentTarget).get('name') ?? ''));
+                if (result) setError(result);
+                else onClose();
+            }}>
+            <label className="tw-sprite-variables__dialog-label" htmlFor={inputId}>{labels.newName}</label>
+            <input id={inputId} className="tw-sprite-variables__dialog-input" name="name" defaultValue={message.name}
+                data-initial-focus="" aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined}
+                onChange={() => setError(undefined)} />
+            <p className="tw-sprite-messages__hint">{labels.projectWide}</p>
+            {error && <p id={errorId} role="alert" className="tw-sprite-variables__dialog-error">{labels[error]}</p>}
+            <PaneDialogActions cancelLabel={labels.cancel} confirmLabel={labels.renameConfirm} onClose={onClose} />
+        </form>
+    </PaneDialog>;
 }
 
 function DiagramTargets({labels, uses, current, direction, getThumbnailUrl, onOpenTarget}: {
@@ -229,7 +234,7 @@ function Diagram({labels, data, onOpenTarget}: {
     </figure>;
 }
 
-function Group({locale, labels, title, uses, empty, byKey, editable, renaming, onOpen, onRename, onStartRename,
+function Group({locale, labels, title, uses, empty, byKey, editable, onOpen, onRename, onStartRename,
     getBlockImage}: {
     locale: string;
     labels: Labels;
@@ -239,7 +244,6 @@ function Group({locale, labels, title, uses, empty, byKey, editable, renaming, o
     empty: string;
     byKey: Map<string, ProjectMessage>;
     editable: boolean;
-    renaming: string | null;
     onOpen?(use: MessageUse): void;
     onRename?: SpriteMessagePaneProps['onRename'];
     onStartRename(key: string | null): void;
@@ -250,7 +254,6 @@ function Group({locale, labels, title, uses, empty, byKey, editable, renaming, o
             <thead><tr>
                 <th scope="col">{labels.message}</th>
                 <th scope="col">{labels.block}</th>
-                {onRename && <th scope="col">{labels.actions}</th>}
             </tr></thead>
             <tbody>{uses.map(use => {
                 const message = byKey.get(use.key);
@@ -259,6 +262,8 @@ function Group({locale, labels, title, uses, empty, byKey, editable, renaming, o
                         {onOpen ? <button type="button" className="tw-sprite-messages__link" data-message-key={use.key}
                             title={labels.openBlock} onClick={() => onOpen(use)}>{use.name}</button> :
                             <span data-message-key={use.key} tabIndex={-1}>{use.name}</span>}
+                        {onRename && message && <RenameButton labels={labels} editable={editable}
+                            onClick={() => onStartRename(use.key)} />}
                         {message && <Status labels={labels} status={message.status} />}
                     </th>
                     <td>
@@ -273,13 +278,6 @@ function Group({locale, labels, title, uses, empty, byKey, editable, renaming, o
                                 getBlockImage={getBlockImage} className="tw-sprite-messages__hat" />
                         </small>}
                     </td>
-                    {onRename && <td>
-                        {renaming === use.key && message ?
-                            <RenameForm labels={labels} message={message}
-                                onSubmit={name => onRename(message, name)}
-                                onCancel={() => onStartRename(null)} /> :
-                            <RenameButton labels={labels} editable={editable} onClick={() => onStartRename(use.key)} />}
-                    </td>}
                 </tr>;
             })}</tbody>
         </table> : <p className="tw-sprite-messages__empty">{empty}</p>}
@@ -294,6 +292,7 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
     }, [editable]);
     const byKey = React.useMemo(() => new Map(data.messages.map(message => [message.key, message])),
         [data.messages]);
+    const renamingMessage = renaming === null ? undefined : byKey.get(renaming);
     const rename: SpriteMessagePaneProps['onRename'] = onRename && ((message, name) => {
         const result = checkMessageRename(data.messages, message, name);
         if ('error' in result) return result.error;
@@ -301,7 +300,7 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
         return undefined;
     });
     const group = (title: string, uses: readonly MessageUse[], empty: string) =>
-        <Group {...{locale, labels, title, uses, empty, byKey, editable, renaming, onOpen, onStartRename: setRenaming}}
+        <Group {...{locale, labels, title, uses, empty, byKey, editable, onOpen, onStartRename: setRenaming}}
             onRename={rename} getBlockImage={data.getBlockImage} />;
 
     return <section className="tw-sprite-messages" aria-label={labels.panel}>
@@ -312,15 +311,13 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
             {data.elsewhere.length ? <ul className="tw-sprite-messages__list">
                 {data.elsewhere.map(message => <li key={message.key}>
                     <span data-message-key={message.key} tabIndex={-1}>{message.name}</span>
+                    {rename && <RenameButton labels={labels} editable={editable} onClick={() => setRenaming(message.key)} />}
                     <Status labels={labels} status={message.status} />
-                    {rename && (renaming === message.key ?
-                        <RenameForm labels={labels} message={message}
-                            onSubmit={name => rename(message, name)}
-                            onCancel={() => setRenaming(null)} /> :
-                        <RenameButton labels={labels} editable={editable} onClick={() => setRenaming(message.key)} />)}
                 </li>)}
             </ul> : <p className="tw-sprite-messages__empty">{labels.noElsewhere}</p>}
         </section>
         <Diagram labels={labels} data={data} onOpenTarget={onOpenTarget} />
+        {rename && renamingMessage && <RenameDialog key={renamingMessage.key} labels={labels} message={renamingMessage}
+            onSubmit={name => rename(renamingMessage, name)} onClose={() => setRenaming(null)} />}
     </section>;
 }

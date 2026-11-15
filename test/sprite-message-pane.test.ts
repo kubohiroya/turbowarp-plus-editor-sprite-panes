@@ -105,10 +105,18 @@ test('renaming refuses a name another message already has and reports why', t =>
         }
     });
 
-    const button = [...container.querySelectorAll('tbody button')]
-        .find(node => node.textContent === 'メッセージ名を変更');
+    // The rename button is a pencil right after the message name, not a column of its own.
+    assert.deepEqual([...container.querySelectorAll('.tw-sprite-messages__table thead th')].map(th => th.textContent),
+        ['メッセージ', 'ブロック']);
+    const button = container.querySelector('tbody th .tw-pane-name-edit');
+    assert.equal(button.getAttribute('aria-label'), 'メッセージ名を変更');
+    assert.equal(button.previousElementSibling.textContent, 'go', 'the pencil follows the name');
     act(() => button.dispatchEvent(new window.MouseEvent('click', {bubbles: true})));
-    assert.equal(container.querySelector('.tw-sprite-messages__hint').textContent,
+    const dialog = container.querySelector('dialog');
+    assert.equal(dialog.getAttribute('aria-labelledby') &&
+        container.querySelector('#' + dialog.getAttribute('aria-labelledby')).textContent, 'メッセージ名を変更');
+    assert.equal(dialog.querySelector('input[name="name"]').value, 'go');
+    assert.equal(dialog.querySelector('.tw-sprite-messages__hint').textContent,
         'メッセージの名前を変えると、作品全体で変わります。');
 
     const submit = (value: string) => {
@@ -125,7 +133,7 @@ test('renaming refuses a name another message already has and reports why', t =>
 
     submit('  start  ');
     assert.deepEqual(renames, [['go', 'start']]);
-    assert.equal(container.querySelector('form'), null);
+    assert.equal(container.querySelector('dialog'), null, 'the dialog closes after renaming');
 });
 
 test('the stage draws all used broadcasts as labelled arrows between thumbnails', t => {
