@@ -1288,17 +1288,31 @@
 }
 
 .tw-sprite-functions__graph {
+    position: relative;
     flex: 1;
-    min-block-size: 0;
+    min-block-size: 12rem;
     margin: 0;
-    overflow: auto;
+    overflow: hidden;
     border: 1px solid var(--ui-black-transparent, #ccd5e2);
     border-radius: .35rem;
     background: var(--ui-primary, #f9f9f9);
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
+.tw-sprite-functions__graph[data-panning],
+.tw-sprite-functions__graph[data-panning] .tw-sprite-functions__node {
+    cursor: grabbing;
+}
+
+/* Moved and zoomed by its transform; the frame itself never scrolls. */
 .tw-sprite-functions__canvas {
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
 }
 
 .tw-sprite-functions__edges {
@@ -1377,6 +1391,181 @@
 .tw-sprite-functions__entry {
     flex: none;
     font-size: .7rem;
+}
+
+/* Hovering or focusing a function: its callers' links come in blue, its callees' go out in orange. */
+.tw-sprite-functions__graph {
+    --tw-call-in: #4c97ff;
+    --tw-call-out: #ff8c1a;
+}
+
+.tw-sprite-functions__edges path,
+.tw-sprite-functions__node {
+    transition: opacity .12s, stroke .12s;
+}
+
+.tw-sprite-functions__graph[data-highlighting] .tw-sprite-functions__edges > path:not([data-highlight]) {
+    opacity: .15;
+}
+
+.tw-sprite-functions__graph[data-highlighting] .tw-sprite-functions__node:not([data-highlight]) {
+    opacity: .35;
+}
+
+.tw-sprite-functions__edges path[data-highlight] {
+    stroke-width: 2.5;
+}
+
+.tw-sprite-functions__edges path[data-highlight="in"],
+.tw-sprite-functions__edges marker[data-highlight="in"] path {
+    stroke: var(--tw-call-in);
+}
+
+.tw-sprite-functions__edges path[data-highlight="out"],
+.tw-sprite-functions__edges path[data-highlight="self"],
+.tw-sprite-functions__edges marker[data-highlight="out"] path {
+    stroke: var(--tw-call-out);
+}
+
+.tw-sprite-functions__edges marker[data-highlight="in"] path {
+    fill: var(--tw-call-in);
+}
+
+.tw-sprite-functions__edges marker[data-highlight="out"] path {
+    fill: var(--tw-call-out);
+}
+
+.tw-sprite-functions__node[data-highlight="self"] {
+    box-shadow: 0 0 0 3px var(--looks-secondary, #855cd6);
+}
+
+.tw-sprite-functions__node[data-highlight="caller"] {
+    box-shadow: 0 0 0 3px var(--tw-call-in);
+}
+
+.tw-sprite-functions__node[data-highlight="callee"] {
+    box-shadow: 0 0 0 3px var(--tw-call-out);
+}
+
+.tw-sprite-functions__node[data-highlight="both"] {
+    box-shadow: 0 0 0 3px var(--tw-call-in), 0 0 0 6px var(--tw-call-out);
+}
+
+/* The zoom buttons and the minimap sit in the bottom right corner, as in the code area. */
+.tw-sprite-functions__zoom {
+    position: absolute;
+    inset-block-end: 8px;
+    inset-inline-end: 8px;
+    display: flex;
+    gap: 8px;
+    cursor: default;
+}
+
+.tw-sprite-functions__zoom button {
+    display: grid;
+    place-items: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    padding: 0;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: 50%;
+    color: var(--text-primary-transparent, #575e75);
+    background: var(--ui-white, #fff);
+    box-shadow: 0 1px 3px rgb(0 0 0 / 15%);
+    cursor: pointer;
+}
+
+.tw-sprite-functions__zoom button:hover:not(:disabled) {
+    color: var(--looks-secondary, #855cd6);
+}
+
+.tw-sprite-functions__zoom button:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.tw-sprite-functions__zoom button:focus-visible {
+    outline: 3px solid var(--looks-secondary, #855cd6);
+    outline-offset: 2px;
+}
+
+.tw-sprite-functions__zoom svg {
+    inline-size: 1.1rem;
+    block-size: 1.1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+.tw-sprite-functions__minimap {
+    position: absolute;
+    inset-block-end: calc(8px + 2rem + 8px);
+    inset-inline-end: 8px;
+    box-sizing: border-box;
+    overflow: hidden;
+    color: var(--text-primary, #334155);
+    background: color-mix(in srgb, var(--ui-primary, white) 50%, transparent);
+    border: 1px solid var(--ui-black-transparent, #cbd5e1);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+    cursor: pointer;
+}
+
+.tw-sprite-functions__minimap svg {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+}
+
+.tw-sprite-functions__minimap-edges path {
+    fill: none;
+    stroke: currentColor;
+    stroke-opacity: .35;
+    stroke-width: 1px;
+    vector-effect: non-scaling-stroke;
+}
+
+.tw-sprite-functions__minimap-edges path[data-highlight="in"] {
+    stroke: var(--tw-call-in);
+    stroke-opacity: 1;
+}
+
+.tw-sprite-functions__minimap-edges path[data-highlight="out"],
+.tw-sprite-functions__minimap-edges path[data-highlight="self"] {
+    stroke: var(--tw-call-out);
+    stroke-opacity: 1;
+}
+
+.tw-sprite-functions__minimap rect {
+    fill: #ff6680;
+}
+
+.tw-sprite-functions__minimap rect[data-highlight="caller"] {
+    fill: var(--tw-call-in);
+}
+
+.tw-sprite-functions__minimap rect[data-highlight="callee"],
+.tw-sprite-functions__minimap rect[data-highlight="both"] {
+    fill: var(--tw-call-out);
+}
+
+.tw-sprite-functions__minimap rect[data-highlight="self"] {
+    fill: var(--looks-secondary, #855cd6);
+}
+
+.tw-sprite-functions__minimap .tw-sprite-functions__minimap-view {
+    cursor: grab;
+    fill: currentColor;
+    fill-opacity: .06;
+    stroke: currentColor;
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+}
+
+.tw-sprite-functions__minimap[data-dragging],
+.tw-sprite-functions__minimap[data-dragging] .tw-sprite-functions__minimap-view {
+    cursor: grabbing;
 }
 
 /* The dialog covers the viewport so that ScratchBlocks popups, placed in page coordinates, line up inside it. */
