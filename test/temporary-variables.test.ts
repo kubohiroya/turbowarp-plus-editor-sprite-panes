@@ -321,3 +321,45 @@ test('a clone’s variable pane keeps the temporary variables of its sprite', t 
     assert.match(container.textContent, /Editing clone 1/);
     assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')), [['i', '', '0', '1']]);
 });
+
+test('each column header sorts the whole table, ascending and then descending', t => {
+    const at = (label?: string) => ({targetId: 'cat', targetName: 'Cat', ...label && {id: label, label}});
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'en', editable: true, variables: [], onWrite() {},
+        temporaryVariables: {
+            paused: true, thread: [],
+            runtime: [
+                {name: 'b', fixed: true, read: 5, write: 1, functions: [at('reset')], readers: [], writers: [],
+                    values: [{value: '10'}]},
+                {name: 'a', fixed: true, read: 1, write: 3, functions: [at()], readers: [], writers: [],
+                    values: [{value: '2'}]},
+                {name: 'c', fixed: false, read: 0, write: 0, functions: [], readers: [], writers: [],
+                    values: [{value: 'x'}]}
+            ]
+        }
+    }));
+    const section = container.querySelector('section[data-temporary-scope="runtime"]');
+    const names = () => [...section.querySelectorAll('tbody tr')].map(row => row.getAttribute('data-temporary-name'));
+    const press = (label: string) => act(() => [...section.querySelectorAll<HTMLButtonElement>('thead button')]
+        .find(button => button.textContent === label).click());
+    const sortState = () => [...section.querySelectorAll('thead th[aria-sort]')]
+        .map(th => [th.textContent, th.getAttribute('aria-sort')]);
+
+    // Before any choice, names written in the code come first.
+    assert.deepEqual(names(), ['a', 'b', 'c']);
+    assert.deepEqual(text(section.querySelectorAll('thead th')),
+        ['Variable name', 'Defined in', 'Read in', 'Changed in', 'Value', 'Read', 'Write']);
+    press('Read');
+    assert.deepEqual(names(), ['c', 'a', 'b']);
+    assert.deepEqual(sortState(), [['Read', 'ascending']]);
+    press('Read');
+    assert.deepEqual(names(), ['b', 'a', 'c']);
+    assert.deepEqual(sortState(), [['Read', 'descending']]);
+    press('Value');
+    assert.deepEqual(names(), ['a', 'b', 'c'], 'numbers in their numeric order');
+    press('Variable name');
+    press('Variable name');
+    assert.deepEqual(names(), ['c', 'b', 'a']);
+    press('Defined in');
+    assert.deepEqual(names(), ['c', 'a', 'b'], 'no function, then Cat outside functions, then Cat reset');
+});

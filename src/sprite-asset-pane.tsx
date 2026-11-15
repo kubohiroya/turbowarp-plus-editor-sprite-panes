@@ -642,7 +642,28 @@ function ListPreview({id, value, editable, labels, onEdit}: {
 }
 
 type SortColumn = 'stageColumn' | 'type' | 'name' | 'value' | 'read' | 'write';
-type Sort = {column: SortColumn; direction: 'ascending' | 'descending'};
+type SortDirection = 'ascending' | 'descending';
+type Sort = {column: SortColumn; direction: SortDirection};
+
+/** A column header that sorts the whole table, ascending first and then descending on each press. */
+function SortHeader({label, direction, onSort, className, title}: {
+    label: string;
+    direction?: SortDirection;
+    onSort(direction: SortDirection): void;
+    className?: string;
+    title?: string;
+}) {
+    return <th scope="col" className={className} aria-sort={direction} title={title}>
+        <button type="button" className="tw-sprite-variables__sort"
+            onClick={() => onSort(direction === 'ascending' ? 'descending' : 'ascending')}>
+            {label}
+            <svg viewBox="0 0 10 16" aria-hidden="true" focusable="false">
+                <path d="M1 6 5 1l4 5Z" data-active={direction === 'ascending'} />
+                <path d="m1 10 4 5 4-5Z" data-active={direction === 'descending'} />
+            </svg>
+        </button>
+    </th>;
+}
 
 const referenceCount = (variable: SpriteVariable) => (variable.accesses?.read ?? 0) + (variable.accesses?.write ?? 0);
 
@@ -678,6 +699,23 @@ function FunctionList({functions, labels}: {functions?: readonly TemporaryVariab
 }
 
 type FunctionColumn = {key: 'functions' | 'readers' | 'writers'; label: string; title: string};
+type TemporarySortColumn = 'name' | FunctionColumn['key'] | 'value' | 'read' | 'write';
+
+const functionText = (functions: readonly TemporaryVariableFunction[] | undefined, labels: VariableLabels) =>
+    (functions ?? []).map(fn => [fn.stage ? labels.stageName : fn.targetName, fn.label ?? labels.outsideFunction]
+        .filter(Boolean).join(' ')).join('\n');
+
+function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: TemporarySortColumn,
+    labels: VariableLabels, collator: Intl.Collator) {
+    switch (column) {
+    case 'name': return collator.compare(a.name, b.name);
+    case 'read':
+    case 'write': return a[column] - b[column];
+    // The numeric collator orders values like 2 before 10, as the project shows them.
+    case 'value': return collator.compare(a.values?.[0]?.value ?? '', b.values?.[0]?.value ?? '');
+    default: return collator.compare(functionText(a[column], labels), functionText(b[column], labels));
+    }
+}
 
 function TemporaryVariableSection({scope, variables, paused, labels, collator}: {
     scope: 'thread' | 'runtime';
@@ -687,8 +725,15 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
     collator: Intl.Collator;
 }) {
     const title = scope === 'thread' ? labels.threadVariables : labels.runtimeVariables;
-    // Names written in the code come first. Names that only exist at the pause follow them.
-    const sorted = variables.slice().sort((a, b) => Number(b.fixed) - Number(a.fixed) || collator.compare(a.name, b.name));
+    const [sort, setSort] = React.useState<{column: TemporarySortColumn; direction: SortDirection} | null>(null);
+    // Names written in the code come first. Names that only exist at the pause follow them. A chosen
+    // column sorts the whole table and keeps that order among equal values.
+    const sorted = variables.slice().sort((a, b) =>
+        (sort ? (sort.direction === 'ascending' ? 1 : -1) * compareTemporary(a, b, sort.column, labels, collator) : 0) ||
+        Number(b.fixed) - Number(a.fixed) || collator.compare(a.name, b.name));
+    const header = (column: TemporarySortColumn, label: string, className?: string, title?: string) =>
+        <SortHeader key={column} label={label} className={className} title={title}
+            direction={sort?.column === column ? sort.direction : undefined} onSort={direction => setSort({column, direction})} />;
     const columns: FunctionColumn[] = scope === 'thread' ?
         [{key: 'functions', label: labels.definedIn, title: labels.definedInTitle}] : [
             {key: 'functions', label: labels.definedIn, title: labels.runtimeDefinedInTitle},
@@ -703,11 +748,11 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
         </div>
         {sorted.length ? <table className="tw-sprite-variables__table">
             <thead><tr>
-                <th scope="col">{labels.name}</th>
-                {columns.map(column => <th key={column.key} scope="col" title={column.title}>{column.label}</th>)}
-                {paused && <th scope="col">{labels.value}</th>}
-                <th scope="col" className="tw-sprite-variables__references">{labels.read}</th>
-                <th scope="col" className="tw-sprite-variables__references">{labels.write}</th>
+                {header('name', labels.name)}
+                {columns.map(column => header(column.key, column.label, undefined, column.title))}
+                {paused && header('value', labels.value)}
+                {header('read', labels.read, 'tw-sprite-variables__references')}
+                {header('write', labels.write, 'tw-sprite-variables__references')}
             </tr></thead>
             <tbody>{sorted.map(variable => <tr key={variable.name} data-temporary-name={variable.name}>
                 <th scope="row">
@@ -770,19 +815,8 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
     const showMonitors = variables.some(variable => variable.monitor);
     const sorted = sort ? variables.slice().sort((a, b) =>
         (sort.direction === 'ascending' ? 1 : -1) * compareVariables(a, b, sort.column, collator)) : variables;
-    const header = (column: SortColumn, className?: string) => {
-        const direction = sort?.column === column ? sort.direction : undefined;
-        return <th scope="col" className={className} aria-sort={direction}>
-            <button type="button" className="tw-sprite-variables__sort"
-                onClick={() => setSort({column, direction: direction === 'ascending' ? 'descending' : 'ascending'})}>
-                {labels[column]}
-                <svg viewBox="0 0 10 16" aria-hidden="true" focusable="false">
-                    <path d="M1 6 5 1l4 5Z" data-active={direction === 'ascending'} />
-                    <path d="m1 10 4 5 4-5Z" data-active={direction === 'descending'} />
-                </svg>
-            </button>
-        </th>;
-    };
+    const header = (column: SortColumn, className?: string) => <SortHeader label={labels[column]} className={className}
+        direction={sort?.column === column ? sort.direction : undefined} onSort={direction => setSort({column, direction})} />;
     return <section className="tw-sprite-variables" aria-label={global ? labels.globalVariables : labels.spriteVariables}>
         <div className="tw-sprite-variables__scroll">
             {notice}
