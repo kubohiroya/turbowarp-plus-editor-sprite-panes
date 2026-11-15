@@ -14,7 +14,7 @@ Object.assign(globalThis, {
 const {createRoot} = await import('react-dom/client');
 
 const fn = (id: string, proccode: string, x: number, y: number, patch: object = {}) =>
-    ({id, proccode, argumentNames: [], warp: false, x, y, calls: 1, scriptCalls: 1, callees: [], ...patch});
+    ({id, kind: 'procedure', proccode, argumentNames: [], warp: false, x, y, calls: 1, scriptCalls: 1, callees: [], ...patch});
 
 function render(t: TestContext, props: object) {
     const container = window.document.createElement('div');
@@ -48,8 +48,8 @@ test('definitions are read with their arguments, warp and how often this sprite 
     }}});
 
     assert.deepEqual(data, {targetId: 'cat', isStage: false, functions: [{
-        id: 'def', proccode: 'jump %s times %b', argumentNames: ['height', 'fast'], warp: true, x: 40, y: 300, calls: 2,
-        scriptCalls: 1, callees: ['def']
+        id: 'def', kind: 'procedure', proccode: 'jump %s times %b', argumentNames: ['height', 'fast'], warp: true, x: 40, y: 300, calls: 2,
+        scriptCalls: 1, callees: ['def'], uses: [{block: 'call1', script: 'flag'}, {block: 'call2', script: 'def'}]
     }]}, 'a call inside the definition is recursion; the green flag call comes from another script');
     assert.equal(functionLabel(data.functions[0]), 'jump (height) times <fast>');
 });
@@ -67,7 +67,7 @@ test('functions can be ordered by name, in rows (Z) or in columns (N)', () => {
         ['y', 'x'], 'numbers in names sort by value');
 });
 
-test('the order picker reorders the accordion', t => {
+test('the order picker reorders the list', t => {
     const chosen: string[] = [];
     const {container} = render(t, {onSettingsChange: ({order}: {order: string}) => chosen.push(order), data: {targetId: 'cat', isStage: false,
         functions: [fn('b', 'bravo', 400, 20), fn('a', 'alpha', 400, 300), fn('c', 'charlie', 20, 20)]}});
@@ -92,40 +92,43 @@ test('the pane starts in the order the view used before', t => {
     assert.deepEqual(names(container), ['bravo', 'alpha']);
 });
 
-test('opening an item mounts its editor and closing it disposes the editor', t => {
+test('clicking a function in the list opens it with the host', t => {
+    const opened: string[] = [];
+    const {container} = render(t, {
+        onOpenFunction: ({id}: {id: string}) => opened.push(id),
+        mountEditor: () => assert.fail('the list itself holds no editor'),
+        data: {targetId: 'cat', isStage: false, functions: [fn('a', 'alpha %s', 0, 0, {argumentNames: ['n']}), fn('b', 'bravo', 0, 50)]}
+    });
+    const [alpha, bravo] = container.querySelectorAll<HTMLButtonElement>('.tw-sprite-functions__open');
+    assert.equal(alpha.getAttribute('aria-label'), 'alpha (n) のコードを開く');
+    assert.equal(alpha.hasAttribute('aria-expanded'), false, 'the list is not an accordion');
+    act(() => alpha.click());
+    act(() => bravo.click());
+    act(() => alpha.click());
+    assert.deepEqual(opened, ['a', 'b', 'a'], 'clicking again brings the function back to the front');
+    assert.equal(container.querySelector('dialog'), null);
+});
+
+test('without a host opener a function picked in the list opens in the dialog', t => {
     const mounts: string[] = [];
     const disposed: string[] = [];
     const {container, draw} = render(t, {
-        data: {targetId: 'cat', isStage: false, functions: [fn('a', 'alpha %s', 0, 0, {argumentNames: ['n']}), fn('b', 'bravo', 0, 50)]},
+        data: {targetId: 'cat', isStage: false, functions: [fn('a', 'alpha', 0, 0)]},
         mountEditor(element: HTMLElement, targetId: string, id: string, {editable}: {editable: boolean}) {
             assert.ok(element.isConnected);
             mounts.push(`${targetId}/${id}/${editable}`);
             return () => disposed.push(id);
         }
     });
-    const [alpha, bravo] = container.querySelectorAll<HTMLButtonElement>('.tw-sprite-functions__toggle');
-    assert.equal(alpha.getAttribute('aria-expanded'), 'false');
-    assert.equal(container.querySelector('[data-function-editor]'), null, 'closed items have no editor');
-
-    act(() => alpha.click());
-    act(() => bravo.click());
-    assert.equal(alpha.getAttribute('aria-expanded'), 'true');
-    assert.equal(container.querySelector(`#${alpha.getAttribute('aria-controls')}`)
-        ?.querySelector('[role="group"]')?.getAttribute('aria-label'), 'alpha (n) のコード');
-    assert.deepEqual(mounts, ['cat/a/true', 'cat/b/true'], 'several functions can be open at once');
-
-    // A refresh with new data keeps the open editors.
-    draw({data: {targetId: 'cat', isStage: false, functions: [fn('a', 'alpha %s', 0, 0, {argumentNames: ['n'], calls: 3}), fn('b', 'bravo', 0, 50)]}});
-    assert.deepEqual(mounts, ['cat/a/true', 'cat/b/true']);
-
-    // An inactive view gets read-only editors.
+    act(() => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__open').click());
+    assert.equal(container.querySelector('dialog').getAttribute('aria-label'), 'alpha のコード');
+    assert.deepEqual(mounts, ['cat/a/true']);
+    // An inactive view gets a read-only editor.
     draw({editable: false});
-    assert.deepEqual(disposed, ['a', 'b']);
-    assert.deepEqual(mounts.slice(2), ['cat/a/false', 'cat/b/false']);
-
-    act(() => alpha.click());
-    assert.deepEqual(disposed, ['a', 'b', 'a']);
-    assert.equal(alpha.getAttribute('aria-expanded'), 'false');
+    assert.deepEqual(mounts, ['cat/a/true', 'cat/a/false']);
+    act(() => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__close').click());
+    assert.equal(container.querySelector('dialog'), null);
+    assert.deepEqual(disposed, ['a', 'a']);
 });
 
 test('a sprite without functions says how to make one', t => {
@@ -184,7 +187,7 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
 
     act(() => container.querySelector<HTMLButtonElement>('[data-choice="TD"]').click());
     assert.equal(container.querySelector('figure').getAttribute('data-direction'), 'TD');
-    assert.deepEqual(settings.at(-1), {mode: 'graph', order: 'name', direction: 'TD'});
+    assert.deepEqual(settings.at(-1), {mode: 'graph', order: 'name', direction: 'TD', create: 'procedure'});
 
     act(() => container.querySelector<HTMLButtonElement>('[data-function-key="draw"]').click());
     const dialog = container.querySelector('dialog');
@@ -200,7 +203,282 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
 
     act(() => container.querySelector<HTMLButtonElement>('[data-choice="list"]').click());
     assert.equal(container.querySelector('figure'), null);
-    assert.equal(container.querySelectorAll('.tw-sprite-functions__toggle').length, 2);
+    assert.equal(container.querySelectorAll('.tw-sprite-functions__open').length, 2);
+});
+
+// The NAME of a named-functions block is a text input; a reporter dropped on it leaves the shadow below.
+const text = (id: string, value: string, parent: string) =>
+    ({[id]: {id, opcode: 'text', shadow: true, parent, fields: {TEXT: {name: 'TEXT', value}}}});
+const input = (id: string, block = id) => ({block, shadow: id});
+
+test('named functions are read with Scratch functions, and calls between the two kinds become edges', () => {
+    const data = readTargetFunctions({id: 'cat', blocks: {_blocks: {
+        greet: {id: 'greet', opcode: 'kubohiroyanamedfunctions_defineFunction', topLevel: true, x: 10, y: 20,
+            inputs: {NAME: input('greet-name'), DESCRIPTION: input('greet-text')},
+            fields: {SCOPE: {value: 'sprite'}, EXPORT: {value: 'tool'}}},
+        ...text('greet-name', ' greet ', 'greet'),
+        ...text('greet-text', 'Says hello.', 'greet'),
+        // Saved before SCOPE existed: for all sprites.
+        old: {id: 'old', opcode: 'kubohiroyanamedfunctions_defineFunction', topLevel: true, inputs: {NAME: input('old-name')}},
+        ...text('old-name', 'legacy', 'old'),
+        // A reporter decides this name at run time, so it cannot be listed.
+        dynamic: {id: 'dynamic', opcode: 'kubohiroyanamedfunctions_defineFunction', topLevel: true,
+            inputs: {NAME: input('dynamic-name', 'answer')}},
+        ...text('dynamic-name', 'hidden', 'dynamic'),
+        answer: {id: 'answer', opcode: 'sensing_answer', parent: 'dynamic'},
+        // greet calls the custom block, which starts greet back and calls legacy from the menu.
+        say: {id: 'say', opcode: 'procedures_call', parent: 'greet', mutation: {proccode: 'say hi'}},
+        def: {id: 'def', opcode: 'procedures_definition', topLevel: true, inputs: {custom_block: {block: 'proto'}}},
+        proto: {id: 'proto', opcode: 'procedures_prototype', parent: 'def',
+            mutation: {proccode: 'say hi', argumentnames: '[]', warp: 'false'}},
+        start: {id: 'start', opcode: 'kubohiroyanamedfunctions_startFunction', parent: 'def', inputs: {NAME: input('start-name')}},
+        ...text('start-name', 'greet', 'start'),
+        menu: {id: 'menu', opcode: 'kubohiroyanamedfunctions_callFunctionFromMenu', parent: 'start', fields: {FUNCTION: {value: 'legacy'}}},
+        // The green flag calls greet by name.
+        flag: {id: 'flag', opcode: 'event_whenflagclicked', topLevel: true},
+        call: {id: 'call', opcode: 'kubohiroyanamedfunctions_callFunction', parent: 'flag', inputs: {NAME: input('call-name')}},
+        ...text('call-name', 'greet', 'call'),
+        // Another extension's block of the same shape is not read unless asked for.
+        other: {id: 'other', opcode: 'someoneelse_defineFunction', topLevel: true, inputs: {NAME: input('other-name')}},
+        ...text('other-name', 'other', 'other')
+    }}});
+    const byId = Object.fromEntries(data.functions.map(item => [item.id, item]));
+    assert.deepEqual(Object.keys(byId).sort(), ['def', 'greet', 'old']);
+    assert.deepEqual(byId.greet, {id: 'greet', kind: 'named', proccode: 'greet', argumentNames: [], warp: false, x: 10, y: 20,
+        calls: 2, scriptCalls: 1, callees: ['def'], scope: 'sprite', description: 'Says hello.',
+        uses: [{block: 'start', script: 'def'}, {block: 'call', script: 'flag'}]});
+    assert.equal(byId.old.scope, 'global');
+    assert.equal(byId.old.calls, 1);
+    assert.deepEqual(byId.def.callees.sort(), ['greet', 'old']);
+    assert.equal(functionLabel(byId.greet), 'greet');
+
+    const composed = readTargetFunctions({id: 'cat', blocks: {_blocks: {
+        other: {id: 'other', opcode: 'someoneelse_defineFunction', topLevel: true, inputs: {NAME: input('other-name')}},
+        ...text('other-name', 'other', 'other')
+    }}}, {extensions: ['someoneelse']});
+    assert.deepEqual(composed.functions.map(item => item.proccode), ['other']);
+});
+
+test('named functions gather in their own section below the standard ones, with their scope and description', t => {
+    const {container, draw} = render(t, {data: {targetId: 'cat', isStage: false, functions: [
+        fn('greet', 'greet', 0, 0, {kind: 'named', scope: 'global', description: 'Says hello.'}),
+        fn('jump', 'jump', 0, 0)
+    ]}});
+    assert.deepEqual([...container.querySelectorAll('.tw-sprite-functions__group')].map(node => node.textContent),
+        ['関数', 'TurboWarp Plus 名前付き関数']);
+    const [jump, greet] = container.querySelectorAll('.tw-sprite-functions__item');
+    assert.equal(greet.closest('[data-list]').getAttribute('data-list'), 'named');
+    // The section says what they are, so the items need not.
+    assert.deepEqual([...greet.querySelectorAll('.tw-sprite-functions__badge')].map(node => node.textContent),
+        ['すべてのスプライト', '1か所で使用']);
+    assert.equal(greet.querySelector('.tw-sprite-functions__name').getAttribute('title'), 'Says hello.');
+    assert.equal(greet.getAttribute('data-kind'), 'named');
+    assert.deepEqual([...jump.querySelectorAll('.tw-sprite-functions__badge')].map(node => node.textContent), ['1か所で使用']);
+
+    // Without named functions there is no section for them, and a list of functions alone needs no headings.
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)]}});
+    assert.equal(container.querySelector('.tw-sprite-functions__group'), null);
+    // The call graph keeps one set of nodes, each named function marked as such.
+    draw({defaultSettings: {mode: 'graph'}, view: 'graph', data: {targetId: 'cat', isStage: false, functions: [
+        fn('greet', 'greet', 0, 0, {kind: 'named'}), fn('jump', 'jump', 0, 0)]}});
+    assert.equal(container.querySelector('.tw-sprite-functions__group'), null);
+});
+
+test('the create button switches between the two kinds and opens what it makes', async t => {
+    const made: string[] = [];
+    const settings: object[] = [];
+    let reply: () => Promise<string | void> = async () => 'new-jump';
+    const {container, draw} = render(t, {
+        onSettingsChange: (next: object) => settings.push(next),
+        onCreate: (kind: string) => {
+            made.push(kind);
+            return reply();
+        },
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)]}
+    });
+    const main = () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main');
+    const kind = container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-kind');
+    // Below the list, at its start.
+    assert.equal(container.querySelector('.tw-sprite-functions__list').nextElementSibling,
+        container.querySelector('.tw-sprite-functions__create'));
+    assert.equal(main().textContent, '新しい関数(標準)を作成');
+    assert.equal(kind.getAttribute('aria-label'), '作成する関数の種類を切り替える');
+
+    await act(async () => main().click());
+    assert.deepEqual(made, ['procedure']);
+    // The host refreshes the data with the new function, which then opens.
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0), fn('new-jump', 'hop', 0, 50)]}});
+    assert.equal(container.querySelector('dialog').getAttribute('aria-label'), 'hop のコード');
+    act(() => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__close').click());
+
+    act(() => kind.click());
+    assert.equal(main().textContent, '新しい関数(TurboWarp-Plus)を作成');
+    assert.equal(container.querySelector('.tw-sprite-functions__split').getAttribute('data-kind'), 'named');
+    assert.deepEqual(settings.at(-1), {mode: 'list', order: 'name', direction: 'LR', create: 'named'});
+
+    // A cancelled dialog makes nothing and says nothing.
+    reply = async () => undefined;
+    await act(async () => main().click());
+    assert.deepEqual(made, ['procedure', 'named']);
+    assert.equal(container.querySelector('[role="alert"]'), null);
+
+    reply = async () => { throw Object.assign(new Error('no extension'), {code: 'unavailable'}); };
+    await act(async () => main().click());
+    assert.equal(container.querySelector('[role="alert"]').textContent,
+        '拡張機能「TurboWarp-Named-Functions」を読み込めませんでした。');
+    act(() => kind.click());
+    assert.equal(container.querySelector('[role="alert"]'), null, 'switching the kind clears the message');
+    assert.equal(main().textContent, '新しい関数(標準)を作成');
+
+    draw({editable: false});
+    assert.ok(main().disabled && kind.disabled, 'an inactive view cannot create');
+});
+
+test('in the call graph a new function opens in the dialog', async t => {
+    const {container, draw} = render(t, {
+        defaultSettings: {mode: 'graph', create: 'named'},
+        onCreate: async () => 'made',
+        mountEditor: () => undefined,
+        data: {targetId: 'cat', isStage: false, functions: []}
+    });
+    assert.equal(container.querySelector('.tw-sprite-functions__create-main').textContent, '新しい関数(TurboWarp-Plus)を作成');
+    await act(async () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main').click());
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('made', 'function1', 0, 0, {kind: 'named', scope: 'sprite'})]}});
+    assert.equal(container.querySelector('dialog').getAttribute('aria-label'), 'function1 のコード');
+});
+
+test('with a host opener the call graph opens functions there instead of in its dialog', async t => {
+    const opened: string[] = [];
+    const {container, draw} = render(t, {
+        defaultSettings: {mode: 'graph'},
+        onCreate: async () => 'made',
+        onOpenFunction: ({id}: {id: string}) => opened.push(id),
+        mountEditor: () => undefined,
+        data: {targetId: 'cat', isStage: false, functions: [fn('draw', 'draw', 0, 0)]}
+    });
+    act(() => container.querySelector<HTMLButtonElement>('[data-function-key="draw"]').click());
+    assert.deepEqual(opened, ['draw']);
+    assert.equal(container.querySelector('dialog'), null);
+    // A function made in the graph opens there too, once the host lists it.
+    await act(async () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main').click());
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('draw', 'draw', 0, 0), fn('made', 'made', 0, 0)]}});
+    assert.deepEqual(opened, ['draw', 'made']);
+    assert.equal(container.querySelector('dialog'), null);
+    // Opening the same function again still reaches the host.
+    act(() => container.querySelector<HTMLButtonElement>('[data-function-key="draw"]').click());
+    assert.deepEqual(opened, ['draw', 'made', 'draw']);
+});
+
+test('as its own section the list shows the hat scripts above the functions, and opens either', t => {
+    const scripts: string[] = [];
+    const functions: string[] = [];
+    const {container, draw} = render(t, {
+        view: 'list',
+        defaultSettings: {mode: 'graph'},
+        onOpenScript: ({id}: {id: string}) => scripts.push(id),
+        onOpenFunction: ({id}: {id: string}) => functions.push(id),
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)], hats: [
+            {id: 'flag', label: '緑の旗が押されたとき', x: 300, y: 0},
+            {id: 'click', label: 'このスプライトが押されたとき', x: 0, y: 0}
+        ]}
+    });
+    assert.equal(container.querySelector('section').getAttribute('aria-label'), 'ハット・関数一覧');
+    assert.equal(container.querySelector('[data-choice="graph"]'), null, 'a section of its own has no view switch');
+    assert.deepEqual([...container.querySelectorAll('.tw-sprite-functions__group')].map(node => node.textContent), ['ハット', '関数']);
+    assert.deepEqual(names(container), ['このスプライトが押されたとき', '緑の旗が押されたとき', 'jump']);
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-hat-key="flag"]').click());
+    act(() => container.querySelector<HTMLButtonElement>('[data-function-key="jump"]').click());
+    assert.deepEqual(scripts, ['flag']);
+    assert.deepEqual(functions, ['jump']);
+    assert.equal(container.querySelector('[data-hat-key="flag"]').getAttribute('aria-label'), '緑の旗が押されたとき のスクリプトを開く');
+
+    // Hats follow the order picker too: Z reads rows from the left.
+    act(() => {
+        const select = container.querySelector('select');
+        select.value = 'z';
+        select.dispatchEvent(new window.Event('change', {bubbles: true}));
+    });
+    assert.deepEqual(names(container).slice(0, 2), ['このスプライトが押されたとき', '緑の旗が押されたとき']);
+
+    // Without functions the hats stay, with the hint how to make a function below them.
+    draw({data: {targetId: 'cat', isStage: false, functions: [], hats: [{id: 'flag', label: '緑の旗が押されたとき', x: 0, y: 0}]}});
+    assert.deepEqual(names(container), ['緑の旗が押されたとき']);
+    assert.ok(container.querySelector('.tw-sprite-functions__empty'));
+});
+
+test('as its own section the call graph has no view switch and leaves the hats out', t => {
+    const {container} = render(t, {
+        view: 'graph',
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)],
+            hats: [{id: 'flag', label: '緑の旗が押されたとき', x: 0, y: 0}]}
+    });
+    assert.equal(container.querySelector('section').getAttribute('aria-label'), '呼び出し関係');
+    assert.equal(container.querySelector('[data-choice="list"]'), null);
+    assert.ok(container.querySelector('[data-choice="LR"]'), 'the flow switch stays');
+    assert.ok(container.querySelector('figure'));
+    assert.equal(container.querySelector('[data-hat-key]'), null);
+});
+
+test('the list highlights what is shown beside it, marks functions and hats, and keeps it in view', t => {
+    const drawing = window.document.createElementNS('http://www.w3.org/2000/svg', 'svg') as unknown as SVGSVGElement;
+    drawing.setAttribute('data-drawing', 'flag');
+    const {container, draw} = render(t, {
+        view: 'list', selectedId: 'jump', onOpenScript() {}, onOpenFunction() {},
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)],
+            hats: [{id: 'flag', label: '緑の旗 が押されたとき', x: 0, y: 0, thumbnail: drawing}]}
+    });
+    const current = () => [...container.querySelectorAll('[aria-current="true"]')].map(node =>
+        node.getAttribute('data-function-key') ?? node.getAttribute('data-hat-key'));
+    assert.deepEqual(current(), ['jump']);
+    assert.ok(container.querySelector('[data-function-key="jump"] .tw-sprite-functions__icon'), 'a function shows f(x)');
+    const thumbnail = container.querySelector('[data-hat-key="flag"] .tw-sprite-functions__thumbnail > svg');
+    assert.equal(thumbnail?.getAttribute('data-drawing'), 'flag');
+    assert.notEqual(thumbnail, drawing, 'the pane shows a copy, so one drawing can serve several views');
+    draw({selectedId: 'flag'});
+    assert.deepEqual(current(), ['flag']);
+});
+
+test('the uses of a function open in a dialog, and picking one shows that block in its script', t => {
+    const scripts: [string, string?][] = [];
+    const functions: [string, string?][] = [];
+    const {container} = render(t, {
+        view: 'list',
+        onOpenScript: ({id}: {id: string}, options?: {block?: string}) => scripts.push([id, options?.block]),
+        onOpenFunction: ({id}: {id: string}, options?: {block?: string}) => functions.push([id, options?.block]),
+        data: {targetId: 'cat', isStage: false, functions: [
+            fn('jump', 'jump', 0, 0, {calls: 3, uses: [{block: 'c1', script: 'flag'}, {block: 'c2', script: 'land'},
+                {block: 'c3', script: 'loose'}]}),
+            fn('land', 'land', 0, 50, {calls: 0, uses: []})
+        ], hats: [{id: 'flag', label: '緑の旗 が押されたとき', x: 0, y: 0}]}
+    });
+    const button = container.querySelector<HTMLButtonElement>('[data-uses-key="jump"]');
+    assert.equal(button.textContent, '3か所で使用');
+    assert.equal(button.closest('[data-function-key]'), null, 'the uses button sits beside the open button, not in it');
+    const open = () => {
+        act(() => container.querySelector<HTMLButtonElement>('[data-uses-key="jump"]').click());
+        return container.querySelector('dialog');
+    };
+    let dialog = open();
+    assert.equal(dialog.getAttribute('aria-label'), 'jump を使っている箇所');
+    assert.deepEqual([...dialog.querySelectorAll('[data-use-block]')].map(node => node.textContent),
+        ['緑の旗 が押されたとき の中', 'land の中', 'ハットのないスクリプト の中']);
+    assert.equal(dialog.querySelector('.tw-sprite-functions__close').getAttribute('aria-label'), '閉じる');
+
+    act(() => dialog.querySelector<HTMLButtonElement>('[data-use-block="c1"]').click());
+    assert.equal(container.querySelector('dialog'), null, 'picking a use closes the dialog');
+    dialog = open();
+    act(() => dialog.querySelector<HTMLButtonElement>('[data-use-block="c2"]').click());
+    dialog = open();
+    act(() => dialog.querySelector<HTMLButtonElement>('[data-use-block="c3"]').click());
+    assert.deepEqual(scripts, [['flag', 'c1'], ['loose', 'c3']]);
+    assert.deepEqual(functions, [['land', 'c2']]);
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-uses-key="land"]').click());
+    assert.equal(container.querySelector('dialog .tw-sprite-functions__empty').textContent,
+        'この関数を呼んでいるブロックはありません。');
+    act(() => container.querySelector<HTMLButtonElement>('dialog .tw-sprite-functions__close').click());
+    assert.equal(container.querySelector('dialog'), null);
 });
 
 test('hovering a function picks out its links and the functions at their other ends', () => {

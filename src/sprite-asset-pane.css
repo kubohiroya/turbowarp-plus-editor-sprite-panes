@@ -1060,18 +1060,23 @@
     list-style: none;
 }
 
+.tw-sprite-functions__group {
+    margin: .25rem 0 0;
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .75rem;
+    font-weight: 600;
+}
+
 .tw-sprite-functions__item {
+    display: flex;
+    align-items: center;
     border: 1px solid var(--ui-black-transparent, #ccd5e2);
     border-radius: .35rem;
     overflow: hidden;
+    background: var(--ui-secondary, #f2f6ff);
 }
 
-.tw-sprite-functions__heading {
-    margin: 0;
-    font-size: .9rem;
-}
-
-.tw-sprite-functions__toggle {
+.tw-sprite-functions__open {
     display: flex;
     gap: .4rem;
     align-items: center;
@@ -1081,30 +1086,133 @@
     color: inherit;
     background: var(--ui-secondary, #f2f6ff);
     font: inherit;
+    font-size: .9rem;
     font-weight: 600;
     text-align: start;
     cursor: pointer;
 }
 
-.tw-sprite-functions__toggle:focus-visible {
-    outline: 2px solid var(--looks-secondary, #855cd6);
-    outline-offset: -2px;
+.tw-sprite-functions__open {
+    flex: 1;
+    min-inline-size: 0;
 }
 
-.tw-sprite-functions__chevron {
+/* The function or script shown beside the pane. */
+.tw-sprite-functions__open[aria-current="true"] {
+    box-shadow: inset 3px 0 0 var(--looks-secondary, #855cd6);
+    background: var(--looks-transparent, hsla(260, 60%, 60%, .15));
+}
+
+.tw-sprite-functions__icon {
     flex: none;
     inline-size: 1rem;
     block-size: 1rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    transition: transform .12s;
+    color: #ff6680;
 }
 
-.tw-sprite-functions__toggle[aria-expanded="true"] .tw-sprite-functions__chevron {
-    transform: rotate(90deg);
+.tw-sprite-functions__thumbnail {
+    display: flex;
+    flex: none;
+}
+
+.tw-sprite-functions__thumbnail > svg {
+    display: block;
+    block-size: 1.75rem;
+    inline-size: auto;
+    max-inline-size: 9rem;
+}
+
+.tw-sprite-functions__uses-button {
+    margin-inline: .4rem;
+    border: 0;
+    color: inherit;
+    font: inherit;
+    font-size: .72rem;
+    cursor: pointer;
+}
+
+.tw-sprite-functions__uses-button:is(:hover, :focus-visible) {
+    outline: 2px solid var(--looks-secondary, #855cd6);
+    outline-offset: 1px;
+}
+
+/* The list of a function's uses: a small dialog like Scratch's prompts, over a quiet backdrop. */
+.tw-sprite-functions__uses {
+    box-sizing: border-box;
+    inline-size: min(26rem, calc(100vw - 2rem));
+    max-block-size: min(32rem, calc(100vh - 2rem));
+    padding: 0;
+    border: 0;
+    border-radius: .5rem;
+    overflow: auto;
+    color: var(--text-primary, #575e75);
+    background: var(--ui-primary, #fff);
+    box-shadow: 0 4px 16px hsla(0, 0%, 0%, .3);
+}
+
+.tw-sprite-functions__uses::backdrop {
+    background: hsla(0, 0%, 0%, .35);
+}
+
+.tw-sprite-functions__uses-header {
+    display: flex;
+    gap: .5rem;
+    align-items: center;
+    padding: .5rem .75rem;
+    border-block-end: 1px solid var(--ui-black-transparent, #ccd5e2);
+    background: var(--ui-secondary, #f2f6ff);
+}
+
+.tw-sprite-functions__uses-header h2 {
+    flex: 1;
+    min-inline-size: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: .95rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tw-sprite-functions__uses-list {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    margin: 0;
+    padding: .5rem;
+    list-style: none;
+}
+
+.tw-sprite-functions__uses-list button {
+    inline-size: 100%;
+    padding: .4rem .5rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .35rem;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.tw-sprite-functions__uses-list button:is(:hover, :focus-visible) {
+    background: var(--ui-tertiary, #e9eef2);
+}
+
+.tw-sprite-functions__uses .tw-sprite-functions__empty {
+    margin: .75rem;
+}
+
+.tw-sprite-functions__open:disabled {
+    cursor: default;
+}
+
+.tw-sprite-functions__open:enabled:hover {
+    background: var(--ui-tertiary, #e9eef2);
+}
+
+.tw-sprite-functions__open:focus-visible {
+    outline: 2px solid var(--looks-secondary, #855cd6);
+    outline-offset: -2px;
 }
 
 .tw-sprite-functions__name {
@@ -1138,11 +1246,7 @@
     white-space: nowrap;
 }
 
-.tw-sprite-functions__panel {
-    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
-}
-
-/* The host injects a code workspace here. Let people drag the bottom edge to give it more room. */
+/* The host injects a code workspace here, in the dialog that opens a function when the host has no other place for it. */
 .tw-sprite-functions__editor {
     position: relative;
     block-size: 16rem;
@@ -1610,6 +1714,92 @@
     font: inherit;
     font-weight: bold;
     color: var(--tw-temporary-function, #ff6680);
+}
+
+/* Named functions take the colour of the named-functions extension's blocks. */
+.tw-sprite-functions__node[data-kind="named"] {
+    border-color: #7442c4;
+    background: #8a55d7;
+}
+
+.tw-sprite-functions__dialog[data-kind="named"] .tw-sprite-functions__dialog-header {
+    background: #8a55d7;
+}
+
+.tw-sprite-functions__badge[data-kind="named"] {
+    color: var(--ui-white, #fff);
+    background: #8a55d7;
+}
+
+.tw-sprite-functions__dialog-header .tw-sprite-functions__badge[data-kind="named"] {
+    color: #8a55d7;
+}
+
+/* Below the list or the graph, at the start of the line. */
+.tw-sprite-functions__create {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+}
+
+.tw-sprite-functions__split {
+    display: inline-flex;
+    border-radius: .35rem;
+    overflow: hidden;
+    color: var(--ui-white, #fff);
+    background: var(--looks-secondary, #855cd6);
+}
+
+.tw-sprite-functions__split button {
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.tw-sprite-functions__create-main {
+    padding: .4rem .75rem;
+}
+
+.tw-sprite-functions__create-kind {
+    display: grid;
+    place-items: center;
+    padding: 0 .45rem;
+    border-inline-start: 1px solid hsla(0, 0%, 100%, .45) !important;
+}
+
+.tw-sprite-functions__create-kind svg {
+    inline-size: 1rem;
+    block-size: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-functions__split button:hover:not(:disabled) {
+    background: hsla(0, 0%, 0%, .12);
+}
+
+.tw-sprite-functions__split button:focus-visible {
+    outline: 2px solid var(--ui-white, #fff);
+    outline-offset: -4px;
+}
+
+.tw-sprite-functions__split button:disabled {
+    cursor: default;
+    opacity: .55;
+}
+
+.tw-sprite-functions__create-error {
+    margin: 0;
+    color: var(--error-primary, #d9001b);
+    font-size: .82rem;
 }
 
 .tw-sprite-variables__temporary-cell {

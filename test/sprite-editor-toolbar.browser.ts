@@ -48,11 +48,11 @@ test('the sprite toolbar selects one section and searches in the active section'
     const unselected = page.getByRole('tab', {selected: false});
     const tabs = strip.getByRole('tab');
     await expect(strip).toHaveAttribute('aria-orientation', 'vertical');
-    await expect(tabs).toHaveCount(6);
-    // Functions sit with the panes that survey the sprite, before variables and messages.
+    await expect(tabs).toHaveCount(7);
+    // The script views come first, then the media, then the data of the project.
     assert.deepEqual(await tabs.evaluateAll(nodes => nodes.map(node => node.id.replace(/^.*-section-/, ''))),
-        ['code', 'costumes', 'sounds', 'functions', 'variables', 'messages']);
-    await expect(selected).toHaveAccessibleName('コード');
+        ['code', 'functions', 'calls', 'costumes', 'sounds', 'variables', 'messages']);
+    await expect(selected).toHaveAccessibleName('自由配置');
     const tabBounds = await Promise.all((await tabs.all()).map(async tab => {
         await expect(tab).toHaveText('');
         await expect(tab).toHaveCSS('padding', '0px');
@@ -61,19 +61,19 @@ test('the sprite toolbar selects one section and searches in the active section'
     const panel = await page.getByRole('tabpanel').boundingBox();
     const rail = await strip.boundingBox();
     // A button is the size of what it shows, so the rail keeps the same shape whatever its height.
-    // The sections that survey the sprite are set apart from the three that edit the project.
+    // A line sets the three groups apart: scripts, media, and data.
     const gap = 2;
     const groupGap = 9;
     assert.ok(tabBounds.every((tab, index) => {
         const previous = tabBounds[index - 1];
-        const step = index === 3 ? gap + groupGap : gap;
+        const step = index === 3 || index === 5 ? gap + groupGap : gap;
         return tab.width === 28 && tab.height === 28 && tab.x + tab.width <= panel.x &&
             tab.x === tabBounds[0].x && (!previous || Math.abs(tab.y - previous.y - previous.height - step) < 0.1);
     }));
     const lastTab = tabBounds.at(-1);
     assert.ok(lastTab.y + lastTab.height < rail.y + rail.height - 40, 'the rail is not divided among its buttons');
     await selected.hover();
-    await expect(tooltip).toHaveText('コード');
+    await expect(tooltip).toHaveText('自由配置');
     assert.ok((await tooltip.boundingBox()).x >= panel.x);
     await page.mouse.move(800, 400);
     await expect(tooltip).toHaveCount(0);
@@ -85,13 +85,17 @@ test('the sprite toolbar selects one section and searches in the active section'
     await expect(unselected.first()).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await expect(strip).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await selected.press('ArrowDown');
+    await expect(selected).toHaveAccessibleName('ハット・関数一覧');
+    await selected.press('ArrowDown');
+    await expect(selected).toHaveAccessibleName('呼び出し関係');
+    await selected.press('ArrowDown');
     await expect(selected).toHaveAccessibleName('コスチューム');
     await expect(selected).toBeFocused();
     await expect(tooltip).toHaveText('コスチューム');
     await selected.press('Escape');
     await expect(tooltip).toHaveCount(0);
     await expect(selected).toHaveCount(1);
-    await expect(unselected.first()).toHaveAccessibleName('コード');
+    await expect(unselected.first()).toHaveAccessibleName('自由配置');
     await expect(unselected.first()).toHaveCSS('color', 'rgb(89, 89, 89)');
     const search = page.getByRole('combobox');
     await expect(search).toHaveAttribute('placeholder', '検索');

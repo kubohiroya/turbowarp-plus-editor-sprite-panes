@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const spriteEditorSections = ['code', 'costumes', 'sounds', 'variables', 'messages', 'functions'] as const;
+export const spriteEditorSections = ['code', 'costumes', 'sounds', 'variables', 'messages', 'functions', 'calls'] as const;
 export type SpriteEditorSection = typeof spriteEditorSections[number];
 
 /**
@@ -8,10 +8,13 @@ export type SpriteEditorSection = typeof spriteEditorSections[number];
  * keep those numbers, so new sections join it at the end while this order places them where they read best.
  */
 export const spriteEditorSectionOrder: readonly SpriteEditorSection[] =
-    ['code', 'costumes', 'sounds', 'functions', 'variables', 'messages'];
+    ['code', 'functions', 'calls', 'costumes', 'sounds', 'variables', 'messages'];
 
-/** The GUI owns these three panels; the rest are this package's own panes. */
-const nativeSections = new Set<SpriteEditorSection>(['code', 'costumes', 'sounds']);
+/** The buttons gather in three groups, with a line between them: scripts, media, and data. */
+const sectionGroups: Record<SpriteEditorSection, 'scripts' | 'media' | 'data'> = {
+    code: 'scripts', functions: 'scripts', calls: 'scripts', costumes: 'media', sounds: 'media',
+    variables: 'data', messages: 'data'
+};
 
 export interface SpriteSearchResult {
     id: string;
@@ -44,6 +47,7 @@ const glyphs: Record<SpriteEditorSection | 'search', string> = {
     variables: 'M5 2H3v12h2m6-12h2v12h-2M6 6l4 4m0-4-4 4',
     messages: 'M4 3.5h8A1.5 1.5 0 0 1 13.5 5v4a1.5 1.5 0 0 1-1.5 1.5H7.5L5 13v-2.5H4A1.5 1.5 0 0 1 2.5 9V5A1.5 1.5 0 0 1 4 3.5Z',
     functions: 'M10.5 2.5c-1.7 0-2.3 1-2.6 2.6L6.7 11c-.3 1.6-.9 2.5-2.6 2.5M5 6.5h4.5M12 7c.9 1.1.9 3.4 0 4.5M2.5 7c-.9 1.1-.9 3.4 0 4.5',
+    calls: 'M2.5 3h4v3h-4Zm7 7h4v3h-4ZM6.5 4.5h2a1 1 0 0 1 1 1v6M8 10l1.5 1.5L11 10',
     search: 'M10 10l3 3M11 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z'
 };
 
@@ -112,12 +116,12 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
     const availableSections = spriteEditorSectionOrder.filter(id => available.includes(id));
     const [tooltip, setTooltip] = React.useState<{button: HTMLButtonElement; id: SpriteEditorSection; y: number}>();
     const japanese = /^ja(?:-|$)/i.test(locale);
-    const labels = japanese ? {code: 'コード', costumes: isStage ? '背景' : 'コスチューム', sounds: '音',
-        variables: isStage ? 'グローバル変数' : propertiesInVariables ? '変数など' : 'スプライト変数', messages: 'メッセージ',
-        functions: '関数'} :
-        {code: 'Code', costumes: isStage ? 'Backdrops' : 'Costumes', sounds: 'Sounds',
-            variables: isStage ? 'Global Variables' : propertiesInVariables ? 'Properties & Variables' : 'Sprite Variables', messages: 'Messages',
-            functions: 'Functions'};
+    const labels = japanese ? {code: '自由配置', costumes: isStage ? '背景' : 'コスチューム', sounds: '音',
+        variables: isStage ? 'グローバル変数' : propertiesInVariables ? '変数' : 'スプライト変数', messages: 'メッセージ',
+        functions: 'ハット・関数一覧', calls: '呼び出し関係'} :
+        {code: 'Free layout', costumes: isStage ? 'Backdrops' : 'Costumes', sounds: 'Sounds',
+            variables: isStage ? 'Global Variables' : propertiesInVariables ? 'Variables' : 'Sprite Variables', messages: 'Messages',
+            functions: 'Hats and functions', calls: 'Calls'};
     const variableHeading = !isStage && propertiesInVariables ?
         (japanese ? 'スプライトのプロパティと変数' : 'Sprite Properties and Variables') :
             labels.variables;
@@ -141,7 +145,8 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
             onScroll={() => { if (tooltip) showTooltip(tooltip.button, tooltip.id); }}>
             {availableSections.map((id, index) => <button key={id} type="button" role="tab"
                 id={viewId + '-section-' + id} aria-label={labels[id]} aria-selected={section === id}
-                data-section-group={nativeSections.has(id) ? 'native' : 'own'}
+                data-section-group={sectionGroups[id]}
+                data-group-start={index > 0 && sectionGroups[availableSections[index - 1]] !== sectionGroups[id] || undefined}
                 tabIndex={section === id ? 0 : -1}
                 onMouseEnter={event => showTooltip(event.currentTarget, id)}
                 onMouseLeave={event => {
