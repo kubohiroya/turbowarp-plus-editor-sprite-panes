@@ -217,7 +217,8 @@ const english = {
     definedInTitle: 'The functions (custom blocks) whose code sets this thread variable',
     runtimeDefinedInTitle: 'The functions (custom blocks) that set this runtime variable',
     referredInTitle: 'The functions (custom blocks) that read this runtime variable or ask whether it exists',
-    rewrittenInTitle: 'The functions (custom blocks) that change or delete this runtime variable'
+    rewrittenInTitle: 'The functions (custom blocks) that change or delete this runtime variable',
+    functionCount: '%1 functions'
 };
 const japanese: typeof english = {
     costumes: 'コスチューム', sounds: '音', name: '変数名', value: '値',
@@ -261,7 +262,8 @@ const japanese: typeof english = {
     definedInTitle: 'このスレッド変数に値を入れるブロックがある関数（ブロック定義）',
     runtimeDefinedInTitle: 'このランタイム変数に値を入れる（〜にする）ブロックがある関数（ブロック定義）',
     referredInTitle: 'このランタイム変数を読む、または有無を調べるブロックがある関数（ブロック定義）',
-    rewrittenInTitle: 'このランタイム変数を変える（〜ずつ変える）、または削除するブロックがある関数（ブロック定義）'
+    rewrittenInTitle: 'このランタイム変数を変える（〜ずつ変える）、または削除するブロックがある関数（ブロック定義）',
+    functionCount: '関数 %1 個'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -687,19 +689,31 @@ const ownerLabel = (owner: TemporaryVariableOwner, labels: VariableLabels) =>
     (owner.clone ? labels.cloneOwner : labels.threadOwner).replace('%1', owner.targetName)
         .replace('%2', String(owner.thread)).replace('%3', String(owner.clone ?? ''));
 
-function FunctionList({functions, labels}: {functions?: readonly TemporaryVariableFunction[]; labels: VariableLabels}) {
-    if (!functions?.length) return null;
-    return <ul className="tw-sprite-variables__temporary-functions">{functions.map(fn =>
+/** How many custom block definitions an entry list names. Uses outside any function are not functions. */
+const functionCount = (functions: readonly TemporaryVariableFunction[] | undefined) =>
+    (functions ?? []).filter(fn => fn.id).length;
+
+function FunctionList({functions, labels, counted}: {
+    functions?: readonly TemporaryVariableFunction[];
+    labels: VariableLabels;
+    counted?: boolean;
+}) {
+    const count = functionCount(functions);
+    const badge = counted && <span className="tw-sprite-variables__temporary-count" role="img"
+        aria-label={labels.functionCount.replace('%1', String(count))} title={labels.functionCount.replace('%1', String(count))}>
+        {count}</span>;
+    if (!functions?.length) return badge || null;
+    return <>{badge}<ul className="tw-sprite-variables__temporary-functions">{functions.map(fn =>
         <li key={(fn.targetId ?? '') + '\n' + (fn.id ?? '')} data-function-id={fn.id} data-target-id={fn.targetId}>
             {fn.targetName !== undefined && <span className="tw-sprite-variables__temporary-owner">
                 {fn.stage ? labels.stageName : fn.targetName}</span>}
             {fn.id ? <code>{fn.label}</code> :
                 <span className="tw-sprite-variables__temporary-unset">{labels.outsideFunction}</span>}
-        </li>)}</ul>;
+        </li>)}</ul></>;
 }
 
-type FunctionColumn = {key: 'functions' | 'readers' | 'writers'; label: string; title: string};
-type TemporarySortColumn = 'name' | FunctionColumn['key'] | 'value' | 'read' | 'write';
+type FunctionColumn = {key: 'functions' | 'readers' | 'writers'; label: string; title: string; counted?: boolean};
+type TemporarySortColumn = 'name' | FunctionColumn['key'] | 'value';
 
 const functionText = (functions: readonly TemporaryVariableFunction[] | undefined, labels: VariableLabels) =>
     (functions ?? []).map(fn => [fn.stage ? labels.stageName : fn.targetName, fn.label ?? labels.outsideFunction]
@@ -709,8 +723,10 @@ function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: Te
     labels: VariableLabels, collator: Intl.Collator) {
     switch (column) {
     case 'name': return collator.compare(a.name, b.name);
-    case 'read':
-    case 'write': return a[column] - b[column];
+    // The counted columns sort by how many functions read or rewrite the variable, then by their names.
+    case 'readers':
+    case 'writers': return functionCount(a[column]) - functionCount(b[column]) ||
+        collator.compare(functionText(a[column], labels), functionText(b[column], labels));
     // The numeric collator orders values like 2 before 10, as the project shows them.
     case 'value': return collator.compare(a.values?.[0]?.value ?? '', b.values?.[0]?.value ?? '');
     default: return collator.compare(functionText(a[column], labels), functionText(b[column], labels));
@@ -737,8 +753,8 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
     const columns: FunctionColumn[] = scope === 'thread' ?
         [{key: 'functions', label: labels.definedIn, title: labels.definedInTitle}] : [
             {key: 'functions', label: labels.definedIn, title: labels.runtimeDefinedInTitle},
-            {key: 'readers', label: labels.referredIn, title: labels.referredInTitle},
-            {key: 'writers', label: labels.rewrittenIn, title: labels.rewrittenInTitle}
+            {key: 'readers', label: labels.referredIn, title: labels.referredInTitle, counted: true},
+            {key: 'writers', label: labels.rewrittenIn, title: labels.rewrittenInTitle, counted: true}
         ];
     return <section className="tw-sprite-variables__temporary" aria-label={title} data-temporary-scope={scope}>
         <div className="tw-sprite-variables__intro">
@@ -751,8 +767,6 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
                 {header('name', labels.name)}
                 {columns.map(column => header(column.key, column.label, undefined, column.title))}
                 {paused && header('value', labels.value)}
-                {header('read', labels.read, 'tw-sprite-variables__references')}
-                {header('write', labels.write, 'tw-sprite-variables__references')}
             </tr></thead>
             <tbody>{sorted.map(variable => <tr key={variable.name} data-temporary-name={variable.name}>
                 <th scope="row">
@@ -761,7 +775,9 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
                         {labels.dynamicName}</span>}
                 </th>
                 {columns.map(column => <td key={column.key} data-column={column.key}>
-                    <FunctionList functions={variable[column.key]} labels={labels} />
+                    <div className="tw-sprite-variables__temporary-cell">
+                        <FunctionList functions={variable[column.key]} labels={labels} counted={column.counted} />
+                    </div>
                 </td>)}
                 {paused && <td>{variable.values?.length ?
                     <ul className="tw-sprite-variables__temporary-values">{variable.values.map((entry, index) =>
@@ -771,8 +787,6 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
                             <output className="tw-sprite-variables__temporary-value">{entry.value}</output>
                         </li>)}</ul> :
                     <span className="tw-sprite-variables__temporary-unset">{labels.temporaryUnset}</span>}</td>}
-                <td className="tw-sprite-variables__references">{variable.read}</td>
-                <td className="tw-sprite-variables__references">{variable.write}</td>
             </tr>)}</tbody>
         </table> : <p className="tw-sprite-variables__temporary-empty">{labels.temporaryEmpty}</p>}
     </section>;
