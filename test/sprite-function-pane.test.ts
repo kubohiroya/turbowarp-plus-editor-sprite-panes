@@ -484,7 +484,9 @@ test('as its own section the call graph has no view switch and leaves the hats o
     });
     assert.equal(container.querySelector('section').getAttribute('aria-label'), '呼び出し関係');
     assert.equal(container.querySelector('[data-choice="list"]'), null);
-    assert.ok(container.querySelector('[data-choice="LR"]'), 'the flow switch stays');
+    assert.ok(container.querySelector('figure > .tw-sprite-functions__flow [data-choice="LR"]'),
+        'the flow switch stays, inside the graph at its top right');
+    assert.equal(container.querySelector('.tw-sprite-functions__bar'), null, 'with nothing left above the graph');
     // The flow buttons show icons and keep their names for tooltips and screen readers.
     const flow = container.querySelector<HTMLButtonElement>('[data-choice="TD"]');
     assert.ok(flow.querySelector('svg'));

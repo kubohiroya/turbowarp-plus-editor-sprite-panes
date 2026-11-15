@@ -819,7 +819,7 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, onOpen}: {
+function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, flow, onOpen}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
@@ -827,6 +827,8 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, o
     selectedId?: string;
     /** Drawn in the bottom left corner, over the graph. */
     corner?: React.ReactNode;
+    /** The switch of the flow, drawn in the top right corner over the graph. */
+    flow?: React.ReactNode;
     onOpen(fn: SpriteFunction): void;
 }) {
     // Functions in the same column or row follow their names.
@@ -880,7 +882,7 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, o
     React.useEffect(() => {
         const element = frame.current;
         const wheel = (event: WheelEvent) => {
-            if ((event.target as Element).closest?.('.tw-sprite-functions__zoom, .tw-sprite-functions__corner')) return;
+            if ((event.target as Element).closest?.('.tw-sprite-functions__zoom, .tw-sprite-functions__corner, .tw-sprite-functions__flow')) return;
             event.preventDefault();
             const delta = wheelPixels(event, element.clientHeight);
             if (event.ctrlKey || event.metaKey) {
@@ -899,7 +901,7 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, o
 
     function startPan(event: React.PointerEvent) {
         if (event.button !== 0 || (event.target as Element)
-            .closest('.tw-sprite-functions__zoom, .tw-sprite-functions__minimap, .tw-sprite-functions__corner')) return;
+            .closest('.tw-sprite-functions__zoom, .tw-sprite-functions__minimap, .tw-sprite-functions__corner, .tw-sprite-functions__flow')) return;
         const window = frame.current.ownerDocument.defaultView;
         const start = {x: event.clientX, y: event.clientY, view: current.current.view};
         let dragging = false;
@@ -1089,6 +1091,7 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, o
                 onClick={() => zoomButton(null)}><ZoomIcon action="reset" /></button>
         </div>
         {corner && <div className="tw-sprite-functions__corner">{corner}</div>}
+        {flow && <div className="tw-sprite-functions__flow">{flow}</div>}
     </figure>;
 }
 
@@ -1282,11 +1285,13 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         </li>)}
     </ul>;
 
+    // The flow switch sits inside the graph, at its top right.
+    const flowChoice = <Choice label={labels.flow} value={settings.direction} icons={flowGlyphs}
+        options={labels.directions} onChange={direction => change({direction})} />;
+    const hint = !editable && ordered.length > 0;
     return <section ref={list} className="tw-sprite-functions" aria-label={view ? labels.panels[view] : labels.panel} data-mode={mode}>
-        <div className="tw-sprite-functions__bar">
+        {(!view || mode === 'list' || hint) && <div className="tw-sprite-functions__bar">
             {!view && <Choice label={labels.view} value={settings.mode} options={labels.modes} onChange={next => change({mode: next})} />}
-            {mode === 'graph' && <Choice label={labels.flow} value={settings.direction} icons={flowGlyphs}
-                options={labels.directions} onChange={direction => change({direction})} />}
             {/* The graph places functions by who calls whom, so only the list can be ordered. */}
             {mode === 'list' && <label className="tw-sprite-functions__order">
                 <span>{labels.order}</span>
@@ -1294,10 +1299,10 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
                     {functionOrders.map(id => <option key={id} value={id}>{labels.orders[id]}</option>)}
                 </select>
             </label>}
-            {!editable && ordered.length > 0 && <p className="tw-sprite-functions__hint">{labels.readOnly}</p>}
-        </div>
+            {hint && <p className="tw-sprite-functions__hint">{labels.readOnly}</p>}
+        </div>}
         {mode === 'graph' ? (ordered.length ? <CallGraph labels={labels} idPrefix={idPrefix} functions={data.functions}
-            settings={settings} selectedId={selectedId ?? added} corner={addButton}
+            settings={settings} selectedId={selectedId ?? added} corner={addButton} flow={flowChoice}
             onOpen={fn => setDialogId(fn.id)} /> : <>
                 <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p>
                 {addButton && <div className="tw-sprite-functions__create">{addButton}</div>}

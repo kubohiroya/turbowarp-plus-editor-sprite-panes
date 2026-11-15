@@ -1800,6 +1800,19 @@
     cursor: default;
 }
 
+/* The top right corner of the call graph, above the minimap and the zoom buttons. */
+.tw-sprite-functions__flow {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    cursor: default;
+}
+
+.tw-sprite-functions__flow .tw-sprite-functions__choice {
+    background: var(--ui-white, #fff);
+    box-shadow: 0 1px 4px hsla(0, 0%, 0%, .15);
+}
+
 .tw-sprite-functions__corner .tw-sprite-functions__add {
     box-shadow: 0 1px 4px hsla(0, 0%, 0%, .2);
 }
