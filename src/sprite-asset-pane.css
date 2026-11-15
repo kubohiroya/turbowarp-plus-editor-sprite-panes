@@ -1480,7 +1480,8 @@
     padding: 0;
     border: 1px solid var(--ui-black-transparent, #ccd5e2);
     border-radius: 50%;
-    color: var(--text-primary-transparent, #575e75);
+    /* --text-primary-transparent stays dark in the dark theme; --text-primary follows the theme. */
+    color: var(--text-primary, #575e75);
     background: var(--ui-white, #fff);
     box-shadow: 0 1px 3px rgb(0 0 0 / 15%);
     cursor: pointer;
