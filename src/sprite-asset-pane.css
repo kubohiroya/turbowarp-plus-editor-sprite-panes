@@ -1813,7 +1813,8 @@
     border: 1px solid #f0b429;
     border-radius: .5rem;
     color: var(--text-primary, #575e75);
-    background: #fff8e1;
+    /* A little amber over the pane's own background, so the theme's text stays readable in light and dark. */
+    background: color-mix(in srgb, #f0b429 18%, var(--ui-primary, #fff));
     box-shadow: 0 1px 4px hsla(0, 0%, 0%, .12);
     font-size: .85rem;
     text-align: center;
