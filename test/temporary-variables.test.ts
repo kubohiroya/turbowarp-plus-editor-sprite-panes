@@ -28,9 +28,17 @@ function block(blocks: Blocks, opcode: string, name: string | null, parent?: str
         input = 'r' + nextId;
         blocks[input] = {opcode: 'operator_join', inputs: {}};
     }
+    // A block given no parent sits in a script under a green flag hat.
+    if (parent === undefined) {
+        blocks.flag ??= {opcode: 'event_whenflagclicked', parent: null, inputs: {}, fields: {}};
+        parent = 'flag';
+    }
     blocks[id] = {opcode: 'lmsTempVars2_' + opcode, parent, inputs: {VAR: {block: input, shadow}}};
     return id;
 }
+
+/** The script of the green flag hat that blocks without a parent sit under. */
+const flag = {id: 'flag', opcode: 'event_whenflagclicked', text: []};
 
 /** A custom block definition, with a block under it so a temporary variable block can sit deeper. */
 function definition(blocks: Blocks, id: string, proccode: string, argumentnames: string[]) {
@@ -74,8 +82,8 @@ test('a sprite lists the thread variables its code names with fixed text, with t
     assert.deepEqual(readTemporaryVariables(runtime, 'cat'), {
         paused: false,
         thread: [
-            {name: 'i', fixed: true, read: 1, write: 2, functions: [{targetId: 'cat'}]},
-            {name: 'n', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat'}]}
+            {name: 'i', fixed: true, read: 1, write: 2, functions: [{targetId: 'cat', script: flag}]},
+            {name: 'n', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat', script: flag}]}
         ]
     });
 });
@@ -94,9 +102,34 @@ test('a thread variable names the functions whose code sets it', () => {
     assert.deepEqual(readTemporaryVariables(runtime, 'cat').thread, [
         {name: 'i', fixed: true, read: 0, write: 4, functions: [
             {id: 'jump', label: 'jump (height) times <fast>', targetId: 'cat'}, {id: 'walk', label: 'walk', targetId: 'cat'},
-            {targetId: 'cat'}
+            {targetId: 'cat', script: flag}
         ]},
         {name: 'only read', fixed: true, read: 1, write: 0, functions: []}
+    ]);
+});
+
+test('a use outside any function names its script by the hat, with the values that tell the hat apart', () => {
+    const {runtime, cat} = project();
+    const blocks = cat.blocks._blocks;
+    blocks.receive = {opcode: 'event_whenbroadcastreceived', parent: null, inputs: {},
+        fields: {BROADCAST_OPTION: {name: 'BROADCAST_OPTION', id: 'message-go', value: 'go'}}};
+    blocks.key = {opcode: 'event_whenkeypressed', parent: null, inputs: {}, fields: {KEY_OPTION: {value: 'space'}}};
+    blocks.louder = {opcode: 'event_whengreaterthan', parent: null,
+        inputs: {VALUE: {block: 'louder-value', shadow: 'louder-value'}}, fields: {WHENGREATERTHANMENU: {value: 'LOUDNESS'}}};
+    blocks['louder-value'] = {opcode: 'math_number', parent: 'louder', inputs: {}, fields: {NUM: {value: '10'}}};
+    blocks.wait = {opcode: 'control_wait', parent: 'receive', inputs: {}, fields: {}};
+    block(blocks, 'setThreadVariable', 'i', 'wait');
+    block(blocks, 'changeThreadVariable', 'i', 'receive');
+    block(blocks, 'setThreadVariable', 'i', 'key');
+    block(blocks, 'setThreadVariable', 'i', 'louder');
+    block(blocks, 'setThreadVariable', 'i', 'clone');
+    blocks.clone = {opcode: 'control_start_as_clone', parent: null, inputs: {}, fields: {}};
+
+    assert.deepEqual(readTemporaryVariables(runtime, 'cat').thread[0].functions, [
+        {targetId: 'cat', script: {id: 'receive', opcode: 'event_whenbroadcastreceived', text: ['go']}},
+        {targetId: 'cat', script: {id: 'key', opcode: 'event_whenkeypressed', text: ['space']}},
+        {targetId: 'cat', script: {id: 'louder', opcode: 'event_whengreaterthan', text: ['10', 'LOUDNESS']}},
+        {targetId: 'cat', script: {id: 'clone', opcode: 'control_start_as_clone', text: []}}
     ]);
 });
 
@@ -108,11 +141,11 @@ test('the stage also lists the runtime variables named anywhere in the project',
     block(stage.blocks._blocks, 'setThreadVariable', 'tmp');
 
     const result = readTemporaryVariables(runtime, 'stage');
-    assert.deepEqual(result.thread, [{name: 'tmp', fixed: true, read: 0, write: 1, functions: [{targetId: 'stage'}]}]);
-    const stageScript = {targetId: 'stage', targetName: 'Stage', stage: true};
+    assert.deepEqual(result.thread, [{name: 'tmp', fixed: true, read: 0, write: 1, functions: [{targetId: 'stage', script: flag}]}]);
+    const stageScript = {targetId: 'stage', targetName: 'Stage', stage: true, script: flag};
     assert.deepEqual(result.runtime, [
         {name: 'score', fixed: true, read: 1, write: 1,
-            functions: [{targetId: 'cat', targetName: 'Cat'}], readers: [stageScript], writers: []},
+            functions: [{targetId: 'cat', targetName: 'Cat', script: flag}], readers: [stageScript], writers: []},
         {name: 'level', fixed: true, read: 0, write: 1, functions: [], readers: [], writers: [stageScript]}
     ]);
 });
@@ -137,7 +170,7 @@ test('a runtime variable names the functions that define, read and rewrite it, i
     assert.deepEqual(readTemporaryVariables(runtime, 'stage').runtime, [{
         name: 'score', fixed: true, read: 3, write: 3,
         functions: [at('cat', 'Cat', {id: 'reset', label: 'reset score'})],
-        readers: [at('stage', 'Stage', {id: 'show', label: 'show score'}), at('stage', 'Stage'),
+        readers: [at('stage', 'Stage', {id: 'show', label: 'show score'}), at('stage', 'Stage', {script: flag}),
             at('cat', 'Cat', {id: 'add', label: 'add (points)'})],
         writers: [at('cat', 'Cat', {id: 'add', label: 'add (points)'}), at('cat', 'Cat', {id: 'reset', label: 'reset score'})]
     }]);
@@ -164,11 +197,11 @@ test('while paused, the values of the sprite and its clones are read, including 
     assert.deepEqual(readTemporaryVariables(runtime, 'cat'), {
         paused: true,
         thread: [
-            {name: 'i', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat'}], values: [
+            {name: 'i', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat', script: flag}], values: [
                 {owner: {targetName: 'Cat', thread: 2}, value: '3'},
                 {owner: {targetName: 'Cat', clone: 1, thread: 3}, value: 'a'}
             ]},
-            {name: 'unused', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat'}], values: []},
+            {name: 'unused', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat', script: flag}], values: []},
             {name: 'item_2', fixed: false, read: 0, write: 0, functions: [], values: [
                 {owner: {targetName: 'Cat', clone: 1, thread: 3}, value: 'true'}
             ]}
@@ -419,4 +452,43 @@ test('the add button closes the global variables, before the temporary variables
         node.getAttribute('data-temporary-scope') ?? node.className);
     assert.deepEqual(order, ['tw-sprite-variables__intro', 'table', '新しいグローバル変数を追加', 'thread', 'runtime']);
     assert.equal(container.querySelectorAll('.tw-sprite-variables__add').length, 1);
+});
+
+test('a script outside any function shows its hat as drawn, with the values that tell it apart', t => {
+    const opened: string[][] = [];
+    const drawn: string[] = [];
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'ja', editable: true, variables: [], onWrite() {},
+        onOpenFunction: (targetId: string, blockId: string) => opened.push([targetId, blockId]),
+        getBlockImage: (targetId: string, blockId: string) => {
+            drawn.push(targetId + '/' + blockId);
+            const svg = window.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.dataset.drawn = blockId;
+            return svg;
+        },
+        temporaryVariables: {
+            paused: false,
+            thread: [{name: 'i', fixed: true, read: 0, write: 1, functions: [
+                {targetId: 'cat', script: {id: 'receive', opcode: 'event_whenbroadcastreceived', text: ['go']}},
+                {targetId: 'cat', script: {id: 'flag', opcode: 'event_whenflagclicked', text: []}}
+            ]}]
+        }
+    }));
+    const hats = [...container.querySelectorAll('[data-script-id] .tw-block-image')];
+    assert.deepEqual(hats.map(node => [node.querySelector('svg').dataset.drawn, node.getAttribute('aria-label')]),
+        [['receive', '「go」を受け取ったとき'], ['flag', '緑の旗が押されたとき']]);
+    assert.deepEqual(text(container.querySelectorAll('.tw-sprite-variables__temporary-hat-text')), ['go']);
+    assert.ok(drawn.includes('cat/receive') && drawn.includes('cat/flag'));
+    act(() => container.querySelector<HTMLButtonElement>('[data-script-id="receive"] button').click());
+    assert.deepEqual(opened, [['cat', 'receive']]);
+});
+
+test('without a renderer, a hat is named in words', t => {
+    const container = render(t, React.createElement(SpriteAssetPane, {
+        kind: 'variables', locale: 'ja', editable: false, variables: [], onWrite() {},
+        temporaryVariables: {paused: false, thread: [{name: 'i', fixed: true, read: 0, write: 1, functions: [
+            {targetId: 'cat', script: {id: 'key', opcode: 'event_whenkeypressed', text: ['space']}}]}]}
+    }));
+    assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')),
+        [['i', 'キーが押されたときspace']]);
 });

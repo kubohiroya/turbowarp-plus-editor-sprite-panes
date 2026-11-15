@@ -3,6 +3,7 @@ import {PenIcon} from './pen-icon.tsx';
 import {observeTileNameTitles} from './native-tile-title.ts';
 import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from './sprite-properties.tsx';
 import type {TemporaryVariable, TemporaryVariableFunction, TemporaryVariableOwner, TemporaryVariables} from './temporary-variables.ts';
+import {BlockImage, hatName, type GetBlockImage} from './block-image.tsx';
 import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError, type SpriteVariableValue, type SpriteListItem} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
 
 interface NativeAssetPanelProps {
@@ -170,6 +171,11 @@ export interface SpriteVariablePaneProps extends PaneProps {
     temporaryVariables?: TemporaryVariables;
     /** Opens a function of the temporary variable tables in the code, as the project search does. */
     onOpenFunction?(targetId: string, blockId: string): void;
+    /**
+     * Draws a block as Scratch shows it, for the hats of scripts outside any function. Returns a new
+     * element on each call. See `createBlockImageRenderer` in `./block-image`.
+     */
+    getBlockImage?: GetBlockImage;
     onWriteProperties?: SpritePropertiesPanelProps['onChange'];
     onWrite(id: string, value: SpriteVariable['value']): void;
     onEdit?(edit: SpriteVariableEdit): SpriteVariableEditError | void;
@@ -220,7 +226,7 @@ const english = {
     runtimeDefinedInTitle: 'The functions (custom blocks) that set this runtime variable',
     referredInTitle: 'The functions (custom blocks) that read this runtime variable or ask whether it exists',
     rewrittenInTitle: 'The functions (custom blocks) that change or delete this runtime variable',
-    functionCount: '%1 functions', openFunction: 'Open “%1” in the code'
+    functionCount: '%1 functions', openFunction: 'Open “%1” in the code', openScript: 'Open this script in the code'
 };
 const japanese: typeof english = {
     costumes: 'コスチューム', sounds: '音', name: '変数名', value: '値',
@@ -265,7 +271,7 @@ const japanese: typeof english = {
     runtimeDefinedInTitle: 'このランタイム変数に値を入れる（〜にする）ブロックがある関数（ブロック定義）',
     referredInTitle: 'このランタイム変数を読む、または有無を調べるブロックがある関数（ブロック定義）',
     rewrittenInTitle: 'このランタイム変数を変える（〜ずつ変える）、または削除するブロックがある関数（ブロック定義）',
-    functionCount: '関数 %1 個', openFunction: '「%1」をコードで開く'
+    functionCount: '関数 %1 個', openFunction: '「%1」をコードで開く', openScript: 'このスクリプトをコードで開く'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -695,11 +701,32 @@ const ownerLabel = (owner: TemporaryVariableOwner, labels: VariableLabels) =>
 const functionCount = (functions: readonly TemporaryVariableFunction[] | undefined) =>
     (functions ?? []).filter(fn => fn.id).length;
 
-function FunctionList({functions, labels, counted, onOpen}: {
+/** The hat of a script as Scratch draws it, with the values that tell it apart from others of its kind. */
+function HatImage({fn, locale, getBlockImage}: {
+    fn: TemporaryVariableFunction;
+    locale: string;
+    getBlockImage?: GetBlockImage;
+}) {
+    const script = fn.script;
+    const name = script ? hatName(locale, script.opcode,
+        script.opcode === 'event_whenbroadcastreceived' ? script.text[0] : undefined) : '';
+    const text = script?.text.join(' ');
+    return <span className="tw-sprite-variables__temporary-hat">
+        <BlockImage targetId={fn.targetId} blockId={script?.id} label={name} getBlockImage={getBlockImage}
+            className="tw-sprite-variables__temporary-hat-image">
+            <span className="tw-sprite-variables__temporary-unset">{name}</span>
+        </BlockImage>
+        {text && <span className="tw-sprite-variables__temporary-hat-text">{text}</span>}
+    </span>;
+}
+
+function FunctionList({functions, labels, locale, counted, onOpen, getBlockImage}: {
     functions?: readonly TemporaryVariableFunction[];
     labels: VariableLabels;
+    locale: string;
     counted?: boolean;
     onOpen?(targetId: string, blockId: string): void;
+    getBlockImage?: GetBlockImage;
 }) {
     const count = functionCount(functions);
     const badge = counted && <span className="tw-sprite-variables__temporary-count" role="img"
@@ -707,7 +734,8 @@ function FunctionList({functions, labels, counted, onOpen}: {
         {count}</span>;
     if (!functions?.length) return badge || null;
     return <>{badge}<ul className="tw-sprite-variables__temporary-functions">{functions.map(fn =>
-        <li key={(fn.targetId ?? '') + '\n' + (fn.id ?? '')} data-function-id={fn.id} data-target-id={fn.targetId}>
+        <li key={(fn.targetId ?? '') + '\n' + (fn.id ?? fn.script?.id ?? '')} data-function-id={fn.id}
+            data-script-id={fn.script?.id} data-target-id={fn.targetId}>
             {fn.targetName !== undefined && <span className="tw-sprite-variables__temporary-owner">
                 {fn.stage ? labels.stageName : fn.targetName}</span>}
             {fn.id ? onOpen && fn.targetId ?
@@ -715,7 +743,13 @@ function FunctionList({functions, labels, counted, onOpen}: {
                     title={labels.openFunction.replace('%1', fn.label ?? '')}
                     onClick={() => onOpen(fn.targetId, fn.id)}><code>{fn.label}</code></button> :
                 <code>{fn.label}</code> :
-                <span className="tw-sprite-variables__temporary-unset">{labels.outsideFunction}</span>}
+                !fn.script ? <span className="tw-sprite-variables__temporary-unset">{labels.outsideFunction}</span> :
+                onOpen && fn.targetId ?
+                    <button type="button" className="tw-sprite-variables__temporary-open"
+                        title={labels.openScript} onClick={() => onOpen(fn.targetId, fn.script.id)}>
+                        <HatImage fn={fn} locale={locale} getBlockImage={getBlockImage} />
+                    </button> :
+                    <HatImage fn={fn} locale={locale} getBlockImage={getBlockImage} />}
         </li>)}</ul></>;
 }
 
@@ -723,7 +757,8 @@ type FunctionColumn = {key: 'functions' | 'readers' | 'writers'; label: string; 
 type TemporarySortColumn = 'name' | FunctionColumn['key'] | 'value';
 
 const functionText = (functions: readonly TemporaryVariableFunction[] | undefined, labels: VariableLabels) =>
-    (functions ?? []).map(fn => [fn.stage ? labels.stageName : fn.targetName, fn.label ?? labels.outsideFunction]
+    (functions ?? []).map(fn => [fn.stage ? labels.stageName : fn.targetName,
+        fn.label ?? [labels.outsideFunction, fn.script?.opcode, ...fn.script?.text ?? []].filter(Boolean).join(' ')]
         .filter(Boolean).join(' ')).join('\n');
 
 function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: TemporarySortColumn,
@@ -740,13 +775,15 @@ function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: Te
     }
 }
 
-function TemporaryVariableSection({scope, variables, paused, labels, collator, onOpenFunction}: {
+function TemporaryVariableSection({scope, variables, paused, labels, locale, collator, onOpenFunction, getBlockImage}: {
     scope: 'thread' | 'runtime';
     variables: readonly TemporaryVariable[];
     paused: boolean;
     labels: VariableLabels;
+    locale: string;
     collator: Intl.Collator;
     onOpenFunction?: SpriteVariablePaneProps['onOpenFunction'];
+    getBlockImage?: GetBlockImage;
 }) {
     const title = scope === 'thread' ? labels.threadVariables : labels.runtimeVariables;
     const [sort, setSort] = React.useState<{column: TemporarySortColumn; direction: SortDirection} | null>(null);
@@ -784,8 +821,8 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator, o
                 </th>
                 {columns.map(column => <td key={column.key} data-column={column.key}>
                     <div className="tw-sprite-variables__temporary-cell">
-                        <FunctionList functions={variable[column.key]} labels={labels} counted={column.counted}
-                            onOpen={onOpenFunction} />
+                        <FunctionList functions={variable[column.key]} labels={labels} locale={locale} counted={column.counted}
+                            onOpen={onOpenFunction} getBlockImage={getBlockImage} />
                     </div>
                 </td>)}
                 {paused && <td>{variable.values?.length ?
@@ -802,7 +839,7 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator, o
 }
 
 function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties,
-    clone, notice, global, temporaryVariables, onOpenFunction}: SpriteVariablePaneProps) {
+    clone, notice, global, temporaryVariables, onOpenFunction, getBlockImage}: SpriteVariablePaneProps) {
     const labels = labelsFor(locale);
     const [action, setAction] = React.useState<SpriteVariableEdit | null>(null);
     const [error, setError] = React.useState<SpriteVariableEditError | undefined>();
@@ -921,11 +958,12 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
             </button>}
             {temporaryVariables && <>
                 <TemporaryVariableSection scope="thread" variables={temporaryVariables.thread}
-                    paused={temporaryVariables.paused} labels={labels} collator={collator}
-                    onOpenFunction={editable ? onOpenFunction : undefined} />
+                    paused={temporaryVariables.paused} labels={labels} locale={locale} collator={collator}
+                    onOpenFunction={editable ? onOpenFunction : undefined} getBlockImage={getBlockImage} />
                 {temporaryVariables.runtime && <TemporaryVariableSection scope="runtime"
                     variables={temporaryVariables.runtime} paused={temporaryVariables.paused}
-                    labels={labels} collator={collator} onOpenFunction={editable ? onOpenFunction : undefined} />}
+                    labels={labels} locale={locale} collator={collator} onOpenFunction={editable ? onOpenFunction : undefined}
+                    getBlockImage={getBlockImage} />}
             </>}
         </div>
         {editable && action && <VariableDialog key={action.type === 'create' ? 'create' : action.type + action.id}

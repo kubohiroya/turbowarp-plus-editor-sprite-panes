@@ -1,5 +1,6 @@
 import React from 'react';
 import {PenIcon} from './pen-icon.tsx';
+import {BlockImage, hatName, type GetBlockImage} from './block-image.tsx';
 import type {
     MessageRenameError, MessageStatus, MessageUse, ProjectMessage, TargetMessages
 } from '@kubohiroya/turbowarp-plus-editor-project-model/project-messages';
@@ -9,6 +10,8 @@ export type {MessageRenameError};
 
 export interface MessagePaneData extends TargetMessages {
     getThumbnailUrl?(targetId: string): string | undefined;
+    /** Draws the hats of the scripts as Scratch shows them. See `createBlockImageRenderer` in `./block-image`. */
+    getBlockImage?: GetBlockImage;
 }
 
 export interface SpriteMessagePaneProps {
@@ -58,17 +61,7 @@ const english = {
     openStage: 'Open the stage',
     broadcast: 'broadcast %1',
     broadcastAndWait: 'broadcast %1 and wait',
-    whenReceived: 'when I receive %1',
-    hats: {
-        event_whenflagclicked: 'when green flag clicked',
-        event_whenkeypressed: 'when key pressed',
-        event_whenthisspriteclicked: 'when this sprite clicked',
-        event_whenstageclicked: 'when stage clicked',
-        event_whenbackdropswitchesto: 'when backdrop switches to',
-        event_whengreaterthan: 'when value greater than',
-        control_start_as_clone: 'when I start as a clone',
-        procedures_definition: 'block definition'
-    } as Record<string, string>
+    whenReceived: 'when I receive %1'
 };
 
 const japanese: typeof english = {
@@ -106,17 +99,7 @@ const japanese: typeof english = {
     openStage: '背景を開く',
     broadcast: '%1を送る',
     broadcastAndWait: '%1を送って待つ',
-    whenReceived: '%1を受け取ったとき',
-    hats: {
-        event_whenflagclicked: '緑の旗が押されたとき',
-        event_whenkeypressed: 'キーが押されたとき',
-        event_whenthisspriteclicked: 'このスプライトが押されたとき',
-        event_whenstageclicked: 'ステージが押されたとき',
-        event_whenbackdropswitchesto: '背景が切り替わったとき',
-        event_whengreaterthan: '値が大きくなったとき',
-        control_start_as_clone: 'クローンされたとき',
-        procedures_definition: 'ブロックの定義'
-    }
+    whenReceived: '%1を受け取ったとき'
 };
 
 type Labels = typeof english;
@@ -129,12 +112,8 @@ const blockLabel = (labels: Labels, use: MessageUse) => {
     return (use.wait ? labels.broadcastAndWait : labels.broadcast).replace('%1', name);
 };
 
-const scriptLabel = (labels: Labels, use: MessageUse) => {
-    if (use.scriptOpcode === receiveOpcode && use.scriptMessageName !== undefined) {
-        return labels.whenReceived.replace('%1', quoted(use.scriptMessageName));
-    }
-    return labels.hats[use.scriptOpcode] ?? use.scriptOpcode.replaceAll('_', ' ');
-};
+const scriptLabel = (locale: string, use: MessageUse) =>
+    hatName(locale, use.scriptOpcode, use.scriptOpcode === receiveOpcode ? use.scriptMessageName : undefined);
 
 function Status({labels, status}: {labels: Labels; status: MessageStatus}) {
     if (status === 'both') return null;
@@ -250,8 +229,11 @@ function Diagram({labels, data, onOpenTarget}: {
     </figure>;
 }
 
-function Group({labels, title, uses, empty, byKey, editable, renaming, onOpen, onRename, onStartRename}: {
+function Group({locale, labels, title, uses, empty, byKey, editable, renaming, onOpen, onRename, onStartRename,
+    getBlockImage}: {
+    locale: string;
     labels: Labels;
+    getBlockImage?: GetBlockImage;
     title: string;
     uses: readonly MessageUse[];
     empty: string;
@@ -280,9 +262,15 @@ function Group({labels, title, uses, empty, byKey, editable, renaming, onOpen, o
                         {message && <Status labels={labels} status={message.status} />}
                     </th>
                     <td>
-                        {blockLabel(labels, use)}
+                        {/* A receiving block is the hat of its script, so it is drawn as Scratch shows it. */}
+                        {use.blockId === use.scriptId ?
+                            <BlockImage targetId={use.targetId} blockId={use.blockId} label={blockLabel(labels, use)}
+                                getBlockImage={getBlockImage} className="tw-sprite-messages__hat" /> :
+                            blockLabel(labels, use)}
                         {use.blockId !== use.scriptId && <small className="tw-sprite-messages__script-start">
-                            {labels.scriptStart.replace('%1', () => scriptLabel(labels, use))}
+                            <BlockImage targetId={use.targetId} blockId={use.scriptId}
+                                label={labels.scriptStart.replace('%1', () => scriptLabel(locale, use))}
+                                getBlockImage={getBlockImage} className="tw-sprite-messages__hat" />
                         </small>}
                     </td>
                     {onRename && <td>
@@ -313,8 +301,8 @@ export function SpriteMessagePane({locale, editable, data, onOpen, onOpenTarget,
         return undefined;
     });
     const group = (title: string, uses: readonly MessageUse[], empty: string) =>
-        <Group {...{labels, title, uses, empty, byKey, editable, renaming, onOpen, onStartRename: setRenaming}}
-            onRename={rename} />;
+        <Group {...{locale, labels, title, uses, empty, byKey, editable, renaming, onOpen, onStartRename: setRenaming}}
+            onRename={rename} getBlockImage={data.getBlockImage} />;
 
     return <section className="tw-sprite-messages" aria-label={labels.panel}>
         {group(labels.sent, data.sends, data.isStage ? labels.noSendsStage : labels.noSends)}

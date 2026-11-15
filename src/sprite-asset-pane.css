@@ -1451,7 +1451,8 @@ button.tw-sprite-messages__node:focus-visible {
 .tw-sprite-variables__temporary-functions li {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
+    /* Hats are taller than text, so the sprite name sits beside their middle. */
+    align-items: center;
     gap: 0 .4rem;
 }
 
@@ -1500,4 +1501,39 @@ button.tw-sprite-messages__node:focus-visible {
 .tw-sprite-variables__temporary-open:hover code,
 .tw-sprite-variables__temporary-open:focus-visible code {
     text-decoration-color: currentColor;
+}
+
+.tw-sprite-variables__temporary-hat {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .2rem .45rem;
+}
+
+/* A block drawn by BlockImage, about as large as the code area shows it at its default zoom. */
+.tw-block-image {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.tw-block-image[hidden] {
+    display: none;
+}
+
+.tw-block-image svg {
+    display: block;
+    inline-size: auto;
+    block-size: var(--tw-block-image-height, 3rem);
+    max-inline-size: 16rem;
+}
+
+.tw-sprite-messages__script-start .tw-block-image {
+    --tw-block-image-height: 2.4rem;
+}
+
+.tw-sprite-variables__temporary-hat-text {
+    padding: .05em .35em;
+    border-radius: .25rem;
+    background: var(--ui-black-transparent, #e8ecf2);
+    font-size: .85em;
 }

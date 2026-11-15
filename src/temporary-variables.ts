@@ -42,12 +42,29 @@ export interface TemporaryVariableValue {
     value: string;
 }
 
-/** A custom block definition that uses a variable. Without id, the variable is used outside any function. */
+/** The top block of a script outside any function, usually a hat such as `when I receive [go]`. */
+export interface TemporaryVariableScript {
+    /** Id of the top block. */
+    id: string;
+    opcode: string;
+    /**
+     * The values that tell this hat apart from others of its kind, in the order the block shows
+     * them: the message of `when I receive`, the key of `when key pressed`, and so on.
+     */
+    text: readonly string[];
+}
+
+/**
+ * A custom block definition that uses a variable. Without id, the variable is used outside any
+ * function, in the script that `script` names.
+ */
 export interface TemporaryVariableFunction {
     /** Id of the `procedures_definition` block. */
     id?: string;
     /** The block as it reads, such as `jump (height) times`. */
     label?: string;
+    /** For a use outside any function: the script's top block. */
+    script?: TemporaryVariableScript;
     /** The sprite or stage whose code holds the function. */
     targetId?: string;
     /** Runtime variables only, since their functions can be in any sprite. */
@@ -131,7 +148,20 @@ function argumentNames(argumentnames = '[]') {
     }
 }
 
-/** The custom block definition a block belongs to, or an entry without id for a script outside any function. */
+/** The values of a block's fields and of the fields of its shadow inputs, as the block shows them. */
+function fieldText(blocks: Record<string, Block>, block: Block) {
+    const text: string[] = [];
+    for (const input of Object.values(block.inputs ?? {})) {
+        const shadow = input?.shadow && input.block === input.shadow ? blocks[input.shadow] : undefined;
+        if (shadow) text.push(...fieldText(blocks, shadow));
+    }
+    for (const field of Object.values(block.fields ?? {})) {
+        if (field?.value !== undefined && field.value !== null && field.value !== '') text.push(String(field.value));
+    }
+    return text;
+}
+
+/** The custom block definition a block belongs to, or the top block of its script outside any function. */
 function functionOf(blocks: Record<string, Block>, id: string): TemporaryVariableFunction {
     const seen = new Set<string>();
     let current = id;
@@ -140,10 +170,11 @@ function functionOf(blocks: Record<string, Block>, id: string): TemporaryVariabl
         current = blocks[current].parent;
     }
     const top = blocks[current];
-    if (top?.opcode !== 'procedures_definition') return {};
-    const mutation = blocks[top.inputs?.custom_block?.block ?? '']?.mutation;
-    return mutation?.proccode ?
-        {id: current, label: functionLabel({proccode: mutation.proccode, argumentNames: argumentNames(mutation.argumentnames)})} : {};
+    const mutation = top?.opcode === 'procedures_definition' ? blocks[top.inputs?.custom_block?.block ?? '']?.mutation : undefined;
+    if (mutation?.proccode) {
+        return {id: current, label: functionLabel({proccode: mutation.proccode, argumentNames: argumentNames(mutation.argumentnames)})};
+    }
+    return top ? {script: {id: current, opcode: top.opcode, text: fieldText(blocks, top)}} : {};
 }
 
 function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, uses: Uses, withTarget = false) {
@@ -164,7 +195,9 @@ function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, use
         use[role === 'refer' ? 'read' : 'write']++;
         const owner = {...functionOf(blocks, id), targetId: target.id,
             ...withTarget && {targetName: target.getName(), ...target.isStage && {stage: true}}};
-        if (!use[role].some(each => each.id === owner.id && each.targetId === owner.targetId)) use[role].push(owner);
+        // One entry per function or per script outside any function.
+        const key = owner.id ?? owner.script?.id;
+        if (!use[role].some(each => (each.id ?? each.script?.id) === key && each.targetId === owner.targetId)) use[role].push(owner);
         uses.set(name, use);
     }
     return found;

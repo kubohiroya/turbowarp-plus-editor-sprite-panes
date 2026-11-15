@@ -31,6 +31,10 @@
       "types": "./dist/temporary-variables.d.ts",
       "default": "./dist/temporary-variables.js"
     },
+    "./block-image": {
+      "types": "./dist/block-image.d.ts",
+      "default": "./dist/block-image.js"
+    },
     "./sprite-properties": {
       "types": "./dist/sprite-properties.d.ts",
       "default": "./dist/sprite-properties.js"

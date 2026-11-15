@@ -73,6 +73,7 @@ async function openPage(t) {
     const routes = new Map([
         ['/pen-icon.js', new URL('../dist/pen-icon.js', import.meta.url)],
         ['/sprite-asset-pane.js', new URL('../dist/sprite-asset-pane.js', import.meta.url)],
+        ['/block-image.js', new URL('../dist/block-image.js', import.meta.url)],
         ['/sprite-variable-edit.js', require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit')],
         ['/native-tile-title.js', new URL('../dist/native-tile-title.js', import.meta.url)],
         ['/sprite-properties.js', new URL('../dist/sprite-properties.js', import.meta.url)],
