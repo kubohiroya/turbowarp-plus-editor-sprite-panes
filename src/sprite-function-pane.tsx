@@ -930,6 +930,10 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
     const layout = React.useMemo(() => layoutCallGraph(functions, settings.direction, 'name'),
         [functions, settings.direction]);
     const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
+    // A global function of another sprite may call one here; the uses of one there are not counted here.
+    const called = React.useMemo(() => new Set(layout.edges.filter(edge => edge.from !== edge.to).map(edge => edge.to)),
+        [layout]);
+    const unused = (fn: SpriteFunction) => !fn.owner && fn.calls === 0 && !called.has(fn.id);
     const marker = `${idPrefix}-arrow`;
     // Isolated functions keep their rows; the sort is stable.
     const reading = [...layout.nodes].sort((a, b) => a.layer - b.layer || (a.isolated ? 0 :
@@ -1149,7 +1153,7 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
                         <button type="button" className="tw-sprite-functions__node" data-function-key={fn.id}
                             data-kind={fn.kind} data-scope={fn.scope === 'global' ? 'global' : undefined}
                             data-owner={fn.owner ? fn.owner.targetId : undefined} aria-current={selectedId === fn.id || undefined}
-                            data-unused={fn.calls === 0 || undefined} data-entry={fn.scriptCalls > 0 || undefined}
+                            data-unused={unused(fn) || undefined} data-entry={fn.scriptCalls > 0 || undefined}
                             data-highlight={highlight?.nodes.get(fn.id)}
                             title={[owner ? labels.globalIn.replace('%1', () => owner) : labels.openCode.replace('%1', () => label),
                                 fn.kind === 'named' && labels.named, fn.scope === 'global' && labels.global,

@@ -341,10 +341,10 @@ test('the call graph draws global functions grey, naming the sprite of one defin
         onOpenFunction: ({id}: {id: string}) => opened.push(id),
         data: {targetId: 'cat', isStage: false, functions: [
             fn('jump', 'jump', 0, 0, {callees: ['stage:log']}),
-            fn('meow', 'meow', 0, 0, {kind: 'named', scope: 'global'})
+            fn('meow', 'meow', 0, 0, {kind: 'named', scope: 'global', calls: 0, scriptCalls: 0})
         ], globals: [
             fn('stage:log', 'log', 0, 0, {kind: 'named', scope: 'global', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log'}}),
-            fn('dog:bark', 'bark', 0, 0, {kind: 'named', scope: 'global', callees: ['meow'],
+            fn('dog:bark', 'bark', 0, 0, {kind: 'named', scope: 'global', callees: ['meow'], calls: 0, scriptCalls: 0,
                 owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark'}})
         ]}
     });
@@ -362,6 +362,10 @@ test('the call graph draws global functions grey, naming the sprite of one defin
     act(() => node('meow').click());
     assert.deepEqual(opened, ['meow']);
     assert.equal(node('dog:bark').getAttribute('aria-disabled'), 'true');
+    // meow is called from the dog, and the dog's bark is counted there, so neither reads as unused.
+    assert.equal(node('meow').hasAttribute('data-unused'), false);
+    assert.equal(node('dog:bark').hasAttribute('data-unused'), false);
+    assert.equal(node('jump').hasAttribute('data-unused'), false);
 });
 
 test('named functions gather in their own section below the standard ones, with their scope and description', t => {
