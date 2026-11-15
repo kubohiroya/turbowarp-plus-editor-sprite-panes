@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, {type TestContext} from 'node:test';
 import {JSDOM} from 'jsdom';
 import React, {act} from 'react';
-import {callGraphHighlight, functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane} from '../dist/sprite-function-pane.js';
+import {callGraphHighlight, callGraphNodeSize, functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane} from '../dist/sprite-function-pane.js';
 
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 const dom = new JSDOM('<main></main>', {pretendToBeVisual: true});
@@ -149,18 +149,42 @@ test('the call graph puts callers before callees, left to right or top to bottom
     ];
     const lr = layoutCallGraph(functions, 'LR');
     const layers = Object.fromEntries(lr.nodes.map(node => [node.fn.id, node.layer]));
-    assert.deepEqual(layers, {draw: 1, line: 2, main: 0, move: 1, spare: 0});
+    assert.deepEqual(layers, {draw: 1, line: 2, main: 0, move: 1, spare: 3});
     assert.deepEqual(Object.fromEntries(lr.edges.map(edge => [`${edge.from}>${edge.to}`, edge.kind])), {
         'line>draw': 'back', 'move>move': 'self', 'draw>line': 'forward', 'main>draw': 'forward', 'main>move': 'forward'
     });
     const at = (layout: typeof lr, id: string) => layout.nodes.find(node => node.fn.id === id);
     assert.ok(at(lr, 'main').x < at(lr, 'draw').x && at(lr, 'draw').x < at(lr, 'line').x, 'LR flows along x');
-    assert.equal(at(lr, 'main').x, at(lr, 'spare').x);
 
     const td = layoutCallGraph(functions, 'TD');
     assert.ok(at(td, 'main').y < at(td, 'draw').y && at(td, 'draw').y < at(td, 'line').y, 'TD flows along y');
-    assert.equal(at(td, 'main').y, at(td, 'spare').y);
-    assert.ok(lr.width > td.width && td.height > lr.height, 'the graph grows along its flow');
+    assert.ok(lr.width > td.width, 'the graph grows along its flow');
+
+    // A function that calls none and that none calls sits apart, below the rest, whichever the flow.
+    for (const layout of [lr, td]) {
+        const spare = at(layout, 'spare');
+        assert.equal(spare.isolated, true);
+        assert.equal(layout.nodes.filter(node => node.isolated).length, 1);
+        const lowest = Math.max(...layout.nodes.filter(node => !node.isolated).map(node => node.y + callGraphNodeSize.height));
+        assert.ok(spare.y - lowest >= 72, 'with space between them');
+        assert.equal(spare.x, 24, 'from the left edge');
+        assert.equal(layout.height, spare.y + callGraphNodeSize.height + 24);
+    }
+});
+
+test('isolated functions fill rows below the graph, at least four to a row', () => {
+    const spares = ['a', 'b', 'c', 'd', 'e'].map(id => fn(id, id, 0, 0, {calls: 0, scriptCalls: 0}));
+    const linked = [fn('main', 'main', 0, 0, callees('main', ['draw'])), fn('draw', 'draw', 0, 0)];
+    const layout = layoutCallGraph([...spares, ...linked], 'TD');
+    const rows = new Map<number, string[]>();
+    for (const node of layout.nodes.filter(node => node.isolated)) rows.set(node.y, [...rows.get(node.y) ?? [], node.fn.id]);
+    assert.deepEqual([...rows.values()], [['a', 'b', 'c', 'd'], ['e']], 'in name order');
+    assert.ok(layout.width >= 24 * 2 + 4 * callGraphNodeSize.width + 3 * 18);
+
+    // Only isolated functions: they start at the top.
+    const alone = layoutCallGraph(spares.slice(0, 2), 'LR');
+    assert.deepEqual(alone.nodes.map(node => [node.fn.id, node.x, node.y]), [['a', 24, 24], ['b', 24 + 176 + 18, 24]]);
+    assert.deepEqual([alone.width, alone.height], [24 * 2 + 2 * 176 + 18, 24 * 2 + 44]);
 });
 
 test('the graph mode draws nodes and opens a function in a dialog editor', t => {
@@ -259,6 +283,91 @@ test('named functions are read with Scratch functions, and calls between the two
     assert.deepEqual(composed.functions.map(item => item.proccode), ['other']);
 });
 
+const N = 'kubohiroyanamedfunctions';
+/** A `define function` hat named `name`, for all sprites unless `scope` says otherwise, with a body of `body`. */
+const defineFunction = (id: string, name: string, scope = 'global', next?: string) => ({
+    [id]: {id, opcode: `${N}_defineFunction`, topLevel: true, next, inputs: {NAME: input(`${id}-name`)},
+        fields: {SCOPE: {value: scope}}},
+    ...text(`${id}-name`, name, id)
+});
+const callFunction = (id: string, name: string, parent: string) => ({
+    [id]: {id, opcode: `${N}_callFunction`, parent, inputs: {NAME: input(`${id}-name`)}},
+    ...text(`${id}-name`, name, id)
+});
+
+test('global functions of other sprites join the reading with the links into and out of this sprite', () => {
+    // The cat's jump calls the stage's global log; the dog's global bark calls the cat's global meow.
+    const cat = {id: 'cat', getName: () => 'Cat', blocks: {_blocks: {
+        def: {id: 'def', opcode: 'procedures_definition', topLevel: true, inputs: {custom_block: {block: 'proto'}}},
+        proto: {id: 'proto', opcode: 'procedures_prototype', parent: 'def', mutation: {proccode: 'jump', argumentnames: '[]'}},
+        ...callFunction('to-log', 'log', 'def'),
+        ...defineFunction('meow', 'meow'),
+        flag: {id: 'flag', opcode: 'event_whenflagclicked', topLevel: true},
+        ...callFunction('flag-log', 'log', 'flag')
+    }}};
+    const stage = {id: 'stage', isStage: true, getName: () => 'Stage', blocks: {_blocks: {
+        ...defineFunction('log', 'log'),
+        ...defineFunction('unused', 'unused')
+    }}};
+    const dog = {id: 'dog', sprite: {name: 'Dog'}, blocks: {_blocks: {
+        ...defineFunction('bark', 'bark', 'global', 'bark-meow'),
+        ...callFunction('bark-meow', 'meow', 'bark'),
+        // A function only the dog can call is not a global one, so its call is left out.
+        ...defineFunction('wag', 'wag', 'sprite'),
+        ...callFunction('wag-meow', 'meow', 'wag')
+    }}};
+    const data = readTargetFunctions(cat, {others: [cat, stage, dog]});
+    assert.deepEqual(data.functions.find(fn => fn.id === 'def').callees, ['stage:log']);
+    assert.deepEqual(data.globals.map(fn => ({id: fn.id, name: fn.proccode, owner: fn.owner, callees: fn.callees,
+        calls: fn.calls, scriptCalls: fn.scriptCalls})).sort((a, b) => a.id < b.id ? -1 : 1), [
+        {id: 'dog:bark', name: 'bark', owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark'},
+            callees: ['meow'], calls: 0, scriptCalls: 0},
+        {id: 'stage:log', name: 'log', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log'},
+            callees: [], calls: 2, scriptCalls: 1}
+    ], 'only the global functions linked to this sprite, counted by its own calls');
+    assert.equal(readTargetFunctions(cat).globals, undefined, 'without the other targets nothing else is read');
+
+    // A sprite's own function of a name wins over a global one elsewhere.
+    const own = readTargetFunctions({id: 'cat', blocks: {_blocks: {...defineFunction('mine', 'log', 'sprite'),
+        ...defineFunction('caller', 'caller', 'sprite'), ...callFunction('c', 'log', 'caller')}}}, {others: [stage]});
+    assert.equal(own.globals, undefined);
+    assert.deepEqual(own.functions.find(fn => fn.id === 'caller').callees, ['mine']);
+});
+
+test('the call graph draws global functions grey, naming the sprite of one defined elsewhere', t => {
+    const opened: string[] = [];
+    const {container} = render(t, {
+        view: 'graph',
+        onOpenFunction: ({id}: {id: string}) => opened.push(id),
+        data: {targetId: 'cat', isStage: false, functions: [
+            fn('jump', 'jump', 0, 0, {callees: ['stage:log']}),
+            fn('meow', 'meow', 0, 0, {kind: 'named', scope: 'global', calls: 0, scriptCalls: 0})
+        ], globals: [
+            fn('stage:log', 'log', 0, 0, {kind: 'named', scope: 'global', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log'}}),
+            fn('dog:bark', 'bark', 0, 0, {kind: 'named', scope: 'global', callees: ['meow'], calls: 0, scriptCalls: 0,
+                owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark'}})
+        ]}
+    });
+    const node = (id: string) => container.querySelector<HTMLButtonElement>(`[data-function-key="${id}"]`);
+    assert.deepEqual(['jump', 'meow', 'stage:log', 'dog:bark'].map(id => node(id).getAttribute('data-scope')),
+        [null, 'global', 'global', 'global'], 'every global function is grey, this sprite\'s too');
+    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__owner').textContent, 'ステージ');
+    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__owner').textContent, 'Dog');
+    assert.equal(node('meow').querySelector('.tw-sprite-functions__owner'), null);
+    assert.match(node('dog:bark').title, /^Dog のグローバル関数/);
+    assert.deepEqual([...container.querySelectorAll('[data-edge]')].map(edge => edge.getAttribute('data-edge')).sort(),
+        ['dog:bark>meow', 'jump>stage:log']);
+    // A function of another sprite does not open here; this sprite's do.
+    act(() => node('dog:bark').click());
+    act(() => node('meow').click());
+    assert.deepEqual(opened, ['meow']);
+    assert.equal(node('dog:bark').getAttribute('aria-disabled'), 'true');
+    // meow is called from the dog, and the dog's bark is counted there, so neither reads as unused.
+    assert.equal(node('meow').hasAttribute('data-unused'), false);
+    assert.equal(node('dog:bark').hasAttribute('data-unused'), false);
+    assert.equal(node('jump').hasAttribute('data-unused'), false);
+});
+
 test('named functions gather in their own section below the standard ones, with their scope and description', t => {
     const {container, draw} = render(t, {data: {targetId: 'cat', isStage: false, functions: [
         fn('greet', 'greet', 0, 0, {kind: 'named', scope: 'global', description: 'Says hello.'}),
@@ -284,67 +393,118 @@ test('named functions gather in their own section below the standard ones, with 
     assert.equal(container.querySelector('.tw-sprite-functions__group'), null);
 });
 
-test('the create button switches between the two kinds and opens what it makes', async t => {
+function typeName(dialog: Element, name: string) {
+    const input = dialog.querySelector<HTMLInputElement>('input[type="text"]');
+    act(() => {
+        // React tracks the value it set; go through the native setter as typing does.
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, name);
+        input.dispatchEvent(new window.Event('input', {bubbles: true}));
+    });
+}
+const addDialog = (container: Element) => container.querySelector('.tw-sprite-functions__add-dialog');
+const submit = (dialog: Element) => act(async () => {
+    dialog.querySelector('form').dispatchEvent(new window.Event('submit', {bubbles: true, cancelable: true}));
+});
+
+test('the add button below the list asks for a name and a kind, and opens what it makes', async t => {
     const made: string[] = [];
     const settings: object[] = [];
-    let reply: () => Promise<string | void> = async () => 'new-jump';
+    let reply: () => Promise<string | void> = async () => 'new-hop';
     const {container, draw} = render(t, {
         onSettingsChange: (next: object) => settings.push(next),
-        onCreate: (kind: string) => {
-            made.push(kind);
+        onCreate: (kind: string, name: string) => {
+            made.push(`${kind}:${name}`);
             return reply();
         },
         data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)]}
     });
-    const main = () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main');
-    const kind = container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-kind');
+    const add = () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__add');
     // Below the list, at its start.
     assert.equal(container.querySelector('.tw-sprite-functions__list').nextElementSibling,
         container.querySelector('.tw-sprite-functions__create'));
-    assert.equal(main().textContent, '新しい関数(標準)を作成');
-    assert.equal(kind.getAttribute('aria-label'), '作成する関数の種類を切り替える');
+    assert.equal(add().textContent, '新しい関数を追加');
 
-    await act(async () => main().click());
-    assert.deepEqual(made, ['procedure']);
+    act(() => add().click());
+    let dialog = addDialog(container);
+    assert.equal(dialog.querySelector('h2').textContent, '新しい関数を追加');
+    assert.equal(window.document.activeElement, dialog.querySelector('input[type="text"]'), 'the name field takes the focus');
+    const submitButton = dialog.querySelector<HTMLButtonElement>('.tw-sprite-functions__add-submit');
+    assert.ok(submitButton.disabled, 'a name is needed');
+    typeName(dialog, '  hop  ');
+    assert.equal(submitButton.disabled, false);
+    await submit(dialog);
+    assert.deepEqual(made, ['procedure:hop'], 'the name is trimmed; the standard kind comes first');
+    assert.equal(addDialog(container), null, 'the dialog closes once the function is made');
     // The host refreshes the data with the new function, which then opens.
-    draw({data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0), fn('new-jump', 'hop', 0, 50)]}});
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0), fn('new-hop', 'hop', 0, 50)]}});
     assert.equal(container.querySelector('dialog').getAttribute('aria-label'), 'hop のコード');
     act(() => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__close').click());
 
-    act(() => kind.click());
-    assert.equal(main().textContent, '新しい関数(TurboWarp-Plus)を作成');
-    assert.equal(container.querySelector('.tw-sprite-functions__split').getAttribute('data-kind'), 'named');
+    // The kind picked is remembered for the next time.
+    act(() => add().click());
+    dialog = addDialog(container);
+    const radios = dialog.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    assert.deepEqual([...radios].map(radio => radio.parentElement.textContent), ['標準（ブロック定義）', 'TurboWarp-Plus の名前付き関数']);
+    act(() => radios[1].click());
     assert.deepEqual(settings.at(-1), {mode: 'list', order: 'name', direction: 'LR', create: 'named'});
 
-    // A cancelled dialog makes nothing and says nothing.
-    reply = async () => undefined;
-    await act(async () => main().click());
-    assert.deepEqual(made, ['procedure', 'named']);
-    assert.equal(container.querySelector('[role="alert"]'), null);
-
+    // A failure stays in the dialog, and typing clears it.
+    reply = async () => { throw Object.assign(new Error('taken'), {code: 'duplicate'}); };
+    typeName(dialog, 'jump');
+    await submit(dialog);
+    assert.deepEqual(made, ['procedure:hop', 'named:jump']);
+    assert.equal(dialog.querySelector('[role="alert"]').textContent, '同じ名前の関数がすでにあります。');
+    typeName(dialog, 'jump2');
+    assert.equal(dialog.querySelector('[role="alert"]'), null);
     reply = async () => { throw Object.assign(new Error('no extension'), {code: 'unavailable'}); };
-    await act(async () => main().click());
-    assert.equal(container.querySelector('[role="alert"]').textContent,
+    await submit(dialog);
+    assert.equal(dialog.querySelector('[role="alert"]').textContent,
         '拡張機能「TurboWarp-Named-Functions」を読み込めませんでした。');
-    act(() => kind.click());
-    assert.equal(container.querySelector('[role="alert"]'), null, 'switching the kind clears the message');
-    assert.equal(main().textContent, '新しい関数(標準)を作成');
+
+    act(() => dialog.querySelector<HTMLButtonElement>('.tw-sprite-functions__add-actions button[type="button"]').click());
+    assert.equal(addDialog(container), null, 'cancel closes it');
+    act(() => add().click());
+    assert.ok(addDialog(container).querySelectorAll<HTMLInputElement>('input[type="radio"]')[1].checked);
+    act(() => addDialog(container).querySelector<HTMLButtonElement>('.tw-sprite-functions__close').click());
 
     draw({editable: false});
-    assert.ok(main().disabled && kind.disabled, 'an inactive view cannot create');
+    assert.ok(add().disabled, 'an inactive view cannot add');
 });
 
-test('in the call graph a new function opens in the dialog', async t => {
+test('in the call graph the add button sits in the bottom left corner, and a new function opens in the dialog', async t => {
     const {container, draw} = render(t, {
+        view: 'graph',
         defaultSettings: {mode: 'graph', create: 'named'},
         onCreate: async () => 'made',
         mountEditor: () => undefined,
-        data: {targetId: 'cat', isStage: false, functions: []}
+        data: {targetId: 'cat', isStage: false, functions: [fn('draw', 'draw', 0, 0)]}
     });
-    assert.equal(container.querySelector('.tw-sprite-functions__create-main').textContent, '新しい関数(TurboWarp-Plus)を作成');
-    await act(async () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main').click());
-    draw({data: {targetId: 'cat', isStage: false, functions: [fn('made', 'function1', 0, 0, {kind: 'named', scope: 'sprite'})]}});
+    const corner = container.querySelector('.tw-sprite-functions__graph > .tw-sprite-functions__corner');
+    assert.ok(corner, 'inside the graph');
+    assert.equal(container.querySelector('.tw-sprite-functions__create'), null, 'not also below it');
+    act(() => corner.querySelector<HTMLButtonElement>('.tw-sprite-functions__add').click());
+    typeName(addDialog(container), 'function1');
+    await submit(addDialog(container));
+    draw({data: {targetId: 'cat', isStage: false, functions: [fn('draw', 'draw', 0, 0),
+        fn('made', 'function1', 0, 0, {kind: 'named', scope: 'sprite'})]}});
     assert.equal(container.querySelector('dialog').getAttribute('aria-label'), 'function1 のコード');
+    assert.equal(container.querySelector('[data-function-key="made"]').getAttribute('aria-current'), 'true',
+        'and is picked out in the graph');
+
+    // Without functions the graph stays, blank, with a notice that points to the button in its corner.
+    draw({data: {targetId: 'cat', isStage: false, functions: []}});
+    const figure = container.querySelector('figure');
+    assert.ok(figure, 'the graph is still drawn');
+    assert.equal(figure.querySelectorAll('[data-function-key]').length, 0);
+    assert.equal(figure.querySelector('.tw-sprite-functions__notice[role="status"]').textContent,
+        'このスプライトには関数がありません。左下の「＋ 新しい関数を追加」から作れます。');
+    assert.ok(figure.querySelector('.tw-sprite-functions__corner .tw-sprite-functions__add'));
+    assert.ok(figure.querySelector('.tw-sprite-functions__flow'));
+    assert.equal(container.querySelector('.tw-sprite-functions__empty'), null, 'no line about My Blocks');
+    // The list points below, to its own button.
+    draw({view: 'list', data: {targetId: 'stage', isStage: true, functions: []}});
+    assert.equal(container.querySelector('.tw-sprite-functions__empty').textContent,
+        'ステージには関数がありません。下の「＋ 新しい関数を追加」から作れます。');
 });
 
 test('with a host opener the call graph opens functions there instead of in its dialog', async t => {
@@ -360,10 +520,15 @@ test('with a host opener the call graph opens functions there instead of in its 
     assert.deepEqual(opened, ['draw']);
     assert.equal(container.querySelector('dialog'), null);
     // A function made in the graph opens there too, once the host lists it.
-    await act(async () => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__create-main').click());
+    act(() => container.querySelector<HTMLButtonElement>('.tw-sprite-functions__add').click());
+    typeName(addDialog(container), 'made');
+    await submit(addDialog(container));
     draw({data: {targetId: 'cat', isStage: false, functions: [fn('draw', 'draw', 0, 0), fn('made', 'made', 0, 0)]}});
     assert.deepEqual(opened, ['draw', 'made']);
     assert.equal(container.querySelector('dialog'), null);
+    // The host's selection wins over the function just added.
+    draw({selectedId: 'draw'});
+    assert.equal(container.querySelector('[aria-current="true"]').getAttribute('data-function-key'), 'draw');
     // Opening the same function again still reaches the host.
     act(() => container.querySelector<HTMLButtonElement>('[data-function-key="draw"]').click());
     assert.deepEqual(opened, ['draw', 'made', 'draw']);
@@ -415,7 +580,9 @@ test('as its own section the call graph has no view switch and leaves the hats o
     });
     assert.equal(container.querySelector('section').getAttribute('aria-label'), '呼び出し関係');
     assert.equal(container.querySelector('[data-choice="list"]'), null);
-    assert.ok(container.querySelector('[data-choice="LR"]'), 'the flow switch stays');
+    assert.ok(container.querySelector('figure > .tw-sprite-functions__flow [data-choice="LR"]'),
+        'the flow switch stays, inside the graph at its top right');
+    assert.equal(container.querySelector('.tw-sprite-functions__bar'), null, 'with nothing left above the graph');
     // The flow buttons show icons and keep their names for tooltips and screen readers.
     const flow = container.querySelector<HTMLButtonElement>('[data-choice="TD"]');
     assert.ok(flow.querySelector('svg'));

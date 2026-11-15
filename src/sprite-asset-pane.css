@@ -1746,7 +1746,7 @@
     color: #8a55d7;
 }
 
-/* Below the list or the graph, at the start of the line. */
+/* Below the list, at the start of the line. */
 .tw-sprite-functions__create {
     display: flex;
     flex-wrap: wrap;
@@ -1754,55 +1754,199 @@
     align-items: center;
 }
 
-.tw-sprite-functions__split {
+.tw-sprite-functions__add {
     display: inline-flex;
+    gap: .3rem;
+    align-items: center;
+    padding: .4rem .75rem;
+    border: 0;
     border-radius: .35rem;
-    overflow: hidden;
     color: var(--ui-white, #fff);
     background: var(--looks-secondary, #855cd6);
-}
-
-.tw-sprite-functions__split button {
-    border: 0;
-    color: inherit;
-    background: transparent;
     font: inherit;
     font-size: .85rem;
     font-weight: 600;
     cursor: pointer;
 }
 
-.tw-sprite-functions__create-main {
-    padding: .4rem .75rem;
-}
-
-.tw-sprite-functions__create-kind {
-    display: grid;
-    place-items: center;
-    padding: 0 .45rem;
-    border-inline-start: 1px solid hsla(0, 0%, 100%, .45) !important;
-}
-
-.tw-sprite-functions__create-kind svg {
+.tw-sprite-functions__add svg {
     inline-size: 1rem;
     block-size: 1rem;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
-    stroke-linejoin: round;
 }
 
-.tw-sprite-functions__split button:hover:not(:disabled) {
-    background: hsla(0, 0%, 0%, .12);
+.tw-sprite-functions__add:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--looks-secondary, #855cd6) 88%, black);
 }
 
-.tw-sprite-functions__split button:focus-visible {
-    outline: 2px solid var(--ui-white, #fff);
-    outline-offset: -4px;
+.tw-sprite-functions__add:focus-visible {
+    outline: 3px solid var(--looks-secondary, #855cd6);
+    outline-offset: 2px;
 }
 
-.tw-sprite-functions__split button:disabled {
+.tw-sprite-functions__add:disabled {
+    cursor: default;
+    opacity: .55;
+}
+
+/* The bottom left corner of the call graph, across from the zoom buttons. */
+.tw-sprite-functions__corner {
+    position: absolute;
+    inset-block-end: 8px;
+    inset-inline-start: 8px;
+    cursor: default;
+}
+
+/* Over the middle of a call graph without functions, pointing to the add button. */
+.tw-sprite-functions__notice {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: 50%;
+    display: grid;
+    gap: .3rem;
+    box-sizing: border-box;
+    max-inline-size: calc(100% - 2rem);
+    padding: .75rem 1rem;
+    border: 1px solid #f0b429;
+    border-radius: .5rem;
+    color: var(--text-primary, #575e75);
+    background: #fff8e1;
+    box-shadow: 0 1px 4px hsla(0, 0%, 0%, .12);
+    font-size: .85rem;
+    text-align: center;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.tw-sprite-functions__notice-title::before {
+    content: "⚠ ";
+}
+
+/* The top right corner of the call graph, above the minimap and the zoom buttons. */
+.tw-sprite-functions__flow {
+    position: absolute;
+    inset-block-start: 8px;
+    inset-inline-end: 8px;
+    cursor: default;
+}
+
+.tw-sprite-functions__flow .tw-sprite-functions__choice {
+    background: var(--ui-white, #fff);
+    box-shadow: 0 1px 4px hsla(0, 0%, 0%, .15);
+}
+
+.tw-sprite-functions__corner .tw-sprite-functions__add {
+    box-shadow: 0 1px 4px hsla(0, 0%, 0%, .2);
+}
+
+/* A global function: grey with white text, whichever its kind; one of another sprite names it. */
+.tw-sprite-functions__node[data-scope="global"] {
+    border-color: #6b7280;
+    color: #fff;
+    background: #8a8f98;
+}
+
+.tw-sprite-functions__node[data-owner] {
+    cursor: default;
+}
+
+.tw-sprite-functions__owner {
+    flex: none;
+    max-inline-size: 45%;
+    margin-inline-start: auto;
+    overflow: hidden;
+    font-size: .68rem;
+    font-weight: normal;
+    opacity: .9;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tw-sprite-functions__node[aria-current="true"] {
+    outline: 3px solid var(--looks-secondary, #855cd6);
+    outline-offset: 2px;
+}
+
+.tw-sprite-functions__add-body {
+    display: grid;
+    gap: .75rem;
+    padding: .75rem;
+}
+
+.tw-sprite-functions__add-name {
+    display: grid;
+    gap: .3rem;
+    font-size: .85rem;
+    font-weight: 600;
+}
+
+.tw-sprite-functions__add-name input {
+    box-sizing: border-box;
+    inline-size: 100%;
+    padding: .4rem .5rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .35rem;
+    color: var(--text-primary, #575e75);
+    background: var(--ui-white, #fff);
+    font: inherit;
+    font-weight: normal;
+}
+
+.tw-sprite-functions__add-name input:focus-visible {
+    outline: 2px solid var(--looks-secondary, #855cd6);
+    outline-offset: 0;
+}
+
+.tw-sprite-functions__add-kind {
+    display: grid;
+    gap: .3rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-size: .85rem;
+}
+
+.tw-sprite-functions__add-kind legend {
+    margin-block-end: .3rem;
+    padding: 0;
+    font-weight: 600;
+}
+
+.tw-sprite-functions__add-kind label {
+    display: flex;
+    gap: .4rem;
+    align-items: center;
+}
+
+.tw-sprite-functions__add-actions {
+    display: flex;
+    gap: .5rem;
+    justify-content: flex-end;
+    padding: .5rem .75rem .75rem;
+}
+
+.tw-sprite-functions__add-actions button {
+    padding: .4rem .9rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .35rem;
+    color: var(--text-primary, #575e75);
+    background: var(--ui-white, #fff);
+    font: inherit;
+    font-size: .85rem;
+    cursor: pointer;
+}
+
+.tw-sprite-functions__add-actions .tw-sprite-functions__add-submit {
+    border-color: transparent;
+    color: var(--ui-white, #fff);
+    background: var(--looks-secondary, #855cd6);
+    font-weight: 600;
+}
+
+.tw-sprite-functions__add-actions button:disabled {
     cursor: default;
     opacity: .55;
 }
