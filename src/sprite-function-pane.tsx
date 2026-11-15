@@ -27,6 +27,17 @@ export interface SpriteFunction {
     scope?: 'sprite' | 'global';
     /** The description a named function gives in its `define function` hat. */
     description?: string;
+    /** Where a global function of another sprite or the stage is defined, for one in `globals`. */
+    owner?: GlobalFunctionOwner;
+}
+
+/** The sprite or the stage that defines a global function shown with another target's functions. */
+export interface GlobalFunctionOwner {
+    targetId: string;
+    name: string;
+    isStage: boolean;
+    /** The id of its `define function` hat in that target. */
+    functionId: string;
 }
 
 /** A block that calls a function, and the top block of its script: a hat, a definition, or a loose stack. */
@@ -66,6 +77,12 @@ export interface FunctionPaneData {
     functions: readonly SpriteFunction[];
     /** The other hat scripts, which the list shows above the functions. */
     hats?: readonly SpriteHatScript[];
+    /**
+     * Global named functions of other sprites or the stage that call this target's functions or that its
+     * functions call. The call graph draws them with their links; the list leaves them out. Their ids
+     * are `<target id>:<hat id>`, so they cannot clash with this target's.
+     */
+    globals?: readonly SpriteFunction[];
 }
 
 export type FunctionOrder = 'name' | 'z' | 'n';
@@ -146,9 +163,20 @@ interface RuntimeBlock {
     mutation?: {proccode?: string; argumentnames?: string; warp?: string | boolean};
 }
 
-/** Read the custom block definitions of a VM target. Only the shape of its blocks container is used. */
-export function readTargetFunctions(target: {id: string; isStage?: boolean; blocks: {_blocks: Record<string, RuntimeBlock>}},
-    {extensions = namedFunctionExtensions}: {extensions?: readonly string[]} = {}): FunctionPaneData {
+/** The parts of a VM target the reader uses: its blocks, and a name for global functions defined in it. */
+export interface FunctionTarget {
+    id: string;
+    isStage?: boolean;
+    /** The name of the sprite, as the VM's `getName()` gives it. */
+    getName?(): string;
+    sprite?: {name?: string};
+    blocks: {_blocks: Record<string, RuntimeBlock>};
+}
+
+type Reading = SpriteFunction & {callees: string[]; uses: FunctionUse[]};
+
+/** Every definition of one target, and every call in it with the script it sits in. */
+function scanTarget(target: FunctionTarget, extensions: readonly string[]) {
     const blocks = target.blocks._blocks;
     // A name counts only as literal text: a reporter dropped on the input decides it while the project runs.
     function literal(block: RuntimeBlock, name: string) {
@@ -171,7 +199,6 @@ export function readTargetFunctions(target: {id: string; isStage?: boolean; bloc
         return top;
     }
 
-    type Reading = SpriteFunction & {callees: string[]; uses: FunctionUse[]};
     const functions: Reading[] = [];
     const byCode = new Map<string, Reading>();
     for (const block of Object.values(blocks)) {
@@ -214,23 +241,87 @@ export function readTargetFunctions(target: {id: string; isStage?: boolean; bloc
         if (!byName.has(name)) byName.set(name, fn);
     }
     const definitions = new Map(functions.map(fn => [fn.id, fn]));
-    function calleeOf(block: RuntimeBlock) {
-        if (block.opcode === 'procedures_call') return byCode.get(block.mutation?.proccode);
-        if (named(block, 'callFunction') || named(block, 'startFunction')) return byName.get(literal(block, 'NAME')?.trim());
-        if (named(block, 'callFunctionFromMenu')) return byName.get(String(block.fields?.FUNCTION?.value ?? '').trim());
-        return undefined;
-    }
+    /** A call: a custom block found here, or a named function by its name, found here or not. */
+    const calls: {block: string; script: string; caller?: Reading; callee?: Reading; name?: string}[] = [];
     for (const block of Object.values(blocks)) {
-        const callee = calleeOf(block);
+        let callee: Reading | undefined;
+        let name: string | undefined;
+        if (block.opcode === 'procedures_call') callee = byCode.get(block.mutation?.proccode);
+        else {
+            if (named(block, 'callFunction') || named(block, 'startFunction')) name = literal(block, 'NAME')?.trim();
+            else if (named(block, 'callFunctionFromMenu')) name = String(block.fields?.FUNCTION?.value ?? '').trim();
+            if (!name) continue;
+            callee = byName.get(name);
+        }
+        if (!callee && !name) continue;
+        const script = topOf(block.id);
+        calls.push({block: block.id, script, caller: definitions.get(script), callee, name});
+    }
+    return {functions, byName, calls};
+}
+
+const targetName = (target: FunctionTarget) =>
+    target.getName?.() ?? target.sprite?.name ?? (target.isStage ? 'Stage' : target.id);
+
+/**
+ * Read the custom block definitions of a VM target. Only the shape of its blocks container is used.
+ *
+ * Given the `others` targets of the project, the reader also finds the global named functions defined in
+ * them that this target's functions call, and those that call this target's global functions. They come
+ * in `globals`, with the target that defines them, and link to this target's functions by their ids.
+ */
+export function readTargetFunctions(target: FunctionTarget,
+    {extensions = namedFunctionExtensions, others = []}: {extensions?: readonly string[]; others?: readonly FunctionTarget[]} = {}
+): FunctionPaneData {
+    const own = scanTarget(target, extensions);
+    const elsewhere = others.filter(other => other !== target && other.id !== target.id)
+        .map(other => ({target: other, ...scanTarget(other, extensions)}));
+    // A name is unique among the global functions of a project, so each names one definition.
+    const globalsByName = new Map<string, {target: FunctionTarget; fn: Reading}>();
+    for (const other of elsewhere) {
+        for (const fn of other.functions) {
+            if (fn.kind === 'named' && fn.scope === 'global' && !globalsByName.has(fn.proccode)) {
+                globalsByName.set(fn.proccode, {target: other.target, fn});
+            }
+        }
+    }
+    const globals = new Map<string, Reading & {owner: GlobalFunctionOwner}>();
+    function globalNode(owner: FunctionTarget, fn: Reading) {
+        const id = `${owner.id}:${fn.id}`;
+        let node = globals.get(id);
+        if (!node) {
+            node = {...fn, id, calls: 0, scriptCalls: 0, callees: [], uses: [],
+                owner: {targetId: owner.id, name: targetName(owner), isStage: Boolean(owner.isStage), functionId: fn.id}};
+            globals.set(id, node);
+        }
+        return node;
+    }
+
+    for (const call of own.calls) {
+        // A call by a name this target does not define reaches the global function of that name elsewhere.
+        const found = globalsByName.get(call.name);
+        const callee = call.callee ?? (found && globalNode(found.target, found.fn));
         if (!callee) continue;
         callee.calls++;
-        const script = topOf(block.id);
-        callee.uses.push({block: block.id, script});
-        const caller = definitions.get(script);
-        if (!caller) callee.scriptCalls++;
-        else if (!caller.callees.includes(callee.id)) caller.callees.push(callee.id);
+        callee.uses.push({block: call.block, script: call.script});
+        if (!call.caller) callee.scriptCalls++;
+        else if (!call.caller.callees.includes(callee.id)) call.caller.callees.push(callee.id);
     }
-    return {targetId: target.id, isStage: Boolean(target.isStage), functions};
+    // Global functions elsewhere that call this target's global functions.
+    const ownGlobals = new Map(own.functions.filter(fn => fn.kind === 'named' && fn.scope === 'global')
+        .map(fn => [fn.proccode, fn]));
+    for (const other of elsewhere) {
+        for (const call of other.calls) {
+            if (call.callee || !call.caller || call.caller.kind !== 'named' || call.caller.scope !== 'global') continue;
+            const callee = ownGlobals.get(call.name);
+            if (!callee) continue;
+            const caller = globalNode(other.target, call.caller);
+            if (!caller.callees.includes(callee.id)) caller.callees.push(callee.id);
+        }
+    }
+    const data: FunctionPaneData = {targetId: target.id, isStage: Boolean(target.isStage), functions: own.functions};
+    if (globals.size) data.globals = [...globals.values()];
+    return data;
 }
 
 /** Spell a function the way its block reads: `jump %s times` with `height` becomes `jump (height) times`. */
@@ -444,6 +535,8 @@ const english = {
     fromScripts: 'Called from other scripts',
     named: 'Named function',
     global: 'All sprites',
+    globalIn: 'A global function of %1',
+    stage: 'Stage',
     warp: 'Runs without screen refresh',
     editor: 'Code of %1',
     readOnly: 'Click this view to edit.',
@@ -492,6 +585,8 @@ const japanese: typeof english = {
     fromScripts: '関数以外のスクリプトから呼ばれる',
     named: '名前付き関数',
     global: 'すべてのスプライト',
+    globalIn: '%1 のグローバル関数',
+    stage: 'ステージ',
     warp: '画面を再描画せずに実行',
     editor: '%1 のコード',
     readOnly: 'このビューをクリックすると編集できます。',
@@ -1048,14 +1143,19 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
                 {reading.map(node => {
                     const {fn, x, y} = node;
                     const label = functionLabel(fn);
+                    const owner = fn.owner && (fn.owner.isStage ? labels.stage : fn.owner.name);
                     return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: callGraphNodeSize.height}}
                         data-isolated={node.isolated || undefined}>
                         <button type="button" className="tw-sprite-functions__node" data-function-key={fn.id}
-                            data-kind={fn.kind} aria-current={selectedId === fn.id || undefined}
+                            data-kind={fn.kind} data-scope={fn.scope === 'global' ? 'global' : undefined}
+                            data-owner={fn.owner ? fn.owner.targetId : undefined} aria-current={selectedId === fn.id || undefined}
                             data-unused={fn.calls === 0 || undefined} data-entry={fn.scriptCalls > 0 || undefined}
                             data-highlight={highlight?.nodes.get(fn.id)}
-                            title={[labels.openCode.replace('%1', () => label), fn.kind === 'named' && labels.named,
-                                fn.description].filter(Boolean).join('\n')} onClick={() => onOpen(fn)}
+                            title={[owner ? labels.globalIn.replace('%1', () => owner) : labels.openCode.replace('%1', () => label),
+                                fn.kind === 'named' && labels.named, fn.scope === 'global' && labels.global,
+                                fn.description].filter(Boolean).join('\n')}
+                            // A function of another sprite opens with that sprite, not here.
+                            aria-disabled={owner ? true : undefined} onClick={() => !owner && onOpen(fn)}
                             onPointerEnter={() => setPointed(fn.id)}
                             onPointerLeave={() => setPointed(id => id === fn.id ? null : id)}
                             onFocus={() => {
@@ -1064,6 +1164,7 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
                             }}
                             onBlur={() => setFocused(id => id === fn.id ? null : id)}>
                             <span className="tw-sprite-functions__name">{label}</span>
+                            {owner && <span className="tw-sprite-functions__owner">{owner}</span>}
                             {fn.scriptCalls > 0 && <span className="tw-sprite-functions__entry" title={labels.fromScripts}>▶
                                 <span className="tw-sprite-functions__visually-hidden">{labels.fromScripts}</span></span>}
                         </button>
@@ -1285,6 +1386,9 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         </li>)}
     </ul>;
 
+    // Global functions of other sprites join the graph only.
+    const graphFunctions = React.useMemo(() => data.globals?.length ? [...data.functions, ...data.globals] : data.functions,
+        [data.functions, data.globals]);
     // The flow switch sits inside the graph, at its top right.
     const flowChoice = <Choice label={labels.flow} value={settings.direction} icons={flowGlyphs}
         options={labels.directions} onChange={direction => change({direction})} />;
@@ -1301,7 +1405,7 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
             </label>}
             {hint && <p className="tw-sprite-functions__hint">{labels.readOnly}</p>}
         </div>}
-        {mode === 'graph' ? (ordered.length ? <CallGraph labels={labels} idPrefix={idPrefix} functions={data.functions}
+        {mode === 'graph' ? (ordered.length ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graphFunctions}
             settings={settings} selectedId={selectedId ?? added} corner={addButton} flow={flowChoice}
             onOpen={fn => setDialogId(fn.id)} /> : <>
                 <p className="tw-sprite-functions__empty">{data.isStage ? labels.emptyStage : labels.empty}</p>

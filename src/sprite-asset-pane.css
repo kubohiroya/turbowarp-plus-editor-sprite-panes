@@ -1817,6 +1817,29 @@
     box-shadow: 0 1px 4px hsla(0, 0%, 0%, .2);
 }
 
+/* A global function: grey with white text, whichever its kind; one of another sprite names it. */
+.tw-sprite-functions__node[data-scope="global"] {
+    border-color: #6b7280;
+    color: #fff;
+    background: #8a8f98;
+}
+
+.tw-sprite-functions__node[data-owner] {
+    cursor: default;
+}
+
+.tw-sprite-functions__owner {
+    flex: none;
+    max-inline-size: 45%;
+    margin-inline-start: auto;
+    overflow: hidden;
+    font-size: .68rem;
+    font-weight: normal;
+    opacity: .9;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .tw-sprite-functions__node[aria-current="true"] {
     outline: 3px solid var(--looks-secondary, #855cd6);
     outline-offset: 2px;

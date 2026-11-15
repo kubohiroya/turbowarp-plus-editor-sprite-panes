@@ -283,6 +283,87 @@ test('named functions are read with Scratch functions, and calls between the two
     assert.deepEqual(composed.functions.map(item => item.proccode), ['other']);
 });
 
+const N = 'kubohiroyanamedfunctions';
+/** A `define function` hat named `name`, for all sprites unless `scope` says otherwise, with a body of `body`. */
+const defineFunction = (id: string, name: string, scope = 'global', next?: string) => ({
+    [id]: {id, opcode: `${N}_defineFunction`, topLevel: true, next, inputs: {NAME: input(`${id}-name`)},
+        fields: {SCOPE: {value: scope}}},
+    ...text(`${id}-name`, name, id)
+});
+const callFunction = (id: string, name: string, parent: string) => ({
+    [id]: {id, opcode: `${N}_callFunction`, parent, inputs: {NAME: input(`${id}-name`)}},
+    ...text(`${id}-name`, name, id)
+});
+
+test('global functions of other sprites join the reading with the links into and out of this sprite', () => {
+    // The cat's jump calls the stage's global log; the dog's global bark calls the cat's global meow.
+    const cat = {id: 'cat', getName: () => 'Cat', blocks: {_blocks: {
+        def: {id: 'def', opcode: 'procedures_definition', topLevel: true, inputs: {custom_block: {block: 'proto'}}},
+        proto: {id: 'proto', opcode: 'procedures_prototype', parent: 'def', mutation: {proccode: 'jump', argumentnames: '[]'}},
+        ...callFunction('to-log', 'log', 'def'),
+        ...defineFunction('meow', 'meow'),
+        flag: {id: 'flag', opcode: 'event_whenflagclicked', topLevel: true},
+        ...callFunction('flag-log', 'log', 'flag')
+    }}};
+    const stage = {id: 'stage', isStage: true, getName: () => 'Stage', blocks: {_blocks: {
+        ...defineFunction('log', 'log'),
+        ...defineFunction('unused', 'unused')
+    }}};
+    const dog = {id: 'dog', sprite: {name: 'Dog'}, blocks: {_blocks: {
+        ...defineFunction('bark', 'bark', 'global', 'bark-meow'),
+        ...callFunction('bark-meow', 'meow', 'bark'),
+        // A function only the dog can call is not a global one, so its call is left out.
+        ...defineFunction('wag', 'wag', 'sprite'),
+        ...callFunction('wag-meow', 'meow', 'wag')
+    }}};
+    const data = readTargetFunctions(cat, {others: [cat, stage, dog]});
+    assert.deepEqual(data.functions.find(fn => fn.id === 'def').callees, ['stage:log']);
+    assert.deepEqual(data.globals.map(fn => ({id: fn.id, name: fn.proccode, owner: fn.owner, callees: fn.callees,
+        calls: fn.calls, scriptCalls: fn.scriptCalls})).sort((a, b) => a.id < b.id ? -1 : 1), [
+        {id: 'dog:bark', name: 'bark', owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark'},
+            callees: ['meow'], calls: 0, scriptCalls: 0},
+        {id: 'stage:log', name: 'log', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log'},
+            callees: [], calls: 2, scriptCalls: 1}
+    ], 'only the global functions linked to this sprite, counted by its own calls');
+    assert.equal(readTargetFunctions(cat).globals, undefined, 'without the other targets nothing else is read');
+
+    // A sprite's own function of a name wins over a global one elsewhere.
+    const own = readTargetFunctions({id: 'cat', blocks: {_blocks: {...defineFunction('mine', 'log', 'sprite'),
+        ...defineFunction('caller', 'caller', 'sprite'), ...callFunction('c', 'log', 'caller')}}}, {others: [stage]});
+    assert.equal(own.globals, undefined);
+    assert.deepEqual(own.functions.find(fn => fn.id === 'caller').callees, ['mine']);
+});
+
+test('the call graph draws global functions grey, naming the sprite of one defined elsewhere', t => {
+    const opened: string[] = [];
+    const {container} = render(t, {
+        view: 'graph',
+        onOpenFunction: ({id}: {id: string}) => opened.push(id),
+        data: {targetId: 'cat', isStage: false, functions: [
+            fn('jump', 'jump', 0, 0, {callees: ['stage:log']}),
+            fn('meow', 'meow', 0, 0, {kind: 'named', scope: 'global'})
+        ], globals: [
+            fn('stage:log', 'log', 0, 0, {kind: 'named', scope: 'global', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log'}}),
+            fn('dog:bark', 'bark', 0, 0, {kind: 'named', scope: 'global', callees: ['meow'],
+                owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark'}})
+        ]}
+    });
+    const node = (id: string) => container.querySelector<HTMLButtonElement>(`[data-function-key="${id}"]`);
+    assert.deepEqual(['jump', 'meow', 'stage:log', 'dog:bark'].map(id => node(id).getAttribute('data-scope')),
+        [null, 'global', 'global', 'global'], 'every global function is grey, this sprite\'s too');
+    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__owner').textContent, 'ステージ');
+    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__owner').textContent, 'Dog');
+    assert.equal(node('meow').querySelector('.tw-sprite-functions__owner'), null);
+    assert.match(node('dog:bark').title, /^Dog のグローバル関数/);
+    assert.deepEqual([...container.querySelectorAll('[data-edge]')].map(edge => edge.getAttribute('data-edge')).sort(),
+        ['dog:bark>meow', 'jump>stage:log']);
+    // A function of another sprite does not open here; this sprite's do.
+    act(() => node('dog:bark').click());
+    act(() => node('meow').click());
+    assert.deepEqual(opened, ['meow']);
+    assert.equal(node('dog:bark').getAttribute('aria-disabled'), 'true');
+});
+
 test('named functions gather in their own section below the standard ones, with their scope and description', t => {
     const {container, draw} = render(t, {data: {targetId: 'cat', isStage: false, functions: [
         fn('greet', 'greet', 0, 0, {kind: 'named', scope: 'global', description: 'Says hello.'}),
