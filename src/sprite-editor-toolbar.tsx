@@ -1,6 +1,6 @@
 import React from 'react';
 
-export const spriteEditorSections = ['code', 'costumes', 'sounds', 'variables', 'messages'] as const;
+export const spriteEditorSections = ['code', 'costumes', 'sounds', 'variables', 'messages', 'functions'] as const;
 export type SpriteEditorSection = typeof spriteEditorSections[number];
 
 /** The GUI owns these three panels; the rest are this package's own panes. */
@@ -36,6 +36,7 @@ const glyphs: Record<SpriteEditorSection | 'search', string> = {
     sounds: 'M2 6h3l4-3v10l-4-3H2Zm9.5 0a3 3 0 0 1 0 4m2-6a5.5 5.5 0 0 1 0 8',
     variables: 'M5 2H3v12h2m6-12h2v12h-2M6 6l4 4m0-4-4 4',
     messages: 'M4 3.5h8A1.5 1.5 0 0 1 13.5 5v4a1.5 1.5 0 0 1-1.5 1.5H7.5L5 13v-2.5H4A1.5 1.5 0 0 1 2.5 9V5A1.5 1.5 0 0 1 4 3.5Z',
+    functions: 'M10.5 2.5c-1.7 0-2.3 1-2.6 2.6L6.7 11c-.3 1.6-.9 2.5-2.6 2.5M5 6.5h4.5M12 7c.9 1.1.9 3.4 0 4.5M2.5 7c-.9 1.1-.9 3.4 0 4.5',
     search: 'M10 10l3 3M11 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z'
 };
 
@@ -104,9 +105,11 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
     const [tooltip, setTooltip] = React.useState<{button: HTMLButtonElement; id: SpriteEditorSection; y: number}>();
     const japanese = /^ja(?:-|$)/i.test(locale);
     const labels = japanese ? {code: 'コード', costumes: isStage ? '背景' : 'コスチューム', sounds: '音',
-        variables: isStage ? 'グローバル変数' : propertiesInVariables ? '変数など' : 'スプライト変数', messages: 'メッセージ'} :
+        variables: isStage ? 'グローバル変数' : propertiesInVariables ? '変数など' : 'スプライト変数', messages: 'メッセージ',
+        functions: '関数'} :
         {code: 'Code', costumes: isStage ? 'Backdrops' : 'Costumes', sounds: 'Sounds',
-            variables: isStage ? 'Global Variables' : propertiesInVariables ? 'Properties & Variables' : 'Sprite Variables', messages: 'Messages'};
+            variables: isStage ? 'Global Variables' : propertiesInVariables ? 'Properties & Variables' : 'Sprite Variables', messages: 'Messages',
+            functions: 'Functions'};
     const variableHeading = !isStage && propertiesInVariables ?
         (japanese ? 'スプライトのプロパティと変数' : 'Sprite Properties and Variables') :
             labels.variables;

@@ -1045,3 +1045,153 @@ button.tw-sprite-messages__node:focus-visible {
     color: var(--text-primary-transparent, #575e75);
     font-size: .85em;
 }
+
+.tw-sprite-functions {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+    block-size: 100%;
+    min-block-size: 0;
+    min-inline-size: 0;
+    padding: .6rem;
+    overflow: auto;
+    color: var(--text-primary, #273146);
+    background: var(--ui-white, #fff);
+}
+
+.tw-sprite-functions__bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+}
+
+.tw-sprite-functions__order {
+    display: inline-flex;
+    gap: .35rem;
+    align-items: center;
+    font-size: .82rem;
+}
+
+.tw-sprite-functions__order select {
+    padding: .2rem .35rem;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .25rem;
+    color: inherit;
+    background: var(--input-background, #fff);
+    font: inherit;
+}
+
+.tw-sprite-functions__hint,
+.tw-sprite-functions__empty {
+    margin: 0;
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .82rem;
+}
+
+.tw-sprite-functions__list {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tw-sprite-functions__item {
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: .35rem;
+    overflow: hidden;
+}
+
+.tw-sprite-functions__heading {
+    margin: 0;
+    font-size: .9rem;
+}
+
+.tw-sprite-functions__toggle {
+    display: flex;
+    gap: .4rem;
+    align-items: center;
+    inline-size: 100%;
+    padding: .4rem .5rem;
+    border: 0;
+    color: inherit;
+    background: var(--ui-secondary, #f2f6ff);
+    font: inherit;
+    font-weight: 600;
+    text-align: start;
+    cursor: pointer;
+}
+
+.tw-sprite-functions__toggle:focus-visible {
+    outline: 2px solid var(--looks-secondary, #855cd6);
+    outline-offset: -2px;
+}
+
+.tw-sprite-functions__chevron {
+    flex: none;
+    inline-size: 1rem;
+    block-size: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    transition: transform .12s;
+}
+
+.tw-sprite-functions__toggle[aria-expanded="true"] .tw-sprite-functions__chevron {
+    transform: rotate(90deg);
+}
+
+.tw-sprite-functions__name {
+    flex: 1;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+}
+
+.tw-sprite-functions__badge {
+    flex: none;
+    padding: .05rem .4rem;
+    border-radius: .75rem;
+    background: var(--ui-black-transparent, #ccd5e2);
+    font-size: .72rem;
+    font-weight: normal;
+    white-space: nowrap;
+}
+
+.tw-sprite-functions__badge[data-unused] {
+    color: var(--text-primary-transparent, #575e75);
+    background: transparent;
+    border: 1px dashed var(--ui-black-transparent, #ccd5e2);
+}
+
+.tw-sprite-functions__visually-hidden {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.tw-sprite-functions__panel {
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
+}
+
+/* The host injects a code workspace here. Let people drag the bottom edge to give it more room. */
+.tw-sprite-functions__editor {
+    position: relative;
+    block-size: 16rem;
+    min-block-size: 8rem;
+    overflow: hidden;
+    resize: vertical;
+    background: var(--ui-primary, #f9f9f9);
+}
+
+.tw-sprite-functions__editor > .injectionDiv {
+    position: absolute;
+    inset: 0;
+}
