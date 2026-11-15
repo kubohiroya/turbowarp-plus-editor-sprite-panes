@@ -1460,3 +1460,44 @@ button.tw-sprite-messages__node:focus-visible {
     font-weight: bold;
     color: var(--tw-temporary-function, #ff6680);
 }
+
+.tw-sprite-variables__temporary-cell {
+    display: flex;
+    align-items: flex-start;
+    gap: .45rem;
+}
+
+.tw-sprite-variables__temporary-count {
+    flex: none;
+    min-inline-size: 1.4em;
+    padding: .05em .4em;
+    border-radius: 999px;
+    color: var(--ui-white, #fff);
+    background: var(--tw-variables-accent, #ff8c1a);
+    font-size: .8em;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.tw-sprite-variables__temporary-open {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.tw-sprite-variables__temporary-open code {
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: .15em;
+}
+
+.tw-sprite-variables__temporary-open:hover code,
+.tw-sprite-variables__temporary-open:focus-visible code {
+    text-decoration-color: currentColor;
+}

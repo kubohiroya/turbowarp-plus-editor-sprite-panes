@@ -256,7 +256,7 @@ export function SpriteCloneVariables(props: ViewProps & {
         {props.children}
     </>;
     const clone = state.clone;
-    const {variables: originalVariables, onEdit, temporaryVariables} = props.children.props;
+    const {variables: originalVariables, onEdit, temporaryVariables, onOpenFunction} = props.children.props;
     const byId = new Map(originalVariables.map(variable => [variable.id, variable]));
     const variables = clone.variables.map(variable => ({
         ...variable,
@@ -265,7 +265,7 @@ export function SpriteCloneVariables(props: ViewProps & {
     }));
     return <SpriteAssetPane kind="variables" key={clone.id} targetId={clone.id}
         locale={props.locale} editable={props.editable} clone properties={clone.properties} variables={variables}
-        onEdit={onEdit} temporaryVariables={temporaryVariables}
+        onEdit={onEdit} temporaryVariables={temporaryVariables} onOpenFunction={onOpenFunction}
         onWriteProperties={view.writeProperties} onWrite={(id, value) => view.writeVariable(clone.id, id, value)}
         notice={<p className="tw-sprite-clone-notice" role="status">
             <strong>{text.selected(state.ids.indexOf(clone.id) + 1)}</strong><span>{text.temporary}</span>
