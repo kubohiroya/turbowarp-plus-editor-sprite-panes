@@ -2,14 +2,14 @@ import assert from 'node:assert/strict';
 import test, {type TestContext} from 'node:test';
 import {JSDOM} from 'jsdom';
 import React, {act} from 'react';
-import {functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane} from '../dist/sprite-function-pane.js';
+import {callGraphHighlight, functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane} from '../dist/sprite-function-pane.js';
 
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 const dom = new JSDOM('<main></main>', {pretendToBeVisual: true});
 const {window} = dom;
 Object.assign(globalThis, {
     window, document: window.document, Node: window.Node, HTMLElement: window.HTMLElement,
-    Event: window.Event, MouseEvent: window.MouseEvent
+    Event: window.Event, MouseEvent: window.MouseEvent, WheelEvent: window.WheelEvent
 });
 const {createRoot} = await import('react-dom/client');
 
@@ -201,4 +201,111 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
     act(() => container.querySelector<HTMLButtonElement>('[data-choice="list"]').click());
     assert.equal(container.querySelector('figure'), null);
     assert.equal(container.querySelectorAll('.tw-sprite-functions__toggle').length, 2);
+});
+
+test('hovering a function picks out its links and the functions at their other ends', () => {
+    const edges = [
+        {from: 'main', to: 'draw', kind: 'forward'}, {from: 'draw', to: 'line', kind: 'forward'},
+        {from: 'draw', to: 'draw', kind: 'self'}, {from: 'line', to: 'draw', kind: 'back'},
+        {from: 'main', to: 'line', kind: 'forward'}
+    ] as const;
+    const {edges: links, nodes} = callGraphHighlight(edges, 'draw');
+    assert.deepEqual([...links], [['main>draw', 'in'], ['draw>line', 'out'], ['draw>draw', 'self'], ['line>draw', 'in']]);
+    assert.deepEqual([...nodes], [['draw', 'self'], ['main', 'caller'], ['line', 'both']]);
+});
+
+function graphPane(t: TestContext) {
+    const {container} = render(t, {
+        defaultSettings: {mode: 'graph'},
+        data: {targetId: 'cat', isStage: false, functions: [
+            fn('main', 'main', 0, 0, callees('main', ['draw', 'line'])), fn('draw', 'draw', 0, 0, callees('draw', ['line'])),
+            fn('line', 'line', 0, 0, callees('line', [])), fn('other', 'other', 0, 0, callees('other', []))
+        ]}
+    });
+    const figure = container.querySelector('figure');
+    // jsdom has no layout: give the frame a size and let the pane measure it.
+    Object.defineProperties(figure, {clientWidth: {value: 400}, clientHeight: {value: 300}});
+    act(() => window.dispatchEvent(new window.Event('resize')));
+    const canvas = container.querySelector<HTMLElement>('.tw-sprite-functions__canvas');
+    const transform = () => canvas.style.transform;
+    const zoom = (action: string) => act(() => container.querySelector<HTMLButtonElement>(`[data-zoom="${action}"]`).click());
+    return {container, figure, transform, zoom};
+}
+
+test('the call graph shows which links enter and leave a hovered or focused function', t => {
+    const {container, figure} = graphPane(t);
+    const highlighted = () => ({
+        edges: [...container.querySelectorAll('[data-edge][data-highlight]')].map(node =>
+            `${node.getAttribute('data-edge')}:${node.getAttribute('data-highlight')}`).sort(),
+        nodes: [...container.querySelectorAll('.tw-sprite-functions__node[data-highlight]')].map(node =>
+            `${node.getAttribute('data-function-key')}:${node.getAttribute('data-highlight')}`).sort()
+    });
+    const draw = container.querySelector('[data-function-key="draw"]');
+
+    act(() => draw.dispatchEvent(new window.MouseEvent('pointerover', {bubbles: true})));
+    assert.ok(figure.hasAttribute('data-highlighting'));
+    assert.deepEqual(highlighted(), {edges: ['draw>line:out', 'main>draw:in'], nodes: ['draw:self', 'line:callee', 'main:caller']});
+    assert.equal(container.querySelector('[data-edge="main>draw"]').getAttribute('marker-end'), `url(#${
+        container.querySelector('marker[data-highlight="in"]').id})`, 'the arrow head takes the colour of its link');
+
+    act(() => draw.dispatchEvent(new window.MouseEvent('pointerout', {bubbles: true})));
+    assert.ok(!figure.hasAttribute('data-highlighting'));
+    assert.deepEqual(highlighted(), {edges: [], nodes: []});
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-function-key="line"]').focus());
+    assert.deepEqual(highlighted(), {edges: ['draw>line:in', 'main>line:in'], nodes: ['draw:caller', 'line:self', 'main:caller']});
+});
+
+test('the call graph zooms with − + = and Ctrl + wheel, and pans with the wheel and by dragging', t => {
+    const {container, figure, transform, zoom} = graphPane(t);
+    assert.deepEqual([...container.querySelectorAll('[data-zoom]')].map(node => node.getAttribute('aria-label')),
+        ['縮小', '拡大', '元の大きさに戻す'], 'the same order as the code area');
+    const start = transform();
+    assert.match(start, /scale\(1\)$/);
+
+    zoom('in');
+    assert.match(transform(), /scale\(1\.2\)$/);
+    zoom('out');
+    zoom('out');
+    assert.match(transform(), /scale\(0\.833/);
+    zoom('reset');
+    assert.equal(transform(), start);
+
+    act(() => figure.dispatchEvent(new window.WheelEvent('wheel', {bubbles: true, cancelable: true, deltaY: -100, ctrlKey: true,
+        clientX: 0, clientY: 0})));
+    assert.equal(transform(), start.replace('scale(1)', 'scale(1.2)').replace(/translate\(([\d.]+)px, ([\d.]+)px\)/,
+        (_, x, y) => `translate(${x * 1.2}px, ${y * 1.2}px)`), 'Ctrl + wheel zooms around the pointer');
+    zoom('reset');
+
+    const wheel = new window.WheelEvent('wheel', {bubbles: true, cancelable: true, deltaX: 10, deltaY: 20});
+    act(() => figure.dispatchEvent(wheel));
+    assert.ok(wheel.defaultPrevented, 'the page does not scroll under the graph');
+    const [, x0, y0] = start.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/).map(Number);
+    assert.equal(transform(), `translate(${x0 - 10}px, ${y0 - 20}px) scale(1)`);
+
+    // Dragging from a function moves the graph and does not open the function.
+    const node = container.querySelector('[data-function-key="main"]');
+    act(() => {
+        node.dispatchEvent(new window.MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 50, clientY: 50}));
+        window.dispatchEvent(new window.MouseEvent('pointermove', {clientX: 80, clientY: 60}));
+    });
+    assert.ok(figure.hasAttribute('data-panning'));
+    act(() => {
+        window.dispatchEvent(new window.MouseEvent('pointerup', {clientX: 80, clientY: 60}));
+        node.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+    });
+    assert.equal(transform(), `translate(${x0 + 20}px, ${y0 - 10}px) scale(1)`);
+    assert.equal(container.querySelector('dialog'), null);
+    assert.ok(!figure.hasAttribute('data-panning'));
+});
+
+test('the call graph minimap shows every function and the part in view', t => {
+    const {container} = graphPane(t);
+    const map = container.querySelector('.tw-sprite-functions__minimap');
+    assert.equal(map.getAttribute('aria-hidden'), 'true', 'the zoom buttons and focus already reach every function');
+    assert.equal(map.querySelectorAll('rect:not(.tw-sprite-functions__minimap-view)').length, 4);
+    assert.equal(map.querySelectorAll('path').length, 3);
+    const view = map.querySelector('.tw-sprite-functions__minimap-view');
+    assert.equal(view.getAttribute('width'), '400');
+    assert.equal(view.getAttribute('height'), '300');
 });
