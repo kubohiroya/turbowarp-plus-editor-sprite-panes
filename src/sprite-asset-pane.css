@@ -1399,3 +1399,64 @@ button.tw-sprite-messages__node:focus-visible {
     block-size: auto;
     resize: none;
 }
+
+.tw-sprite-variables__temporary {
+    margin-block-start: 1.2rem;
+}
+
+.tw-sprite-variables__temporary thead th {
+    white-space: nowrap;
+}
+
+.tw-sprite-variables__temporary-hint,
+.tw-sprite-variables__temporary-empty {
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .85em;
+}
+
+.tw-sprite-variables__temporary-functions,
+.tw-sprite-variables__temporary-values {
+    display: grid;
+    gap: .2rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.tw-sprite-variables__temporary-values li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .2rem .5rem;
+}
+
+.tw-sprite-variables__temporary-owner {
+    color: var(--text-primary-transparent, #575e75);
+    font-size: .8em;
+}
+
+.tw-sprite-variables__temporary-value {
+    padding: .1em .35em;
+    border-radius: .25rem;
+    background: var(--ui-black-transparent, #e8ecf2);
+    font-variant-numeric: tabular-nums;
+    white-space: pre-wrap;
+}
+
+.tw-sprite-variables__temporary-unset {
+    color: var(--text-primary-transparent, #575e75);
+    font-style: italic;
+}
+
+.tw-sprite-variables__temporary-functions li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 .4rem;
+}
+
+.tw-sprite-variables__temporary-functions code {
+    font: inherit;
+    font-weight: bold;
+    color: var(--tw-temporary-function, #ff6680);
+}

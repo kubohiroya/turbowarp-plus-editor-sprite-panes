@@ -2,6 +2,7 @@ import React from 'react';
 import {PenIcon} from './pen-icon.tsx';
 import {observeTileNameTitles} from './native-tile-title.ts';
 import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from './sprite-properties.tsx';
+import type {TemporaryVariable, TemporaryVariableFunction, TemporaryVariableOwner, TemporaryVariables} from './temporary-variables.ts';
 import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError, type SpriteVariableValue, type SpriteListItem} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
 
 interface NativeAssetPanelProps {
@@ -165,6 +166,8 @@ export interface SpriteVariablePaneProps extends PaneProps {
     clone?: boolean;
     global?: {canAddCloudVariable: boolean};
     notice?: React.ReactNode;
+    /** Variables of the Temporary Variables extension, listed after the sprite or global variables. */
+    temporaryVariables?: TemporaryVariables;
     onWriteProperties?: SpritePropertiesPanelProps['onChange'];
     onWrite(id: string, value: SpriteVariable['value']): void;
     onEdit?(edit: SpriteVariableEdit): SpriteVariableEditError | void;
@@ -201,7 +204,20 @@ const english = {
     inUse: 'This variable is used by a block. Remove its uses before deleting it.',
     unavailable: 'This variable or target is no longer available.',
     sharedDefinition: 'This change applies to the original sprite and all its clones.',
-    cloudLimit: 'This project cannot have any more cloud variables.'
+    cloudLimit: 'This project cannot have any more cloud variables.',
+    threadVariables: 'Thread Variables', runtimeVariables: 'Runtime Variables',
+    threadDescription: 'Thread variables of the Temporary Variables extension. Each running script has its own values, which disappear when the script ends.',
+    runtimeDescription: 'Runtime variables of the Temporary Variables extension. The whole project shares them, and they are cleared when the project starts or stops.',
+    temporaryNotPaused: 'Pause the project with the debugger to see the values at that moment.',
+    temporaryEmpty: 'No names are written as fixed text in the code.',
+    temporaryUnset: 'Not set', dynamicName: 'Built at run time',
+    dynamicNameTitle: 'The code does not name this variable with fixed text. It exists at this pause.',
+    threadOwner: '%1 · thread %2', cloneOwner: '%1 (clone %3) · thread %2',
+    stageName: 'Stage', definedIn: 'Defined in', referredIn: 'Read in', rewrittenIn: 'Changed in', outsideFunction: 'Outside functions',
+    definedInTitle: 'The functions (custom blocks) whose code sets this thread variable',
+    runtimeDefinedInTitle: 'The functions (custom blocks) that set this runtime variable',
+    referredInTitle: 'The functions (custom blocks) that read this runtime variable or ask whether it exists',
+    rewrittenInTitle: 'The functions (custom blocks) that change or delete this runtime variable'
 };
 const japanese: typeof english = {
     costumes: 'コスチューム', sounds: '音', name: '変数名', value: '値',
@@ -232,7 +248,20 @@ const japanese: typeof english = {
     inUse: 'この変数はブロックで使用中です。削除するには、先に参照を外してください。',
     unavailable: 'この変数または編集対象を操作できなくなりました。',
     sharedDefinition: 'この変更は元のスプライトとすべてのクローンに反映されます。',
-    cloudLimit: 'この作品にはこれ以上クラウド変数を追加できません。'
+    cloudLimit: 'この作品にはこれ以上クラウド変数を追加できません。',
+    threadVariables: 'スレッド変数', runtimeVariables: 'ランタイム変数',
+    threadDescription: '一時変数拡張のスレッド変数です。実行中のスクリプトごとに別々の値を持ち、スクリプトが終わると消えます。',
+    runtimeDescription: '一時変数拡張のランタイム変数です。作品全体で共有され、作品の開始・停止で消えます。',
+    temporaryNotPaused: 'デバッガーで一時停止すると、その時点の値を表示します。',
+    temporaryEmpty: 'コード中で名前を固定テキストで書いたものはありません。',
+    temporaryUnset: '未定義', dynamicName: '実行時の名前',
+    dynamicNameTitle: 'コード中で固定テキストとして書かれていない名前です。この一時停止の時点で存在しています。',
+    threadOwner: '%1・スレッド %2', cloneOwner: '%1（クローン %3）・スレッド %2',
+    stageName: '背景', definedIn: '定義した関数', referredIn: '参照している関数', rewrittenIn: '書き換えている関数', outsideFunction: '関数の外',
+    definedInTitle: 'このスレッド変数に値を入れるブロックがある関数（ブロック定義）',
+    runtimeDefinedInTitle: 'このランタイム変数に値を入れる（〜にする）ブロックがある関数（ブロック定義）',
+    referredInTitle: 'このランタイム変数を読む、または有無を調べるブロックがある関数（ブロック定義）',
+    rewrittenInTitle: 'このランタイム変数を変える（〜ずつ変える）、または削除するブロックがある関数（ブロック定義）'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -613,7 +642,28 @@ function ListPreview({id, value, editable, labels, onEdit}: {
 }
 
 type SortColumn = 'stageColumn' | 'type' | 'name' | 'value' | 'read' | 'write';
-type Sort = {column: SortColumn; direction: 'ascending' | 'descending'};
+type SortDirection = 'ascending' | 'descending';
+type Sort = {column: SortColumn; direction: SortDirection};
+
+/** A column header that sorts the whole table, ascending first and then descending on each press. */
+function SortHeader({label, direction, onSort, className, title}: {
+    label: string;
+    direction?: SortDirection;
+    onSort(direction: SortDirection): void;
+    className?: string;
+    title?: string;
+}) {
+    return <th scope="col" className={className} aria-sort={direction} title={title}>
+        <button type="button" className="tw-sprite-variables__sort"
+            onClick={() => onSort(direction === 'ascending' ? 'descending' : 'ascending')}>
+            {label}
+            <svg viewBox="0 0 10 16" aria-hidden="true" focusable="false">
+                <path d="M1 6 5 1l4 5Z" data-active={direction === 'ascending'} />
+                <path d="m1 10 4 5 4-5Z" data-active={direction === 'descending'} />
+            </svg>
+        </button>
+    </th>;
+}
 
 const referenceCount = (variable: SpriteVariable) => (variable.accesses?.read ?? 0) + (variable.accesses?.write ?? 0);
 
@@ -633,8 +683,103 @@ function compareVariables(a: SpriteVariable, b: SpriteVariable, column: SortColu
     }
 }
 
+const ownerLabel = (owner: TemporaryVariableOwner, labels: VariableLabels) =>
+    (owner.clone ? labels.cloneOwner : labels.threadOwner).replace('%1', owner.targetName)
+        .replace('%2', String(owner.thread)).replace('%3', String(owner.clone ?? ''));
+
+function FunctionList({functions, labels}: {functions?: readonly TemporaryVariableFunction[]; labels: VariableLabels}) {
+    if (!functions?.length) return null;
+    return <ul className="tw-sprite-variables__temporary-functions">{functions.map(fn =>
+        <li key={(fn.targetId ?? '') + '\n' + (fn.id ?? '')} data-function-id={fn.id} data-target-id={fn.targetId}>
+            {fn.targetName !== undefined && <span className="tw-sprite-variables__temporary-owner">
+                {fn.stage ? labels.stageName : fn.targetName}</span>}
+            {fn.id ? <code>{fn.label}</code> :
+                <span className="tw-sprite-variables__temporary-unset">{labels.outsideFunction}</span>}
+        </li>)}</ul>;
+}
+
+type FunctionColumn = {key: 'functions' | 'readers' | 'writers'; label: string; title: string};
+type TemporarySortColumn = 'name' | FunctionColumn['key'] | 'value' | 'read' | 'write';
+
+const functionText = (functions: readonly TemporaryVariableFunction[] | undefined, labels: VariableLabels) =>
+    (functions ?? []).map(fn => [fn.stage ? labels.stageName : fn.targetName, fn.label ?? labels.outsideFunction]
+        .filter(Boolean).join(' ')).join('\n');
+
+function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: TemporarySortColumn,
+    labels: VariableLabels, collator: Intl.Collator) {
+    switch (column) {
+    case 'name': return collator.compare(a.name, b.name);
+    case 'read':
+    case 'write': return a[column] - b[column];
+    // The numeric collator orders values like 2 before 10, as the project shows them.
+    case 'value': return collator.compare(a.values?.[0]?.value ?? '', b.values?.[0]?.value ?? '');
+    default: return collator.compare(functionText(a[column], labels), functionText(b[column], labels));
+    }
+}
+
+function TemporaryVariableSection({scope, variables, paused, labels, collator}: {
+    scope: 'thread' | 'runtime';
+    variables: readonly TemporaryVariable[];
+    paused: boolean;
+    labels: VariableLabels;
+    collator: Intl.Collator;
+}) {
+    const title = scope === 'thread' ? labels.threadVariables : labels.runtimeVariables;
+    const [sort, setSort] = React.useState<{column: TemporarySortColumn; direction: SortDirection} | null>(null);
+    // Names written in the code come first. Names that only exist at the pause follow them. A chosen
+    // column sorts the whole table and keeps that order among equal values.
+    const sorted = variables.slice().sort((a, b) =>
+        (sort ? (sort.direction === 'ascending' ? 1 : -1) * compareTemporary(a, b, sort.column, labels, collator) : 0) ||
+        Number(b.fixed) - Number(a.fixed) || collator.compare(a.name, b.name));
+    const header = (column: TemporarySortColumn, label: string, className?: string, title?: string) =>
+        <SortHeader key={column} label={label} className={className} title={title}
+            direction={sort?.column === column ? sort.direction : undefined} onSort={direction => setSort({column, direction})} />;
+    const columns: FunctionColumn[] = scope === 'thread' ?
+        [{key: 'functions', label: labels.definedIn, title: labels.definedInTitle}] : [
+            {key: 'functions', label: labels.definedIn, title: labels.runtimeDefinedInTitle},
+            {key: 'readers', label: labels.referredIn, title: labels.referredInTitle},
+            {key: 'writers', label: labels.rewrittenIn, title: labels.rewrittenInTitle}
+        ];
+    return <section className="tw-sprite-variables__temporary" aria-label={title} data-temporary-scope={scope}>
+        <div className="tw-sprite-variables__intro">
+            <h3>{title}</h3>
+            <p>{scope === 'thread' ? labels.threadDescription : labels.runtimeDescription}</p>
+            {!paused && <p className="tw-sprite-variables__temporary-hint">{labels.temporaryNotPaused}</p>}
+        </div>
+        {sorted.length ? <table className="tw-sprite-variables__table">
+            <thead><tr>
+                {header('name', labels.name)}
+                {columns.map(column => header(column.key, column.label, undefined, column.title))}
+                {paused && header('value', labels.value)}
+                {header('read', labels.read, 'tw-sprite-variables__references')}
+                {header('write', labels.write, 'tw-sprite-variables__references')}
+            </tr></thead>
+            <tbody>{sorted.map(variable => <tr key={variable.name} data-temporary-name={variable.name}>
+                <th scope="row">
+                    {variable.name}
+                    {!variable.fixed && <span className="tw-sprite-variables__scope" title={labels.dynamicNameTitle}>
+                        {labels.dynamicName}</span>}
+                </th>
+                {columns.map(column => <td key={column.key} data-column={column.key}>
+                    <FunctionList functions={variable[column.key]} labels={labels} />
+                </td>)}
+                {paused && <td>{variable.values?.length ?
+                    <ul className="tw-sprite-variables__temporary-values">{variable.values.map((entry, index) =>
+                        <li key={index}>
+                            {entry.owner && <span className="tw-sprite-variables__temporary-owner">
+                                {ownerLabel(entry.owner, labels)}</span>}
+                            <output className="tw-sprite-variables__temporary-value">{entry.value}</output>
+                        </li>)}</ul> :
+                    <span className="tw-sprite-variables__temporary-unset">{labels.temporaryUnset}</span>}</td>}
+                <td className="tw-sprite-variables__references">{variable.read}</td>
+                <td className="tw-sprite-variables__references">{variable.write}</td>
+            </tr>)}</tbody>
+        </table> : <p className="tw-sprite-variables__temporary-empty">{labels.temporaryEmpty}</p>}
+    </section>;
+}
+
 function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties,
-    clone, notice, global}: SpriteVariablePaneProps) {
+    clone, notice, global, temporaryVariables}: SpriteVariablePaneProps) {
     const labels = labelsFor(locale);
     const [action, setAction] = React.useState<SpriteVariableEdit | null>(null);
     const [error, setError] = React.useState<SpriteVariableEditError | undefined>();
@@ -670,19 +815,8 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
     const showMonitors = variables.some(variable => variable.monitor);
     const sorted = sort ? variables.slice().sort((a, b) =>
         (sort.direction === 'ascending' ? 1 : -1) * compareVariables(a, b, sort.column, collator)) : variables;
-    const header = (column: SortColumn, className?: string) => {
-        const direction = sort?.column === column ? sort.direction : undefined;
-        return <th scope="col" className={className} aria-sort={direction}>
-            <button type="button" className="tw-sprite-variables__sort"
-                onClick={() => setSort({column, direction: direction === 'ascending' ? 'descending' : 'ascending'})}>
-                {labels[column]}
-                <svg viewBox="0 0 10 16" aria-hidden="true" focusable="false">
-                    <path d="M1 6 5 1l4 5Z" data-active={direction === 'ascending'} />
-                    <path d="m1 10 4 5 4-5Z" data-active={direction === 'descending'} />
-                </svg>
-            </button>
-        </th>;
-    };
+    const header = (column: SortColumn, className?: string) => <SortHeader label={labels[column]} className={className}
+        direction={sort?.column === column ? sort.direction : undefined} onSort={direction => setSort({column, direction})} />;
     return <section className="tw-sprite-variables" aria-label={global ? labels.globalVariables : labels.spriteVariables}>
         <div className="tw-sprite-variables__scroll">
             {notice}
@@ -756,6 +890,13 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                     </tr>;
                 })}</tbody>
             </table> : <p>{labels.emptyVariables}</p>}
+            {temporaryVariables && <>
+                <TemporaryVariableSection scope="thread" variables={temporaryVariables.thread}
+                    paused={temporaryVariables.paused} labels={labels} collator={collator} />
+                {temporaryVariables.runtime && <TemporaryVariableSection scope="runtime"
+                    variables={temporaryVariables.runtime} paused={temporaryVariables.paused}
+                    labels={labels} collator={collator} />}
+            </>}
         </div>
         {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
             onClick={() => start({type: 'create', name: ''})}>

@@ -27,6 +27,10 @@
       "types": "./dist/sprite-clone-inspector.d.ts",
       "default": "./dist/sprite-clone-inspector.js"
     },
+    "./temporary-variables": {
+      "types": "./dist/temporary-variables.d.ts",
+      "default": "./dist/temporary-variables.js"
+    },
     "./sprite-properties": {
       "types": "./dist/sprite-properties.d.ts",
       "default": "./dist/sprite-properties.js"
