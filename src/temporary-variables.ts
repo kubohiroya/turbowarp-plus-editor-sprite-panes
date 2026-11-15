@@ -7,6 +7,8 @@
  * extension instance. They are read while the debugger has paused the project, when they hold still.
  */
 
+import {functionLabel} from './sprite-function-pane.tsx';
+
 export const temporaryVariablesExtensionId = 'lmsTempVars2';
 
 /**
@@ -118,20 +120,14 @@ export const isRuntimePaused = (runtime: TemporaryVariablesRuntime) => runtime.i
 type Use = {read: number; write: number} & Record<Role, TemporaryVariableFunction[]>;
 type Uses = Map<string, Use>;
 
-/** Spell a custom block the way it reads: `jump %s times` with `height` becomes `jump (height) times`. */
-function functionLabel(proccode: string, argumentnames = '[]') {
-    let names: unknown[] = [];
+function argumentNames(argumentnames = '[]') {
     try {
         const parsed = JSON.parse(argumentnames);
-        if (Array.isArray(parsed)) names = parsed;
+        return Array.isArray(parsed) ? parsed.map(String) : [];
     } catch {
         // Keep the label without argument names when they cannot be read.
+        return [];
     }
-    let index = 0;
-    return proccode.replace(/%([snb])/g, (_match, type: string) => {
-        const name = String(names[index++] ?? '');
-        return type === 'b' ? `<${name}>` : `(${name})`;
-    }).replace(/\s+/g, ' ').trim();
 }
 
 /** The custom block definition a block belongs to, or an entry without id for a script outside any function. */
@@ -145,7 +141,8 @@ function functionOf(blocks: Record<string, Block>, id: string): TemporaryVariabl
     const top = blocks[current];
     if (top?.opcode !== 'procedures_definition') return {};
     const mutation = blocks[top.inputs?.custom_block?.block ?? '']?.mutation;
-    return mutation?.proccode ? {id: current, label: functionLabel(mutation.proccode, mutation.argumentnames)} : {};
+    return mutation?.proccode ?
+        {id: current, label: functionLabel({proccode: mutation.proccode, argumentNames: argumentNames(mutation.argumentnames)})} : {};
 }
 
 function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, uses: Uses, withTarget = false) {

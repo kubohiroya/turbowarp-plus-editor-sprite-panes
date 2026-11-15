@@ -48,7 +48,10 @@ test('the sprite toolbar selects one section and searches in the active section'
     const unselected = page.getByRole('tab', {selected: false});
     const tabs = strip.getByRole('tab');
     await expect(strip).toHaveAttribute('aria-orientation', 'vertical');
-    await expect(tabs).toHaveCount(5);
+    await expect(tabs).toHaveCount(6);
+    // Functions sit with the panes that survey the sprite, before variables and messages.
+    assert.deepEqual(await tabs.evaluateAll(nodes => nodes.map(node => node.id.replace(/^.*-section-/, ''))),
+        ['code', 'costumes', 'sounds', 'functions', 'variables', 'messages']);
     await expect(selected).toHaveAccessibleName('コード');
     const tabBounds = await Promise.all((await tabs.all()).map(async tab => {
         await expect(tab).toHaveText('');
@@ -58,7 +61,7 @@ test('the sprite toolbar selects one section and searches in the active section'
     const panel = await page.getByRole('tabpanel').boundingBox();
     const rail = await strip.boundingBox();
     // A button is the size of what it shows, so the rail keeps the same shape whatever its height.
-    // The two sections that survey the sprite are set apart from the three that edit the project.
+    // The sections that survey the sprite are set apart from the three that edit the project.
     const gap = 2;
     const groupGap = 9;
     assert.ok(tabBounds.every((tab, index) => {
