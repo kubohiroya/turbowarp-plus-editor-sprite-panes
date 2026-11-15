@@ -40,57 +40,29 @@ function render(t: TestContext, props: object) {
 
 const text = (nodes: Iterable<Element>) => [...nodes].map(node => node.textContent.trim());
 
-test('the pane lists what the sprite sends and receives, with the block and the script', t => {
+test('each tab shows only the diagram of its side, or says the sprite uses none', t => {
     const sent = use({});
-    const received = use({direction: 'receive', blockId: 'block-2', scriptId: 'block-2',
-        scriptOpcode: 'event_whenbroadcastreceived', scriptMessageName: 'go'});
     const container = render(t, {
         data: {
-            targetId: 'cat', isStage: false, sends: [sent], receives: [received], elsewhere: [],
-            messages: [message({sends: [sent], receives: [received]})]
-        },
-        onOpen: () => {}
-    });
-
-    assert.deepEqual([...container.querySelectorAll('section[aria-label]')]
-        .map(node => node.getAttribute('aria-label')),
-    ['メッセージ', '送信', '受信', 'この作品の他の場所のメッセージ']);
-    const rows = [...container.querySelectorAll('tbody tr')].map(row => text(row.querySelectorAll('th, td')));
-    assert.deepEqual(rows, [
-        ['go', '「go」を送る「緑の旗が押されたとき」から始まるスクリプト'],
-        ['go', '「go」を受け取ったとき']
-    ]);
-    assert.equal(container.querySelector('.tw-sprite-messages__empty').textContent,
-        'この作品のメッセージはすべてここで使われています。');
-});
-
-test('a send that waits is told apart from a plain send', t => {
-    const sent = use({wait: true, opcode: 'event_broadcastandwait'});
-    const container = render(t, {
-        data: {targetId: 'cat', isStage: false, sends: [sent], receives: [], elsewhere: [],
-            messages: [message({sends: [sent]})]}
-    });
-    assert.match(container.querySelector('tbody td').textContent, /^「go」を送って待つ/);
-});
-
-test('a message sent but never received, and one the sprite does not use, are marked', t => {
-    const sent = use({key: 'shout', id: 'shout', name: 'shout'});
-    const idle = message({key: 'idle', id: 'idle', name: 'idle', status: 'unused'});
-    const container = render(t, {
-        data: {
-            targetId: 'cat', isStage: false, sends: [sent], receives: [], elsewhere: [idle], messages: [
-                message({key: 'shout', id: 'shout', name: 'shout', status: 'sendOnly', sends: [sent]}),
-                idle
-            ]
+            targetId: 'cat', isStage: false, sends: [sent, use({blockId: 'block-2'})], receives: [], elsewhere: [],
+            messages: [message({status: 'sendOnly', sends: [sent]})]
         }
     });
-    assert.deepEqual([...container.querySelectorAll('.tw-sprite-messages__status')]
-        .map(node => [node.dataset.status, node.textContent]),
-    [['sendOnly', '受け取るブロックがありません'], ['unused', '使われていません']]);
-    assert.equal(container.querySelector('.tw-sprite-messages__list li span').textContent, 'idle');
+    // No tables: the diagram already says who sends what to whom.
+    assert.equal(container.querySelector('table'), null);
+    const [sending, receiving] = container.querySelectorAll('[role="tabpanel"]');
+    assert.equal(sending.querySelectorAll('.tw-sprite-messages__diagram').length, 1);
+    assert.equal(receiving.querySelector('.tw-sprite-messages__diagram'), null);
+    assert.equal(receiving.querySelector('.tw-sprite-messages__empty').textContent, 'このスプライトはメッセージを受け取っていません。');
+    // The tabs count messages, not blocks.
+    assert.deepEqual(text(container.querySelectorAll('[role="tab"]')), ['送信1', '受信0']);
+    // The empty end of a message nobody receives is marked with a warning.
+    const missing = sending.querySelector('.tw-sprite-messages__missing');
+    assert.equal(missing.textContent.trim(), '受け取るブロックがありません');
+    assert.ok(missing.querySelector('svg.tw-sprite-messages__warning'));
 });
 
-test('renaming refuses a name another message already has and reports why', t => {
+test('the ▼ after a message name opens a menu that leads to the rename dialog', t => {
     const sent = use({});
     const renames: [string, string][] = [];
     const container = render(t, {
@@ -104,80 +76,195 @@ test('renaming refuses a name another message already has and reports why', t =>
             renames.push([target.name, name]);
         }
     });
+    const label = container.querySelector('.tw-sprite-messages__edge-label');
+    const toggle = label.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]');
+    assert.equal(toggle.getAttribute('aria-label'), '「go」の操作');
+    assert.equal(toggle.parentElement.previousElementSibling.textContent, 'go', 'the ▼ follows the name');
+    assert.equal(label.querySelector('[role="menu"]'), null);
 
-    const button = [...container.querySelectorAll('tbody button')]
-        .find(node => node.textContent === 'メッセージ名を変更');
-    act(() => button.dispatchEvent(new window.MouseEvent('click', {bubbles: true})));
-    assert.equal(container.querySelector('.tw-sprite-messages__hint').textContent,
+    act(() => toggle.click());
+    assert.equal(toggle.getAttribute('aria-expanded'), 'true');
+    const item = label.querySelector<HTMLButtonElement>('[role="menu"] [role="menuitem"]');
+    assert.equal(item.textContent, 'メッセージ名を変更');
+    assert.equal(window.document.activeElement, item, 'the menu takes the focus');
+
+    // Escape closes the menu and returns to the ▼.
+    act(() => item.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Escape', bubbles: true})));
+    assert.equal(label.querySelector('[role="menu"]'), null);
+    assert.equal(window.document.activeElement, toggle);
+
+    act(() => toggle.click());
+    act(() => label.querySelector<HTMLButtonElement>('[role="menuitem"]').click());
+    assert.equal(label.querySelector('[role="menu"]'), null, 'choosing an item closes the menu');
+    const dialog = container.querySelector('dialog');
+    assert.equal(container.querySelector('#' + dialog.getAttribute('aria-labelledby')).textContent, 'メッセージ名を変更');
+    assert.equal(dialog.querySelector('input[name="name"]').value, 'go');
+    assert.equal(dialog.querySelector('.tw-sprite-messages__hint').textContent,
         'メッセージの名前を変えると、作品全体で変わります。');
 
     const submit = (value: string) => {
-        const form = container.querySelector('form');
+        const form = dialog.querySelector('form');
         form.querySelector('input[name="name"]').value = value;
         act(() => form.dispatchEvent(new window.Event('submit', {bubbles: true, cancelable: true})));
     };
-
     submit('done');
     assert.equal(container.querySelector('[role="alert"]').textContent, '同じ名前のメッセージがすでにあります。');
     submit('   ');
     assert.equal(container.querySelector('[role="alert"]').textContent, 'メッセージ名を入力してください。');
     assert.deepEqual(renames, []);
-
     submit('  start  ');
     assert.deepEqual(renames, [['go', 'start']]);
-    assert.equal(container.querySelector('form'), null);
+    assert.equal(container.querySelector('dialog'), null, 'the dialog closes after renaming');
 });
 
-test('the stage draws all used broadcasts as labelled arrows between thumbnails', t => {
+test('a press outside the menu closes it, and the menu is disabled while the pane cannot edit', t => {
+    const sent = use({});
+    const props = (editable: boolean) => ({
+        editable, onRename() {},
+        data: {targetId: 'cat', isStage: false, sends: [sent], receives: [], elsewhere: [], messages: [message({sends: [sent]})]}
+    });
+    const container = render(t, props(true));
+    const toggle = container.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]');
+    act(() => toggle.click());
+    act(() => {
+        window.document.body.dispatchEvent(new window.Event('pointerdown', {bubbles: true}));
+    });
+    assert.equal(container.querySelector('[role="menu"]'), null);
+
+    const readOnly = render(t, props(false));
+    assert.equal(readOnly.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]').disabled, true);
+});
+
+test('the pane splits what the sprite sends from what it receives, each tab with its own diagram', t => {
     const opened: string[] = [];
     const sent = use({});
-    const stage = use({direction: 'receive', targetId: 'stage', targetName: 'Stage', isStage: true});
-    const cat = use({direction: 'receive', blockId: 'another-hat'});
-    const dog = use({targetId: 'dog', targetName: 'Dog'});
-    const unused = message({key: 'idle', name: 'idle', status: 'unused'});
-    const connections = [
-        message({sends: [sent, sent], receives: [stage, cat]}),
-        message({key: 'bark', name: 'bark', status: 'sendOnly', sends: [dog]}),
-        unused
-    ];
+    const dogHears = use({direction: 'receive', targetId: 'dog', targetName: 'Dog', blockId: 'dog-hat'});
+    const dogSays = use({key: 'listen', id: 'listen', name: 'listen', targetId: 'dog', targetName: 'Dog', blockId: 'dog-send'});
+    const catHears = use({key: 'listen', id: 'listen', name: 'listen', direction: 'receive', blockId: 'cat-hat'});
+    const stageHears = use({key: 'bark', id: 'bark', name: 'bark', direction: 'receive', targetId: 'stage',
+        targetName: 'Stage', isStage: true, blockId: 'stage-hat'});
+    const dogBarks = use({key: 'bark', id: 'bark', name: 'bark', targetId: 'dog', targetName: 'Dog', blockId: 'dog-bark'});
     const container = render(t, {
         data: {
-            targetId: 'stage', isStage: true, sends: [], receives: [stage], elsewhere: [unused],
-            messages: connections, getThumbnailUrl: id => '/thumb/' + id
+            targetId: 'cat', isStage: false, sends: [sent], receives: [catHears], elsewhere: [], getThumbnailUrl: id => '/thumb/' + id,
+            messages: [
+                message({sends: [sent], receives: [dogHears]}),
+                message({key: 'listen', id: 'listen', name: 'listen', sends: [dogSays], receives: [catHears]}),
+                message({key: 'bark', id: 'bark', name: 'bark', sends: [dogBarks], receives: [stageHears]})
+            ]
         },
         onOpenTarget: id => opened.push(id)
     });
-    const figure = container.querySelector('.tw-sprite-messages__diagram');
-    assert.equal(figure.querySelector('figcaption').textContent, 'スプライト・背景とメッセージの関係');
-    assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__headings span')), ['送信元', '受信先']);
-    assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__edge')), ['go', 'bark']);
-    assert.equal(figure.querySelectorAll('.tw-sprite-messages__edge-label svg').length, 2);
-    assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__node')), ['Cat', '背景', 'Cat', 'Dog']);
-    assert.deepEqual(text(figure.querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')), ['背景']);
-    assert.deepEqual([...figure.querySelectorAll('.tw-sprite-messages__node img')].map(img => img.getAttribute('src')),
-        ['/thumb/cat', '/thumb/stage', '/thumb/cat', '/thumb/dog']);
-    assert.equal(figure.querySelector('.tw-sprite-messages__missing').textContent.trim(),
-        '受け取るブロックがありません');
-    assert.equal(container.querySelector('.tw-sprite-messages__list [data-message-key="idle"]').textContent, 'idle');
-    figure.querySelector('button[aria-current="true"]').click();
-    assert.deepEqual(opened, ['stage']);
+    const tabs = [...container.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const panels = [...container.querySelectorAll<HTMLElement>('[role="tabpanel"]')];
+    assert.deepEqual(tabs.map(tab => [tab.textContent, tab.getAttribute('aria-selected')]), [['送信1', 'true'], ['受信1', 'false']]);
+    assert.deepEqual(panels.map(panel => panel.hidden), [false, true]);
+    assert.equal(panels[0].getAttribute('aria-labelledby'), tabs[0].id);
+
+    // The sending tab draws only the messages the sprite sends, with every receiver of them.
+    const sending = panels[0].querySelector('.tw-sprite-messages__diagram');
+    assert.equal(sending.querySelector('figcaption'), null, 'the diagram has no visible heading');
+    assert.equal(sending.getAttribute('aria-label'), 'スプライト・背景とメッセージの関係');
+    assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__headings span')), ['送信元', '受信先']);
+    assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__edge [data-message-key]')), ['go']);
+    assert.deepEqual([...sending.querySelectorAll('.tw-sprite-messages__node img')].map(img => img.getAttribute('src')),
+        ['/thumb/cat', '/thumb/dog']);
+    assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')),
+        ['Cat緑の旗が押されたとき']);
+
+    // The receiving tab draws only the messages the sprite receives.
+    act(() => tabs[1].click());
+    assert.deepEqual(panels.map(panel => panel.hidden), [true, false]);
+    const receiving = panels[1].querySelector('.tw-sprite-messages__diagram');
+    assert.deepEqual(text(receiving.querySelectorAll('.tw-sprite-messages__edge [data-message-key]')), ['listen']);
+    assert.deepEqual(text(receiving.querySelectorAll('.tw-sprite-messages__node')), ['Dog緑の旗が押されたとき', 'Cat']);
+    receiving.querySelector<HTMLButtonElement>('[aria-current="true"] .tw-sprite-messages__node-name').click();
+    assert.deepEqual(opened, ['cat']);
+
+    act(() => tabs[1].dispatchEvent(new window.KeyboardEvent('keydown', {key: 'ArrowLeft', bubbles: true})));
+    assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
+    assert.equal(window.document.activeElement, tabs[0]);
 });
 
-test('a sprite diagram shows the broadcasts involving that sprite and highlights both ends of a self-send', t => {
+test('a sprite that only receives opens on the receiving tab, and a self-send shows on both', t => {
     const sent = use({});
-    const cat = use({direction: 'receive', blockId: 'cat-hat'});
-    const dog = use({targetId: 'dog', targetName: 'Dog'});
-    const unanswered = message({key: 'listen', name: 'listen', status: 'receiveOnly', receives: [cat]});
-    const unrelated = message({key: 'bark', name: 'bark', status: 'sendOnly', sends: [dog]});
-    const container = render(t, {
+    const self = use({direction: 'receive', blockId: 'cat-hat'});
+    const unanswered = use({key: 'listen', id: 'listen', name: 'listen', direction: 'receive', blockId: 'listen-hat'});
+    const only = render(t, {
         data: {
-            targetId: 'cat', isStage: false, sends: [sent], receives: [cat], elsewhere: [unrelated],
-            messages: [message({sends: [sent], receives: [cat]}), unanswered, unrelated]
+            targetId: 'cat', isStage: false, sends: [], receives: [unanswered], elsewhere: [],
+            messages: [message({key: 'listen', id: 'listen', name: 'listen', status: 'receiveOnly', receives: [unanswered]})]
         }
     });
-    const rows = container.querySelectorAll('.tw-sprite-messages__connection');
-    assert.equal(rows.length, 2);
-    assert.deepEqual(text(rows[0].querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')), ['Cat', 'Cat']);
-    assert.equal(rows[1].querySelector('.tw-sprite-messages__missing').textContent.trim(),
+    assert.equal(only.querySelector('[role="tab"][aria-selected="true"]').textContent, '受信1');
+    assert.equal(only.querySelector('[role="tabpanel"]:not([hidden]) .tw-sprite-messages__missing').textContent.trim(),
         '送るブロックがありません');
+    assert.equal(only.querySelectorAll('.tw-sprite-messages__diagram').length, 1, 'nothing is sent, so no sending diagram');
+
+    const both = render(t, {
+        data: {
+            targetId: 'cat', isStage: false, sends: [sent], receives: [self], elsewhere: [],
+            messages: [message({sends: [sent], receives: [self]})]
+        }
+    });
+    for (const panel of both.querySelectorAll('[role="tabpanel"]')) {
+        assert.deepEqual(text(panel.querySelectorAll('.tw-sprite-messages__node[aria-current="true"]')),
+            ['Cat緑の旗が押されたとき', 'Cat']);
+    }
+});
+
+test('pressing a sending script opens its first block that sends the message', t => {
+    const opened: string[] = [];
+    const first = use({blockId: 'send-1'});
+    const second = use({blockId: 'send-2'});
+    const container = render(t, {
+        data: {
+            targetId: 'cat', isStage: false, sends: [first, second], receives: [], elsewhere: [],
+            messages: [message({status: 'sendOnly', sends: [first, second]})]
+        },
+        onOpen: (target: {blockId: string}) => opened.push(target.blockId)
+    });
+    const sources = container.querySelectorAll<HTMLButtonElement>('button.tw-sprite-messages__source');
+    assert.equal(sources.length, 1, 'two sends in one script are one source');
+    assert.equal(sources[0].title, 'このブロックを開く');
+    act(() => sources[0].click());
+    assert.deepEqual(opened, ['send-1']);
+});
+
+test('a sender lists each script that sends: the hat, the function or the named function', t => {
+    const key = use({blockId: 'send-1', scriptId: 'key', scriptOpcode: 'event_whenkeypressed'});
+    const again = use({blockId: 'send-2', scriptId: 'key', scriptOpcode: 'event_whenkeypressed'});
+    const jump = use({blockId: 'send-3', scriptId: 'jump', scriptOpcode: 'procedures_definition'});
+    const named = use({blockId: 'send-4', scriptId: 'add', scriptOpcode: 'kubohiroyanamedfunctions_defineFunction'});
+    const relay = use({blockId: 'send-5', scriptId: 'relay', scriptOpcode: 'event_whenbroadcastreceived',
+        scriptMessageName: 'ready'});
+    const starts = {
+        key: {id: 'key', opcode: 'event_whenkeypressed', kind: 'hat', text: ['space']},
+        jump: {id: 'jump', opcode: 'procedures_definition', kind: 'function', label: 'jump (height)', text: []},
+        add: {id: 'add', opcode: 'kubohiroyanamedfunctions_defineFunction', kind: 'named-function', label: 'add', text: []},
+        relay: {id: 'relay', opcode: 'event_whenbroadcastreceived', kind: 'hat', text: ['ready']}
+    };
+    const drawn: string[] = [];
+    const sends = [key, again, jump, named, relay];
+    const container = render(t, {
+        data: {
+            targetId: 'cat', isStage: false, sends, receives: [], elsewhere: [],
+            messages: [message({status: 'sendOnly', sends})],
+            describeScript: (targetId: string, blockId: string) => targetId === 'cat' ? starts[blockId] : undefined,
+            getBlockImage: (targetId: string, blockId: string) => {
+                drawn.push(targetId + '/' + blockId);
+                return window.document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            }
+        }
+    });
+    const sources = [...container.querySelectorAll('.tw-sprite-messages__sources li')];
+    assert.deepEqual(sources.map(item => [item.getAttribute('data-script-id'),
+        item.querySelector('.tw-sprite-messages__source-text').textContent,
+        item.querySelector('.tw-block-image svg') ? 'drawn' : 'none']), [
+        ['key', 'キーが押されたとき space', 'drawn'],
+        ['jump', '関数 jump (height)', 'drawn'],
+        ['add', '名前付き関数 「add」', 'drawn'],
+        ['relay', '「ready」を受け取ったとき', 'drawn']
+    ]);
+    assert.deepEqual([...new Set(drawn)], ['cat/key', 'cat/jump', 'cat/add', 'cat/relay']);
 });

@@ -2,7 +2,9 @@ import React from 'react';
 import {PenIcon} from './pen-icon.tsx';
 import {observeTileNameTitles} from './native-tile-title.ts';
 import {SpritePropertiesPanel, type SpritePropertiesPanelProps} from './sprite-properties.tsx';
+import {PaneDialog, PaneDialogActions, useDialogIds} from './pane-dialog.tsx';
 import type {TemporaryVariable, TemporaryVariableFunction, TemporaryVariableOwner, TemporaryVariables} from './temporary-variables.ts';
+import {BlockImage, hatName, type GetBlockImage} from './block-image.tsx';
 import {cloudVariablePrefix, type SpriteVariableEdit, type SpriteVariableEditError, type SpriteVariableValue, type SpriteListItem} from '@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit';
 
 interface NativeAssetPanelProps {
@@ -170,6 +172,11 @@ export interface SpriteVariablePaneProps extends PaneProps {
     temporaryVariables?: TemporaryVariables;
     /** Opens a function of the temporary variable tables in the code, as the project search does. */
     onOpenFunction?(targetId: string, blockId: string): void;
+    /**
+     * Draws a block as Scratch shows it, for the hats of scripts outside any function. Returns a new
+     * element on each call. See `createBlockImageRenderer` in `./block-image`.
+     */
+    getBlockImage?: GetBlockImage;
     onWriteProperties?: SpritePropertiesPanelProps['onChange'];
     onWrite(id: string, value: SpriteVariable['value']): void;
     onEdit?(edit: SpriteVariableEdit): SpriteVariableEditError | void;
@@ -220,7 +227,7 @@ const english = {
     runtimeDefinedInTitle: 'The functions (custom blocks) that set this runtime variable',
     referredInTitle: 'The functions (custom blocks) that read this runtime variable or ask whether it exists',
     rewrittenInTitle: 'The functions (custom blocks) that change or delete this runtime variable',
-    functionCount: '%1 functions', openFunction: 'Open “%1” in the code'
+    functionCount: '%1 functions', openFunction: 'Open “%1” in the code', openScript: 'Open this script in the code'
 };
 const japanese: typeof english = {
     costumes: 'コスチューム', sounds: '音', name: '変数名', value: '値',
@@ -265,7 +272,7 @@ const japanese: typeof english = {
     runtimeDefinedInTitle: 'このランタイム変数に値を入れる（〜にする）ブロックがある関数（ブロック定義）',
     referredInTitle: 'このランタイム変数を読む、または有無を調べるブロックがある関数（ブロック定義）',
     rewrittenInTitle: 'このランタイム変数を変える（〜ずつ変える）、または削除するブロックがある関数（ブロック定義）',
-    functionCount: '関数 %1 個', openFunction: '「%1」をコードで開く'
+    functionCount: '関数 %1 個', openFunction: '「%1」をコードで開く', openScript: 'このスクリプトをコードで開く'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -373,85 +380,7 @@ const PlusIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon"
 const TrashIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon">
     <path d="M2.8 4.3h10.4M6.3 4.3V2.8h3.4v1.5M4.2 4.3l.7 8.9h6.2l.7-8.9M6.8 6.8v4.1M9.2 6.8v4.1" />
 </svg>;
-const CloseIcon = () => <svg {...iconProps} className="tw-sprite-variables__icon"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>;
-
-let nextDialogId = 0;
-
-/**
- * IDs for one dialog's title and input. React's own ID hook arrived in React 18, but the package
- * supports React 16.14 (see peerDependencies), and the Editor mounts this pane in the GUI's React 16.
- */
-function useDialogIds() {
-    const [ids] = React.useState(() => {
-        const id = 'tw-sprite-variables-dialog-' + ++nextDialogId;
-        return {titleId: id + '-title', inputId: id + '-input'};
-    });
-    return ids;
-}
-
-function VariableModal({title, labels, onClose, children, list}: React.PropsWithChildren<{
-    title: string;
-    labels: VariableLabels;
-    onClose(): void;
-    list?: boolean;
-}>) {
-    const dialog = React.useRef<HTMLDialogElement>(null);
-    const {titleId} = useDialogIds();
-    React.useLayoutEffect(() => {
-        const node = dialog.current;
-        if (!node) return;
-        if (typeof node.showModal === 'function') {
-            if (!node.open) node.showModal();
-        } else node.setAttribute('open', '');
-        // React sets autoFocus before the dialog opens.
-        const initial = node.querySelector<HTMLElement>('[data-initial-focus]');
-        initial?.focus();
-        if (initial instanceof HTMLInputElement) initial.select();
-        return () => {
-            if (node.open && typeof node.close === 'function') node.close();
-        };
-    }, []);
-    return <dialog ref={dialog}
-        className={list ? 'tw-sprite-variables__dialog tw-sprite-variables__dialog--list' : 'tw-sprite-variables__dialog'}
-        aria-labelledby={titleId}
-        onCancel={event => {
-            event.preventDefault();
-            onClose();
-        }}
-        onKeyDown={event => {
-            if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
-            event.preventDefault();
-            event.stopPropagation();
-            onClose();
-        }}
-        onClick={event => {
-            if (event.target === event.currentTarget) onClose();
-        }}>
-        <div className="tw-sprite-variables__dialog-header">
-            <h2 id={titleId} className="tw-sprite-variables__dialog-title">{title}</h2>
-            <button type="button" className="tw-sprite-variables__dialog-close" aria-label={labels.close} onClick={onClose}>
-                <CloseIcon />
-            </button>
-        </div>
-        {children}
-    </dialog>;
-}
-
 const creationTypes = ['variable', 'list'] as const;
-
-function VariableDialogActions({cancelLabel, confirmLabel, onClose, deleting = false}: {
-    cancelLabel: string;
-    confirmLabel: string;
-    onClose(): void;
-    deleting?: boolean;
-}) {
-    return <div className="tw-sprite-variables__dialog-buttons tw-plus-dialog-actions">
-        <button type="button" className="tw-sprite-variables__dialog-button" onClick={onClose}
-            data-dialog-action="cancel" data-initial-focus={deleting ? '' : undefined}>{cancelLabel}</button>
-        <button type="submit" className="tw-sprite-variables__dialog-button tw-sprite-variables__dialog-button--ok"
-            data-dialog-action={deleting ? 'delete' : 'confirm'}>{confirmLabel}</button>
-    </div>;
-}
 
 function VariableDialog({action, labels, targetName, error, onSubmit, onClose, onClearError, clone, global}: {
     action: SpriteVariableEdit;
@@ -491,7 +420,7 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose, o
             onChange={event => setName(event.currentTarget.value)} autoComplete="off" spellCheck={false} data-initial-focus="" />
         {errorMessage}
     </>;
-    return <VariableModal title={title} labels={labels} onClose={onClose}>
+    return <PaneDialog title={title} closeLabel={labels.close} onClose={onClose}>
         <form className="tw-sprite-variables__dialog-body" onSubmit={event => onSubmit(event, list)}>
             {isCreate ? <>
                 <div className="tw-sprite-variables__creation-tabs" role="tablist" aria-label={labels.type}>
@@ -525,10 +454,10 @@ function VariableDialog({action, labels, targetName, error, onSubmit, onClose, o
                 nameField}
             {clone && <p>{labels.sharedDefinition}</p>}
             {isDelete && errorMessage}
-            <VariableDialogActions cancelLabel={labels.cancel} onClose={onClose} deleting={isDelete}
+            <PaneDialogActions cancelLabel={labels.cancel} onClose={onClose} deleting={isDelete}
                 confirmLabel={isCreate ? labels.create : isDelete ? labels.confirmDelete : labels.ok} />
         </form>
-    </VariableModal>;
+    </PaneDialog>;
 }
 
 const listItemValue = ({original, text}: {original: SpriteListItem; text: string}): SpriteListItem => {
@@ -571,7 +500,7 @@ function ListValueDialog({name, value, labels, onSave, onClose}: {
         focusId.current = id;
         setItems([...items, {id, original: '', text: ''}]);
     };
-    return <VariableModal list title={labels.editListTitle.replace('%1', name)} labels={labels} onClose={onClose}>
+    return <PaneDialog list title={labels.editListTitle.replace('%1', name)} closeLabel={labels.close} onClose={onClose}>
         <form ref={form} className="tw-sprite-variables__list-form" onSubmit={event => {
             event.preventDefault();
             const next = items.map(listItemValue);
@@ -613,10 +542,10 @@ function ListValueDialog({name, value, labels, onSave, onClose}: {
             <div className="tw-sprite-variables__list-footer">
                 <button type="button" className="tw-sprite-variables__action" data-add-item=""
                     data-initial-focus={!items.length ? '' : undefined} onClick={add}><PlusIcon />{labels.addItem}</button>
-                <VariableDialogActions cancelLabel={labels.cancel} confirmLabel={labels.save} onClose={onClose} />
+                <PaneDialogActions cancelLabel={labels.cancel} confirmLabel={labels.save} onClose={onClose} />
             </div>
         </form>
-    </VariableModal>;
+    </PaneDialog>;
 }
 
 const ListArrow = ({down}: {down?: boolean}) => <svg {...iconProps} className="tw-sprite-variables__icon">
@@ -695,11 +624,32 @@ const ownerLabel = (owner: TemporaryVariableOwner, labels: VariableLabels) =>
 const functionCount = (functions: readonly TemporaryVariableFunction[] | undefined) =>
     (functions ?? []).filter(fn => fn.id).length;
 
-function FunctionList({functions, labels, counted, onOpen}: {
+/** The hat of a script as Scratch draws it, with the values that tell it apart from others of its kind. */
+function HatImage({fn, locale, getBlockImage}: {
+    fn: TemporaryVariableFunction;
+    locale: string;
+    getBlockImage?: GetBlockImage;
+}) {
+    const script = fn.script;
+    const name = script ? hatName(locale, script.opcode,
+        script.opcode === 'event_whenbroadcastreceived' ? script.text[0] : undefined) : '';
+    const text = script?.text.join(' ');
+    return <span className="tw-sprite-variables__temporary-hat">
+        <BlockImage targetId={fn.targetId} blockId={script?.id} label={name} getBlockImage={getBlockImage}
+            className="tw-sprite-variables__temporary-hat-image">
+            <span className="tw-sprite-variables__temporary-unset">{name}</span>
+        </BlockImage>
+        {text && <span className="tw-sprite-variables__temporary-hat-text">{text}</span>}
+    </span>;
+}
+
+function FunctionList({functions, labels, locale, counted, onOpen, getBlockImage}: {
     functions?: readonly TemporaryVariableFunction[];
     labels: VariableLabels;
+    locale: string;
     counted?: boolean;
     onOpen?(targetId: string, blockId: string): void;
+    getBlockImage?: GetBlockImage;
 }) {
     const count = functionCount(functions);
     const badge = counted && <span className="tw-sprite-variables__temporary-count" role="img"
@@ -707,7 +657,8 @@ function FunctionList({functions, labels, counted, onOpen}: {
         {count}</span>;
     if (!functions?.length) return badge || null;
     return <>{badge}<ul className="tw-sprite-variables__temporary-functions">{functions.map(fn =>
-        <li key={(fn.targetId ?? '') + '\n' + (fn.id ?? '')} data-function-id={fn.id} data-target-id={fn.targetId}>
+        <li key={(fn.targetId ?? '') + '\n' + (fn.id ?? fn.script?.id ?? '')} data-function-id={fn.id}
+            data-script-id={fn.script?.id} data-target-id={fn.targetId}>
             {fn.targetName !== undefined && <span className="tw-sprite-variables__temporary-owner">
                 {fn.stage ? labels.stageName : fn.targetName}</span>}
             {fn.id ? onOpen && fn.targetId ?
@@ -715,7 +666,13 @@ function FunctionList({functions, labels, counted, onOpen}: {
                     title={labels.openFunction.replace('%1', fn.label ?? '')}
                     onClick={() => onOpen(fn.targetId, fn.id)}><code>{fn.label}</code></button> :
                 <code>{fn.label}</code> :
-                <span className="tw-sprite-variables__temporary-unset">{labels.outsideFunction}</span>}
+                !fn.script ? <span className="tw-sprite-variables__temporary-unset">{labels.outsideFunction}</span> :
+                onOpen && fn.targetId ?
+                    <button type="button" className="tw-sprite-variables__temporary-open"
+                        title={labels.openScript} onClick={() => onOpen(fn.targetId, fn.script.id)}>
+                        <HatImage fn={fn} locale={locale} getBlockImage={getBlockImage} />
+                    </button> :
+                    <HatImage fn={fn} locale={locale} getBlockImage={getBlockImage} />}
         </li>)}</ul></>;
 }
 
@@ -723,7 +680,8 @@ type FunctionColumn = {key: 'functions' | 'readers' | 'writers'; label: string; 
 type TemporarySortColumn = 'name' | FunctionColumn['key'] | 'value';
 
 const functionText = (functions: readonly TemporaryVariableFunction[] | undefined, labels: VariableLabels) =>
-    (functions ?? []).map(fn => [fn.stage ? labels.stageName : fn.targetName, fn.label ?? labels.outsideFunction]
+    (functions ?? []).map(fn => [fn.stage ? labels.stageName : fn.targetName,
+        fn.label ?? [labels.outsideFunction, fn.script?.opcode, ...fn.script?.text ?? []].filter(Boolean).join(' ')]
         .filter(Boolean).join(' ')).join('\n');
 
 function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: TemporarySortColumn,
@@ -740,13 +698,15 @@ function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: Te
     }
 }
 
-function TemporaryVariableSection({scope, variables, paused, labels, collator, onOpenFunction}: {
+function TemporaryVariableSection({scope, variables, paused, labels, locale, collator, onOpenFunction, getBlockImage}: {
     scope: 'thread' | 'runtime';
     variables: readonly TemporaryVariable[];
     paused: boolean;
     labels: VariableLabels;
+    locale: string;
     collator: Intl.Collator;
     onOpenFunction?: SpriteVariablePaneProps['onOpenFunction'];
+    getBlockImage?: GetBlockImage;
 }) {
     const title = scope === 'thread' ? labels.threadVariables : labels.runtimeVariables;
     const [sort, setSort] = React.useState<{column: TemporarySortColumn; direction: SortDirection} | null>(null);
@@ -784,8 +744,8 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator, o
                 </th>
                 {columns.map(column => <td key={column.key} data-column={column.key}>
                     <div className="tw-sprite-variables__temporary-cell">
-                        <FunctionList functions={variable[column.key]} labels={labels} counted={column.counted}
-                            onOpen={onOpenFunction} />
+                        <FunctionList functions={variable[column.key]} labels={labels} locale={locale} counted={column.counted}
+                            onOpen={onOpenFunction} getBlockImage={getBlockImage} />
                     </div>
                 </td>)}
                 {paused && <td>{variable.values?.length ?
@@ -802,7 +762,7 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator, o
 }
 
 function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties,
-    clone, notice, global, temporaryVariables, onOpenFunction}: SpriteVariablePaneProps) {
+    clone, notice, global, temporaryVariables, onOpenFunction, getBlockImage}: SpriteVariablePaneProps) {
     const labels = labelsFor(locale);
     const [action, setAction] = React.useState<SpriteVariableEdit | null>(null);
     const [error, setError] = React.useState<SpriteVariableEditError | undefined>();
@@ -881,6 +841,10 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                             {variableName(variable)}
                             {variable.isCloud && <> <span className="tw-sprite-variables__cloud" role="img"
                                 aria-label={labels.cloudVariable} title={labels.cloudVariable}>☁︎</span></>}
+                            {onEdit && !list && <button type="button" className="tw-pane-name-edit" disabled={!editable}
+                                aria-label={labels.rename} title={labels.rename}
+                                onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
+                                <PenIcon /></button>}
                             {variable.scope && <span className="tw-sprite-variables__scope">{labels[variable.scope]}</span>}
                         </th>
                         <td>{list ? <ListPreview id={variable.id} value={value} editable={editable} labels={labels}
@@ -899,10 +863,6 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                         })}
                         {onEdit && <td className="tw-sprite-variables__actions-cell">
                             {!list && <div className="tw-sprite-variables__actions">
-                                <button type="button" className="tw-sprite-variables__action" disabled={!editable}
-                                    onClick={() => start({type: 'rename', id: variable.id, name: variableName(variable)})}>
-                                    <PenIcon />{labels.rename}
-                                </button>
                                 <button type="button" className="tw-sprite-variables__action tw-sprite-variables__action--delete"
                                     disabled={!editable || inUse} title={inUse ? labels.inUse : undefined}
                                     onClick={() => start({type: 'delete', id: variable.id})}>
@@ -913,20 +873,22 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
                     </tr>;
                 })}</tbody>
             </table> : <p>{labels.emptyVariables}</p>}
+            {/* The add button closes the sprite or global variables, before the temporary variables. */}
+            {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
+                onClick={() => start({type: 'create', name: ''})}>
+                <span className="tw-sprite-variables__add-icon"><PlusIcon /></span>
+                <span className="tw-sprite-variables__add-label">{global ? labels.addGlobal : labels.addSprite}</span>
+            </button>}
             {temporaryVariables && <>
                 <TemporaryVariableSection scope="thread" variables={temporaryVariables.thread}
-                    paused={temporaryVariables.paused} labels={labels} collator={collator}
-                    onOpenFunction={editable ? onOpenFunction : undefined} />
+                    paused={temporaryVariables.paused} labels={labels} locale={locale} collator={collator}
+                    onOpenFunction={editable ? onOpenFunction : undefined} getBlockImage={getBlockImage} />
                 {temporaryVariables.runtime && <TemporaryVariableSection scope="runtime"
                     variables={temporaryVariables.runtime} paused={temporaryVariables.paused}
-                    labels={labels} collator={collator} onOpenFunction={editable ? onOpenFunction : undefined} />}
+                    labels={labels} locale={locale} collator={collator} onOpenFunction={editable ? onOpenFunction : undefined}
+                    getBlockImage={getBlockImage} />}
             </>}
         </div>
-        {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}
-            onClick={() => start({type: 'create', name: ''})}>
-            <span className="tw-sprite-variables__add-icon"><PlusIcon /></span>
-            <span className="tw-sprite-variables__add-label">{global ? labels.addGlobal : labels.addSprite}</span>
-        </button>}
         {editable && action && <VariableDialog key={action.type === 'create' ? 'create' : action.type + action.id}
             action={action} labels={labels} error={error} clone={clone} global={global} onSubmit={submit}
             onClose={() => start(null)} onClearError={() => setError(undefined)}
