@@ -168,6 +168,8 @@ export interface SpriteVariablePaneProps extends PaneProps {
     notice?: React.ReactNode;
     /** Variables of the Temporary Variables extension, listed after the sprite or global variables. */
     temporaryVariables?: TemporaryVariables;
+    /** Opens a function of the temporary variable tables in the code, as the project search does. */
+    onOpenFunction?(targetId: string, blockId: string): void;
     onWriteProperties?: SpritePropertiesPanelProps['onChange'];
     onWrite(id: string, value: SpriteVariable['value']): void;
     onEdit?(edit: SpriteVariableEdit): SpriteVariableEditError | void;
@@ -218,7 +220,7 @@ const english = {
     runtimeDefinedInTitle: 'The functions (custom blocks) that set this runtime variable',
     referredInTitle: 'The functions (custom blocks) that read this runtime variable or ask whether it exists',
     rewrittenInTitle: 'The functions (custom blocks) that change or delete this runtime variable',
-    functionCount: '%1 functions'
+    functionCount: '%1 functions', openFunction: 'Open “%1” in the code'
 };
 const japanese: typeof english = {
     costumes: 'コスチューム', sounds: '音', name: '変数名', value: '値',
@@ -263,7 +265,7 @@ const japanese: typeof english = {
     runtimeDefinedInTitle: 'このランタイム変数に値を入れる（〜にする）ブロックがある関数（ブロック定義）',
     referredInTitle: 'このランタイム変数を読む、または有無を調べるブロックがある関数（ブロック定義）',
     rewrittenInTitle: 'このランタイム変数を変える（〜ずつ変える）、または削除するブロックがある関数（ブロック定義）',
-    functionCount: '関数 %1 個'
+    functionCount: '関数 %1 個', openFunction: '「%1」をコードで開く'
 };
 const labelsFor = (locale: string) => /^ja(?:-|$)/i.test(locale) ? japanese : english;
 
@@ -693,10 +695,11 @@ const ownerLabel = (owner: TemporaryVariableOwner, labels: VariableLabels) =>
 const functionCount = (functions: readonly TemporaryVariableFunction[] | undefined) =>
     (functions ?? []).filter(fn => fn.id).length;
 
-function FunctionList({functions, labels, counted}: {
+function FunctionList({functions, labels, counted, onOpen}: {
     functions?: readonly TemporaryVariableFunction[];
     labels: VariableLabels;
     counted?: boolean;
+    onOpen?(targetId: string, blockId: string): void;
 }) {
     const count = functionCount(functions);
     const badge = counted && <span className="tw-sprite-variables__temporary-count" role="img"
@@ -707,7 +710,11 @@ function FunctionList({functions, labels, counted}: {
         <li key={(fn.targetId ?? '') + '\n' + (fn.id ?? '')} data-function-id={fn.id} data-target-id={fn.targetId}>
             {fn.targetName !== undefined && <span className="tw-sprite-variables__temporary-owner">
                 {fn.stage ? labels.stageName : fn.targetName}</span>}
-            {fn.id ? <code>{fn.label}</code> :
+            {fn.id ? onOpen && fn.targetId ?
+                <button type="button" className="tw-sprite-variables__temporary-open"
+                    title={labels.openFunction.replace('%1', fn.label ?? '')}
+                    onClick={() => onOpen(fn.targetId, fn.id)}><code>{fn.label}</code></button> :
+                <code>{fn.label}</code> :
                 <span className="tw-sprite-variables__temporary-unset">{labels.outsideFunction}</span>}
         </li>)}</ul></>;
 }
@@ -733,12 +740,13 @@ function compareTemporary(a: TemporaryVariable, b: TemporaryVariable, column: Te
     }
 }
 
-function TemporaryVariableSection({scope, variables, paused, labels, collator}: {
+function TemporaryVariableSection({scope, variables, paused, labels, collator, onOpenFunction}: {
     scope: 'thread' | 'runtime';
     variables: readonly TemporaryVariable[];
     paused: boolean;
     labels: VariableLabels;
     collator: Intl.Collator;
+    onOpenFunction?: SpriteVariablePaneProps['onOpenFunction'];
 }) {
     const title = scope === 'thread' ? labels.threadVariables : labels.runtimeVariables;
     const [sort, setSort] = React.useState<{column: TemporarySortColumn; direction: SortDirection} | null>(null);
@@ -776,7 +784,8 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
                 </th>
                 {columns.map(column => <td key={column.key} data-column={column.key}>
                     <div className="tw-sprite-variables__temporary-cell">
-                        <FunctionList functions={variable[column.key]} labels={labels} counted={column.counted} />
+                        <FunctionList functions={variable[column.key]} labels={labels} counted={column.counted}
+                            onOpen={onOpenFunction} />
                     </div>
                 </td>)}
                 {paused && <td>{variable.values?.length ?
@@ -793,7 +802,7 @@ function TemporaryVariableSection({scope, variables, paused, labels, collator}: 
 }
 
 function VariablePane({variables, editable, onWrite, onEdit, locale, properties, targetId, onWriteProperties,
-    clone, notice, global, temporaryVariables}: SpriteVariablePaneProps) {
+    clone, notice, global, temporaryVariables, onOpenFunction}: SpriteVariablePaneProps) {
     const labels = labelsFor(locale);
     const [action, setAction] = React.useState<SpriteVariableEdit | null>(null);
     const [error, setError] = React.useState<SpriteVariableEditError | undefined>();
@@ -906,10 +915,11 @@ function VariablePane({variables, editable, onWrite, onEdit, locale, properties,
             </table> : <p>{labels.emptyVariables}</p>}
             {temporaryVariables && <>
                 <TemporaryVariableSection scope="thread" variables={temporaryVariables.thread}
-                    paused={temporaryVariables.paused} labels={labels} collator={collator} />
+                    paused={temporaryVariables.paused} labels={labels} collator={collator}
+                    onOpenFunction={editable ? onOpenFunction : undefined} />
                 {temporaryVariables.runtime && <TemporaryVariableSection scope="runtime"
                     variables={temporaryVariables.runtime} paused={temporaryVariables.paused}
-                    labels={labels} collator={collator} />}
+                    labels={labels} collator={collator} onOpenFunction={editable ? onOpenFunction : undefined} />}
             </>}
         </div>
         {onEdit && <button type="button" className="tw-sprite-variables__add" disabled={!editable}

@@ -74,8 +74,8 @@ test('a sprite lists the thread variables its code names with fixed text, with t
     assert.deepEqual(readTemporaryVariables(runtime, 'cat'), {
         paused: false,
         thread: [
-            {name: 'i', fixed: true, read: 1, write: 2, functions: [{}]},
-            {name: 'n', fixed: true, read: 0, write: 1, functions: [{}]}
+            {name: 'i', fixed: true, read: 1, write: 2, functions: [{targetId: 'cat'}]},
+            {name: 'n', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat'}]}
         ]
     });
 });
@@ -93,7 +93,8 @@ test('a thread variable names the functions whose code sets it', () => {
 
     assert.deepEqual(readTemporaryVariables(runtime, 'cat').thread, [
         {name: 'i', fixed: true, read: 0, write: 4, functions: [
-            {id: 'jump', label: 'jump (height) times <fast>'}, {id: 'walk', label: 'walk'}, {}
+            {id: 'jump', label: 'jump (height) times <fast>', targetId: 'cat'}, {id: 'walk', label: 'walk', targetId: 'cat'},
+            {targetId: 'cat'}
         ]},
         {name: 'only read', fixed: true, read: 1, write: 0, functions: []}
     ]);
@@ -107,7 +108,7 @@ test('the stage also lists the runtime variables named anywhere in the project',
     block(stage.blocks._blocks, 'setThreadVariable', 'tmp');
 
     const result = readTemporaryVariables(runtime, 'stage');
-    assert.deepEqual(result.thread, [{name: 'tmp', fixed: true, read: 0, write: 1, functions: [{}]}]);
+    assert.deepEqual(result.thread, [{name: 'tmp', fixed: true, read: 0, write: 1, functions: [{targetId: 'stage'}]}]);
     const stageScript = {targetId: 'stage', targetName: 'Stage', stage: true};
     assert.deepEqual(result.runtime, [
         {name: 'score', fixed: true, read: 1, write: 1,
@@ -163,11 +164,11 @@ test('while paused, the values of the sprite and its clones are read, including 
     assert.deepEqual(readTemporaryVariables(runtime, 'cat'), {
         paused: true,
         thread: [
-            {name: 'i', fixed: true, read: 0, write: 1, functions: [{}], values: [
+            {name: 'i', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat'}], values: [
                 {owner: {targetName: 'Cat', thread: 2}, value: '3'},
                 {owner: {targetName: 'Cat', clone: 1, thread: 3}, value: 'a'}
             ]},
-            {name: 'unused', fixed: true, read: 0, write: 1, functions: [{}], values: []},
+            {name: 'unused', fixed: true, read: 0, write: 1, functions: [{targetId: 'cat'}], values: []},
             {name: 'item_2', fixed: false, read: 0, write: 0, functions: [], values: [
                 {owner: {targetName: 'Cat', clone: 1, thread: 3}, value: 'true'}
             ]}
@@ -318,15 +319,20 @@ test('a clone’s variable pane keeps the temporary variables of its sprite', t 
     };
     const pane = React.createElement(SpriteAssetPane, {
         kind: 'variables', locale: 'en', editable: true, variables: [], onWrite() {},
-        temporaryVariables: {paused: false, thread: [{name: 'i', fixed: true, read: 0, write: 1}]}
+        temporaryVariables: {paused: false, thread: [{name: 'i', fixed: true, read: 0, write: 1,
+            functions: [{id: 'jump', label: 'jump', targetId: 'cat'}]}]},
+        onOpenFunction: (targetId: string, blockId: string) => opened.push([targetId, blockId])
     });
+    const opened: string[][] = [];
     const view = {viewId: 'view', targetId: 'cat', locale: 'en'};
     const container = render(t, React.createElement(SpriteCloneInspector, {vm},
         React.createElement(SpriteClonePagination, view),
         React.createElement(SpriteCloneVariables, {...view, editable: true}, pane)));
     act(() => (container.querySelector('button[aria-label="Clone 1"]') as HTMLElement).click());
     assert.match(container.textContent, /Editing clone 1/);
-    assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')), [['i', '']]);
+    assert.deepEqual(rows(container.querySelector('section[data-temporary-scope="thread"]')), [['i', 'jump']]);
+    act(() => container.querySelector<HTMLButtonElement>('.tw-sprite-variables__temporary-open').click());
+    assert.deepEqual(opened, [['cat', 'jump']], 'the clone opens the function of its original sprite');
 });
 
 test('each column header sorts the whole table, ascending and then descending', t => {
@@ -371,4 +377,32 @@ test('each column header sorts the whole table, ascending and then descending', 
     assert.deepEqual(names(), ['c', 'b', 'a']);
     press('Defined in');
     assert.deepEqual(names(), ['c', 'a', 'b'], 'no function, then Cat outside functions, then Cat reset');
+});
+
+test('pressing a function name opens it in the code, only while the pane is editable', t => {
+    const opened: string[][] = [];
+    const props = (editable: boolean) => ({
+        kind: 'variables', locale: 'ja', editable, variables: [], onWrite() {},
+        onOpenFunction: (targetId: string, blockId: string) => opened.push([targetId, blockId]),
+        temporaryVariables: {
+            paused: false,
+            thread: [{name: 'i', fixed: true, read: 0, write: 1,
+                functions: [{id: 'jump', label: 'jump (height)', targetId: 'cat'}, {targetId: 'cat'}]}],
+            runtime: [{name: 'score', fixed: true, read: 1, write: 1, functions: [],
+                readers: [{id: 'show', label: 'show score', targetId: 'stage', targetName: 'Stage', stage: true}],
+                writers: []}]
+        }
+    });
+    const container = render(t, React.createElement(SpriteAssetPane, props(true)));
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('.tw-sprite-variables__temporary-open')];
+    // Uses outside any function have nothing to open.
+    assert.deepEqual(buttons.map(button => [button.textContent, button.title]),
+        [['jump (height)', '「jump (height)」をコードで開く'], ['show score', '「show score」をコードで開く']]);
+    act(() => buttons[0].click());
+    act(() => buttons[1].click());
+    assert.deepEqual(opened, [['cat', 'jump'], ['stage', 'show']]);
+
+    const readOnly = render(t, React.createElement(SpriteAssetPane, props(false)));
+    assert.equal(readOnly.querySelector('.tw-sprite-variables__temporary-open'), null);
+    assert.deepEqual(text(readOnly.querySelectorAll('[data-column] code')), ['jump (height)', 'show score']);
 });

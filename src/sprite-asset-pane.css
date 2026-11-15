@@ -1480,3 +1480,24 @@ button.tw-sprite-messages__node:focus-visible {
     line-height: 1.5;
     text-align: center;
 }
+
+.tw-sprite-variables__temporary-open {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+}
+
+.tw-sprite-variables__temporary-open code {
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: .15em;
+}
+
+.tw-sprite-variables__temporary-open:hover code,
+.tw-sprite-variables__temporary-open:focus-visible code {
+    text-decoration-color: currentColor;
+}

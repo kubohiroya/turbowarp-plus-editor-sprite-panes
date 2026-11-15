@@ -48,8 +48,9 @@ export interface TemporaryVariableFunction {
     id?: string;
     /** The block as it reads, such as `jump (height) times`. */
     label?: string;
-    /** Runtime variables only: the sprite or stage whose code holds the function. */
+    /** The sprite or stage whose code holds the function. */
     targetId?: string;
+    /** Runtime variables only, since their functions can be in any sprite. */
     targetName?: string;
     /** The function is in the stage, which the editor names in the viewer's language. */
     stage?: boolean;
@@ -161,8 +162,8 @@ function scanBlocks(target: Target, opcodes: Readonly<Record<string, Role>>, use
         const name = String(shadow.fields?.TEXT?.value ?? '');
         const use = uses.get(name) ?? {read: 0, write: 0, define: [], refer: [], rewrite: []};
         use[role === 'refer' ? 'read' : 'write']++;
-        const owner = {...functionOf(blocks, id),
-            ...withTarget && {targetId: target.id, targetName: target.getName(), ...target.isStage && {stage: true}}};
+        const owner = {...functionOf(blocks, id), targetId: target.id,
+            ...withTarget && {targetName: target.getName(), ...target.isStage && {stage: true}}};
         if (!use[role].some(each => each.id === owner.id && each.targetId === owner.targetId)) use[role].push(owner);
         uses.set(name, use);
     }
