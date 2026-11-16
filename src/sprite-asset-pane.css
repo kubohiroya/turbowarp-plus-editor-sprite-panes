@@ -455,6 +455,8 @@
 
 /* Modal dialog shaped like Scratch's “New Variable” prompt. */
 .tw-sprite-variables__dialog {
+    /* The dialog carries its own accent: the message pane opens it outside `.tw-sprite-variables`. */
+    --tw-variables-accent: var(--looks-secondary, #ff4c4c);
     box-sizing: border-box;
     inline-size: min(360px, calc(100vw - 2rem));
     padding: 0;
