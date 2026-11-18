@@ -1376,10 +1376,6 @@
     font: 12px sans-serif;
 }
 
-.tw-sprite-functions__edge-label .tw-sprite-functions__edge-label-owner {
-    font-weight: 600;
-}
-
 .tw-sprite-functions__relation-wait {
     pointer-events: visiblePainted;
 }
@@ -1428,11 +1424,33 @@
     cursor: pointer;
 }
 
+.tw-sprite-functions__node-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-inline-size: 0;
+    line-height: 16px;
+}
+
 .tw-sprite-functions__node .tw-sprite-functions__name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    overflow-wrap: normal;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.tw-sprite-functions__node-text .tw-sprite-functions__name > span,
+.tw-sprite-functions__node-text .tw-sprite-functions__owner > span {
+    display: block;
+    line-height: 16px;
+}
+
+.tw-sprite-functions__node-text .tw-sprite-functions__owner {
+    max-inline-size: none;
+    margin-inline-start: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
 }
 
 .tw-sprite-functions__target-thumbnail {

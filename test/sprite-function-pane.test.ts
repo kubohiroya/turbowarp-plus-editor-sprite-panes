@@ -385,7 +385,10 @@ test('each node pair has one edge per kind, with receiver-side message names, wa
         assert.ok(visible.includes('remote_task'));
         assert.ok(container.textContent.includes('背景'));
         assert.ok(visible.includes('💬 Backdrop Ready'));
-        assert.equal(visible.includes('Stage BG'), false, 'the stage is named as the background in Japanese');
+        assert.equal(visible.includes('Stage BG'), false, 'target names are shown only in nodes');
+        assert.equal(container.querySelector('.tw-sprite-functions__edge-label-owner'), null);
+        assert.equal(visible.includes('Robot Sprite'), false);
+        assert.equal(visible.includes('背景'), false);
     }
 });
 
@@ -1081,4 +1084,35 @@ test('readTargetFunctions preserves the shared message scanner and describeScrip
     assert.equal(data.messageGraph.scripts[0].label, 'cat/receive');
     assert.equal(data.messageGraph.scripts[0].receivedMessage, 'Start');
     assert.deepEqual(data.messageGraph.edges, []);
+});
+
+
+test('script names and target names use separate complete rows and long names grow all graph geometry', t => {
+    const endpoint = (scriptId: string) => ({targetId: 'cat', scriptId, blockId: scriptId});
+    const normal = {targetId: 'cat', scriptId: 'flag', label: '緑の旗が押されたとき', targetName: 'スプライト1'};
+    const data = {targetId: 'cat', isStage: false, functions: [fn('worker', 'worker', 0, 0)], scripts: [normal],
+        scriptRelations: [{kind: 'function', source: endpoint('flag'), destination: endpoint('worker'), label: 'worker', wait: false}]};
+    const {container, draw} = render(t, {view: 'graph', direction: 'LR', data});
+    const script = () => container.querySelector<HTMLElement>('[data-script-key]');
+    assert.equal(script().querySelector('.tw-sprite-functions__name').textContent, normal.label);
+    assert.equal(script().querySelector('.tw-sprite-functions__name').children.length, 1);
+    assert.equal(script().querySelector('.tw-sprite-functions__owner').textContent, normal.targetName);
+    assert.equal(script().parentElement.style.height, '44px');
+    const long = {...normal, label: normal.label.repeat(4), targetName: normal.targetName.repeat(5)};
+    for (const direction of ['LR', 'TD']) {
+        draw({direction, data: {...data, scripts: [long]}});
+        assert.equal(script().querySelector('.tw-sprite-functions__name').textContent, long.label);
+        assert.equal(script().querySelector('.tw-sprite-functions__owner').textContent, long.targetName);
+        const height = parseFloat(script().parentElement.style.height);
+        assert.ok(height > 44);
+        for (const node of container.querySelectorAll<HTMLElement>('.tw-sprite-functions__nodes > li')) {
+            assert.equal(parseFloat(node.style.height), height);
+        }
+        for (const node of container.querySelectorAll<SVGRectElement>('.tw-sprite-functions__minimap rect[data-node-key]')) {
+            assert.equal(Number(node.getAttribute('height')), height);
+        }
+        const values = container.querySelector('path[data-edge]').getAttribute('d').match(/-?[\d.]+/g).map(Number);
+        const source = script().parentElement;
+        assert.equal(values[1], parseFloat(source.style.top) + (direction === 'LR' ? height / 2 : height));
+    }
 });

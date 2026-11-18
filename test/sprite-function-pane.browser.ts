@@ -65,6 +65,29 @@ window.mountPane = ({locale = 'en', messagesOnly = false, foreignFunctions = fal
     mountCount++; render();
 };
 window.mountPane();
+window.mountLabelPane = (direction, long = false) => {
+    const hat = long ? '緑の旗が押されたときから長い名前の処理を始める'.repeat(3) : '緑の旗が押されたとき';
+    const own = long ? 'スプライトの長い表示名'.repeat(4) : 'スプライト1';
+    const foreign = long ? '遠くのスプライトの長い表示名'.repeat(4) : 'スプライト2';
+    const worker = {...fn('worker'), proccode: long ? 'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW' : 'worker'};
+    const remote = {...fn('other:global'), proccode: 'remote_task',
+        owner: {targetId: 'other', functionId: 'global', name: foreign, isStage: false,
+            thumbnailUrl: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCI+PHJlY3Qgd2lkdGg9IjIwIiBoZWlnaHQ9IjIwIiBmaWxsPSJvcmFuZ2UiLz48L3N2Zz4='}};
+    const endpoint = (targetId, scriptId) => ({targetId, scriptId, blockId: scriptId});
+    const data = {targetId: 'cat', isStage: false, functions: [worker], globals: [remote],
+        scripts: [{targetId: 'cat', scriptId: 'flag', label: hat, targetName: own},
+            {targetId: 'other', scriptId: 'receive', label: long ? 'とても長いメッセージを受け取ったとき'.repeat(3) : 'goを受け取ったとき', targetName: foreign}],
+        scriptRelations: [
+            {kind: 'function', label: worker.proccode, wait: false, source: endpoint('cat', 'flag'), destination: endpoint('cat', 'worker')},
+            {kind: 'function', label: worker.proccode, wait: false, source: endpoint('cat', 'worker'), destination: endpoint('cat', 'worker')},
+            {kind: 'function', label: 'remote_task', wait: false, source: endpoint('cat', 'worker'), destination: endpoint('other', 'global')},
+            {kind: 'message', label: 'go', wait: true, source: endpoint('cat', 'flag'), destination: endpoint('other', 'receive')}
+        ]};
+    ReactDOM.flushSync(() => root.render(React.createElement(SpriteFunctionPane, {key: ++mountCount,
+        locale: 'ja', editable: true, view: 'graph', direction, data,
+        onSettingsChange: settings => window.changes.push(settings)})));
+    return {hat, own, foreign, worker: worker.proccode};
+};
 </script>`;
 
 async function openPage(t: TestContext): Promise<Page> {
@@ -219,5 +242,76 @@ test('foreign function nodes show costume thumbnails and only target names while
         await node.focus();
         await page.keyboard.press('Enter');
         assert.deepEqual(await page.evaluate(() => (window as any).opened.at(-1)), {kind: 'function', id: `${id}:global`});
+    }
+});
+
+
+test('hat and owner labels use complete separate rows and long names resize connected geometry in both directions', async t => {
+    const page = await openPage(t);
+    const source = page.locator('[data-script-key="script:[\\"cat\\",\\"flag\\"]"]');
+    await page.evaluate(() => (window as any).mountLabelPane('LR'));
+    await expect(source.locator('.tw-sprite-functions__name')).toHaveText('緑の旗が押されたとき');
+    await expect(source.locator('.tw-sprite-functions__owner')).toHaveText('スプライト1');
+    assert.equal(await source.locator('.tw-sprite-functions__name > span').count(), 1);
+    assert.equal(await source.locator('.tw-sprite-functions__owner > span').count(), 1);
+    assert.equal((await source.boundingBox()).height, 44);
+    assert.ok((await source.locator('.tw-sprite-functions__owner').boundingBox()).y >
+        (await source.locator('.tw-sprite-functions__name').boundingBox()).y);
+    await screenshot(page, 'node-label-two-rows');
+    for (const direction of ['LR', 'TD']) {
+        const names = await page.evaluate(direction => (window as any).mountLabelPane(direction, true), direction);
+        await expect(source.locator('.tw-sprite-functions__name')).toHaveText(names.hat);
+        await expect(source.locator('.tw-sprite-functions__owner')).toHaveText(names.own);
+        const worker = page.locator('[data-function-key="worker"]');
+        const remote = page.locator('[data-function-key="other:global"]');
+        assert.equal(await worker.locator('.tw-sprite-functions__name').textContent(), names.worker);
+        assert.equal(await remote.locator('.tw-sprite-functions__name').textContent(), names.foreign);
+        await expect(remote.locator('.tw-sprite-functions__owner')).toHaveCount(0);
+        const metrics = await page.locator('.tw-sprite-functions__node').evaluateAll(nodes => nodes.map(node => {
+            const box = node.getBoundingClientRect();
+            const li = node.parentElement as HTMLElement;
+            const key = node.getAttribute('data-function-key') ?? node.getAttribute('data-script-key');
+            const mini = [...document.querySelectorAll('[data-node-key]')].find(item => item.getAttribute('data-node-key') === key);
+            const lines = [...node.querySelectorAll('.tw-sprite-functions__node-text .tw-sprite-functions__name > span, .tw-sprite-functions__node-text .tw-sprite-functions__owner > span')];
+            return {height: box.height, width: box.width, mini: Number(mini.getAttribute('height')), worldHeight: parseFloat(li.style.height),
+                clear: lines.every(line => {
+                    const range = document.createRange(); range.selectNodeContents(line);
+                    const text = range.getBoundingClientRect();
+                    return text.left >= box.left + 1 && text.right <= box.right - 1 && text.top >= box.top + 1 && text.bottom <= box.bottom - 1;
+                })};
+        }));
+        assert.equal(new Set(metrics.map(item => item.height)).size, 1);
+        assert.ok(metrics.every(item => item.height > 44 && item.width === 176 && item.clear));
+        assert.ok(metrics.every(item => item.mini === item.worldHeight));
+        await expect(page.locator('.tw-sprite-functions__edge-label-owner')).toHaveCount(0);
+        const message = page.locator('.tw-sprite-functions__edge-label[data-script-relation="message"]');
+        await expect(message.locator('text')).toHaveText('💬 go');
+        await expect(message.locator('.tw-sprite-functions__relation-wait')).toHaveCount(1);
+        const geometry = await page.locator('figure').evaluate(graph => {
+            const nodes = [...graph.querySelectorAll('.tw-sprite-functions__node')];
+            const worker = nodes.find(node => node.getAttribute('data-function-key') === 'worker').parentElement as HTMLElement;
+            const path = graph.querySelector<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge$=">worker"][data-kind="forward"]');
+            const point = path.getPointAtLength(path.getTotalLength());
+            const height = parseFloat(worker.style.height);
+            const expected = graph.getAttribute('data-direction') === 'LR' ?
+                {x: parseFloat(worker.style.left), y: parseFloat(worker.style.top) + height / 2} :
+                {x: parseFloat(worker.style.left) + 88, y: parseFloat(worker.style.top)};
+            return Math.hypot(point.x - expected.x, point.y - expected.y);
+        });
+        assert.ok(geometry < .1, 'receiving anchors use the expanded node height');
+        // Moving a tall source updates its paths and the diagram position stored for the minimap.
+        await source.hover();
+        const box = await source.boundingBox();
+        const incident = page.locator('.tw-sprite-functions__edges > path[data-script-relation="message"]');
+        const before = await incident.getAttribute('d');
+        await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+        await page.mouse.down(); await page.mouse.move(box.x + box.width / 2 + 48, box.y + box.height / 2 + 24, {steps: 4}); await page.mouse.up();
+        assert.ok(await page.evaluate(() => Boolean((window as any).changes.at(-1)?.graphPositions)));
+        assert.notEqual(await incident.getAttribute('d'), before);
+        const saved = await page.evaluate(direction => (window as any).changes.at(-1).graphPositions.cat[direction]['script:["cat","flag"]'], direction);
+        const mini = await page.locator('[data-node-key="script:[\\"cat\\",\\"flag\\"]"]').evaluate(node => ({x: Number(node.getAttribute('x')), y: Number(node.getAttribute('y'))}));
+        assert.deepEqual(mini, saved);
+        assert.ok(await message.getAttribute('transform'));
+        await screenshot(page, `node-label-long-${direction}`);
     }
 });
