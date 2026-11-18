@@ -1336,17 +1336,12 @@
 
 .tw-sprite-functions__edges path {
     fill: none;
-    stroke: var(--text-primary-transparent, #575e75);
+    stroke: var(--tw-function-edge-stroke);
     stroke-width: 1.5;
 }
 
-.tw-sprite-functions__edges path[data-kind="back"],
-.tw-sprite-functions__edges path[data-kind="self"] {
-    stroke-dasharray: 5 4;
-}
-
 .tw-sprite-functions__edges marker path {
-    fill: var(--text-primary-transparent, #575e75);
+    fill: var(--tw-function-edge-stroke);
     stroke: none;
 }
 
@@ -1406,9 +1401,9 @@
     font-size: .7rem;
 }
 
-/* Hovering or focusing a function: its callers' links come in blue, its callees' go out in orange.
-   Both stay at 3:1 or more against the graph in the light theme (#e6f0ff) and the dark theme (#111). */
+/* Node rings distinguish callers and callees. Every function arrow keeps the Editor's shared style. */
 .tw-sprite-functions__graph {
+    --tw-function-edge-stroke: var(--tw-script-function-stroke, light-dark(#7051c7, #c9abff));
     --tw-call-in: #3373cc;
     --tw-call-out: #c96b00;
 }
@@ -1428,25 +1423,6 @@
 
 .tw-sprite-functions__edges path[data-highlight] {
     stroke-width: 2.5;
-}
-
-.tw-sprite-functions__edges path[data-highlight="in"],
-.tw-sprite-functions__edges marker[data-highlight="in"] path {
-    stroke: var(--tw-call-in);
-}
-
-.tw-sprite-functions__edges path[data-highlight="out"],
-.tw-sprite-functions__edges path[data-highlight="self"],
-.tw-sprite-functions__edges marker[data-highlight="out"] path {
-    stroke: var(--tw-call-out);
-}
-
-.tw-sprite-functions__edges marker[data-highlight="in"] path {
-    fill: var(--tw-call-in);
-}
-
-.tw-sprite-functions__edges marker[data-highlight="out"] path {
-    fill: var(--tw-call-out);
 }
 
 .tw-sprite-functions__node[data-highlight="self"] {
@@ -1535,21 +1511,17 @@
 
 .tw-sprite-functions__minimap-edges path {
     fill: none;
-    stroke: currentColor;
+    stroke: var(--tw-function-edge-stroke);
     stroke-opacity: .35;
     stroke-width: 1px;
     vector-effect: non-scaling-stroke;
 }
 
-.tw-sprite-functions__minimap-edges path[data-highlight="in"] {
-    stroke: var(--tw-call-in);
-    stroke-opacity: 1;
-}
-
+.tw-sprite-functions__minimap-edges path[data-highlight="in"],
 .tw-sprite-functions__minimap-edges path[data-highlight="out"],
 .tw-sprite-functions__minimap-edges path[data-highlight="self"] {
-    stroke: var(--tw-call-out);
     stroke-opacity: 1;
+    stroke-width: 1.75px;
 }
 
 .tw-sprite-functions__minimap rect {
