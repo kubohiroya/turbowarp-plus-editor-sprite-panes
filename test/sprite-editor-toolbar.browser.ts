@@ -213,14 +213,14 @@ test('rail controls change graph direction and independently filter function and
     let bounds = await controls.boundingBox();
     const controlsTop = bounds.y;
     assert.ok(bounds.x >= rail.x && bounds.x + bounds.width <= rail.x + rail.width);
-    const lowest = await functions.boundingBox();
+    const lowest = await messages.boundingBox();
     const add = await root.locator('.tw-sprite-functions__add').boundingBox();
     assert.ok(Math.abs(lowest.y + lowest.height - add.y - add.height) <= 1,
         'the lowest button aligns with the Add function button');
     const flowBounds = await toggle.boundingBox();
-    const messageBounds = await messages.boundingBox();
-    assert.ok(Math.abs(flowBounds.y + flowBounds.height + 21 - messageBounds.y) <= 1 &&
-        Math.abs(messageBounds.y + messageBounds.height - lowest.y) <= 1, 'the direction and relation groups have a half-button gap, and relation segments meet');
+    const functionBounds = await functions.boundingBox();
+    assert.ok(Math.abs(flowBounds.y + flowBounds.height + 21 - functionBounds.y) <= 1 &&
+        Math.abs(functionBounds.y + functionBounds.height - lowest.y) <= 1, 'the direction and relation groups have a half-button gap, and relation segments meet');
     await expect(controls).toHaveCSS('gap', '20px');
     await expect(toggle).toHaveCSS('border-radius', '5px');
     await expect(root.locator('.tw-sprite-functions__relation-toggles')).toHaveCSS('border-radius', '5px');
@@ -278,7 +278,7 @@ test('rail controls change graph direction and independently filter function and
     await expect(functions).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await functions.click();
     const addAfterThemeChange = await root.locator('.tw-sprite-functions__add').boundingBox();
-    const lowestAfterThemeChange = await functions.boundingBox();
+    const lowestAfterThemeChange = await messages.boundingBox();
     assert.ok(Math.abs(lowestAfterThemeChange.y + lowestAfterThemeChange.height - addAfterThemeChange.y - addAfterThemeChange.height) <= 1,
         'the bottom button and Add function share their bottom edge');
     await tabs.evaluate(element => {element.scrollTop = element.scrollHeight;});

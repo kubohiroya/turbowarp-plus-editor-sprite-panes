@@ -775,7 +775,7 @@ export function FunctionRelationToggles({locale, value, onChange}: {
         `${value[kind] ? 'Hide' : 'Show'} ${kind === 'function' ? 'function calls' : 'message sends and receivers'}`;
     return <div className="tw-sprite-functions__relation-toggles" role="group"
         aria-label={ja ? '呼び出し関係の表示' : 'Visible relations'}>
-        {(['message', 'function'] as const).map(kind => <button key={kind} type="button"
+        {(['function', 'message'] as const).map(kind => <button key={kind} type="button"
             data-relation-kind={kind} aria-label={labels[kind]} title={tooltip(kind)} aria-pressed={value[kind]}
             onClick={() => onChange({...value, [kind]: !value[kind]})}
             onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
