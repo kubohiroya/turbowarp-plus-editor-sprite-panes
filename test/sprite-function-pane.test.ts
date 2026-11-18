@@ -250,7 +250,7 @@ test('the external direction overrides saved settings and survives other setting
     assert.equal(settings.length, 2, 'a controlled direction change does not emit a redundant settings update');
 });
 
-test('the rail direction switch is one labeled button and highlights its current direction', t => {
+test('the rail direction group has two mutually exclusive labeled buttons', t => {
     const container = window.document.createElement('div');
     window.document.querySelector('main').append(container);
     const root = createRoot(container);
@@ -259,19 +259,23 @@ test('the rail direction switch is one labeled button and highlights its current
         {locale, value, onChange: next => changes.push(next)})));
     t.after(() => {act(() => root.unmount()); container.remove();});
     draw('LR');
-    const button = container.querySelector('button');
-    assert.equal(container.querySelectorAll('button').length, 1);
-    assert.equal(button.textContent, 'LR|TD');
-    assert.equal(button.querySelector('[data-selected]').textContent, 'LR');
-    assert.equal(button.getAttribute('aria-label'), '流れ: 左から右 (LR)。上から下 (TD)に切り替え');
-    assert.equal(button.getAttribute('title'), button.getAttribute('aria-label'));
-    act(() => button.click());
+    const [lr, td] = [...container.querySelectorAll<HTMLButtonElement>('button')];
+    assert.equal(container.querySelectorAll('button').length, 2);
+    assert.equal(lr.textContent, 'LR');
+    assert.equal(td.textContent, 'TD');
+    assert.equal(lr.getAttribute('aria-pressed'), 'true');
+    assert.equal(td.getAttribute('aria-pressed'), 'false');
+    assert.equal(lr.getAttribute('title'), '流れ: 左から右 (LR)');
+    assert.equal(td.getAttribute('title'), '流れ: 上から下 (TD)');
+    act(() => lr.click());
+    assert.deepEqual(changes, [], 'the selected direction stays selected');
+    act(() => td.click());
     assert.deepEqual(changes, ['TD']);
     draw('TD', 'en');
-    assert.equal(button.querySelector('[data-selected]').textContent, 'TD');
-    assert.equal(button.getAttribute('data-direction'), 'TD');
-    assert.equal(button.getAttribute('aria-label'), 'Flow: Top to bottom (TD). Switch to Left to right (LR)');
-    act(() => button.click());
+    assert.equal(lr.getAttribute('aria-pressed'), 'false');
+    assert.equal(td.getAttribute('aria-pressed'), 'true');
+    assert.equal(td.getAttribute('aria-label'), 'Flow: Top to bottom (TD)');
+    act(() => lr.click());
     assert.deepEqual(changes, ['TD', 'LR']);
 });
 
@@ -923,16 +927,15 @@ test('the call graph zooms with − + = and Ctrl + wheel, and pans with the whee
     const [, x0, y0] = start.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/).map(Number);
     assert.equal(transform(), `translate(${x0 - 10}px, ${y0 - 20}px) scale(1)`);
 
-    // Dragging from a function moves the graph and does not open the function.
-    const node = container.querySelector('[data-function-key="main"]');
+    // Dragging the background moves the graph without moving or opening a node.
     act(() => {
-        node.dispatchEvent(new window.MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 50, clientY: 50}));
+        figure.dispatchEvent(new window.MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 50, clientY: 50}));
         window.dispatchEvent(new window.MouseEvent('pointermove', {clientX: 80, clientY: 60}));
     });
     assert.ok(figure.hasAttribute('data-panning'));
     act(() => {
         window.dispatchEvent(new window.MouseEvent('pointerup', {clientX: 80, clientY: 60}));
-        node.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+        figure.dispatchEvent(new window.MouseEvent('click', {bubbles: true, detail: 1}));
     });
     assert.equal(transform(), `translate(${x0 + 20}px, ${y0 - 10}px) scale(1)`);
     assert.equal(container.querySelector('dialog'), null);
@@ -948,4 +951,34 @@ test('the call graph minimap shows every function and the part in view', t => {
     const view = map.querySelector('.tw-sprite-functions__minimap-view');
     assert.equal(view.getAttribute('width'), '400');
     assert.equal(view.getAttribute('height'), '300');
+});
+
+test('hand-placed graph positions restore per target and direction and survive hidden relation kinds', t => {
+    const data = {targetId: 'cat', isStage: false, functions: [
+        fn('entry', 'entry', 10, 20, callees('entry', ['worker'])), fn('worker', 'worker', 30, 40)
+    ]};
+    const snapshot = structuredClone(data);
+    const positions = {cat: {LR: {worker: {x: -80, y: -60}}, TD: {worker: {x: 250, y: 100}}},
+        other: {LR: {worker: {x: 10, y: 20}}}};
+    const {container, draw} = render(t, {view: 'graph', direction: 'LR', data, defaultSettings: {graphPositions: positions}});
+    const point = () => {
+        const node = container.querySelector<HTMLElement>('[data-function-key="worker"]').parentElement;
+        return {x: parseFloat(node.style.left), y: parseFloat(node.style.top)};
+    };
+    assert.deepEqual(point(), positions.cat.LR.worker);
+    const mini = container.querySelector<SVGRectElement>('[data-node-key="worker"]');
+    assert.deepEqual([Number(mini.getAttribute('x')), Number(mini.getAttribute('y'))], [-80, -60]);
+    const area = container.querySelector('.tw-sprite-functions__minimap svg').getAttribute('viewBox').split(' ').map(Number);
+    assert.ok(area[0] < -80 && area[1] < -60, 'negative positions remain inside the navigable minimap area');
+    draw({direction: 'TD'});
+    assert.deepEqual(point(), positions.cat.TD.worker);
+    draw({direction: 'LR'});
+    assert.deepEqual(point(), positions.cat.LR.worker);
+    draw({data: {...data, targetId: 'other'}});
+    assert.deepEqual(point(), positions.other.LR.worker);
+    draw({data, relationVisibility: {function: false, message: false}});
+    assert.equal(container.querySelector('[data-function-key="worker"]'), null);
+    draw({data, relationVisibility: {function: true, message: true}});
+    assert.deepEqual(point(), positions.cat.LR.worker);
+    assert.deepEqual(data, snapshot, 'diagram settings do not modify the script block positions');
 });

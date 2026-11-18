@@ -64,14 +64,9 @@
     align-items: center;
     box-sizing: border-box;
     inline-size: 34px;
-    gap: 0;
+    gap: 20px;
     margin-block: 6px calc(var(--tw-sprite-functions-panel-padding, .6rem) + var(--tw-sprite-functions-corner-inset, 8px));
     padding: 0;
-    overflow: hidden;
-    border: 1px solid var(--ui-black-transparent, #ccd5e2);
-    border-radius: 5px;
-    background: var(--ui-white, Canvas);
-    box-shadow: 0 1px 4px rgb(0 0 0 / .16);
 }
 
 .tw-plus-sprite-toolbar-sections button,

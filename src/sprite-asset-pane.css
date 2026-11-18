@@ -1444,6 +1444,15 @@
     filter: brightness(1.05);
 }
 
+.tw-sprite-functions__node {
+    touch-action: none;
+}
+
+.tw-sprite-functions__graph[data-node-dragging] .tw-sprite-functions__node {
+    cursor: grabbing;
+    user-select: none;
+}
+
 .tw-sprite-functions__node:focus-visible {
     outline: 3px solid var(--looks-secondary, #855cd6);
     outline-offset: 2px;
@@ -1855,58 +1864,53 @@
     content: "⚠ ";
 }
 
-/* A single control fits the section rail; the selected direction remains visible. */
-.tw-sprite-functions__flow-toggle {
-    display: inline-flex;
+/* Direction and relation filters are separate segmented groups in the section rail. */
+.tw-sprite-functions__flow-toggle,
+.tw-sprite-functions__relation-toggles {
+    display: flex;
     flex-direction: column;
+    flex: none;
+    box-sizing: border-box;
+    inline-size: 34px;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: 5px;
+    background: var(--ui-white, Canvas);
+    box-shadow: 0 1px 4px rgb(0 0 0 / .16);
+}
+
+.tw-sprite-functions__flow-toggle button {
+    display: inline-flex;
     box-sizing: border-box;
     align-items: center;
     justify-content: center;
     flex: none;
-    gap: 2px;
     inline-size: 32px;
-    block-size: 48px;
+    block-size: 40px;
+    min-block-size: 40px;
     padding: 4px;
     border: 0;
     border-radius: 0;
-    border-block-end: 1px solid var(--ui-black-transparent, #ccd5e2);
     background: var(--ui-white, Canvas);
     color: var(--text-primary, CanvasText);
     font: 12px/16px sans-serif;
     cursor: pointer;
 }
 
-.tw-sprite-functions__flow-toggle [data-selected] {
-    color: var(--looks-secondary, Highlight);
+.tw-sprite-functions__flow-toggle button[aria-pressed="true"] {
+    background: var(--looks-secondary, Highlight);
+    color: var(--tw-plus-accent-text, #fff);
     font-weight: 700;
 }
 
-.tw-sprite-functions__flow-toggle > span:not(.tw-sprite-functions__flow-divider) {
-    inline-size: 24px;
-    text-align: center;
+.tw-sprite-functions__flow-toggle button + button {
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
 }
 
-.tw-sprite-functions__flow-divider {
-    flex: none;
-    inline-size: 18px;
-    block-size: 1px;
-    overflow: hidden;
-    background: currentColor;
-    opacity: .4;
-    font-size: 0;
-}
-
-.tw-sprite-functions__flow-toggle:focus-visible {
+.tw-sprite-functions__flow-toggle button:focus-visible {
     outline: 2px solid var(--looks-secondary, Highlight);
     outline-offset: -3px;
-}
-
-.tw-sprite-functions__relation-toggles {
-    display: flex;
-    flex-direction: column;
-    flex: none;
-    gap: 0;
-    inline-size: 32px;
 }
 
 .tw-sprite-functions__relation-toggles button {

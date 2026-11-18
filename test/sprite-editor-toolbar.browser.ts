@@ -189,18 +189,24 @@ test('rail controls change graph direction and independently filter function and
     const edges = (kind: string) => graph.locator(`.tw-sprite-functions__edges > path[data-script-relation="${kind}"]`);
     const nodes = graph.locator('.tw-sprite-functions__node');
     const controls = root.locator('.tw-plus-sprite-toolbar-section-controls');
-    await expect(toggle).toHaveAttribute('data-direction', 'LR');
-    await expect(toggle).toHaveText('LR|TD');
-    await expect(toggle).toHaveCSS('width', '32px');
-    await expect(toggle).toHaveCSS('height', '48px');
+    const lr = toggle.locator('[data-direction="LR"]');
+    const td = toggle.locator('[data-direction="TD"]');
+    await expect(lr).toHaveAttribute('aria-pressed', 'true');
+    await expect(td).toHaveAttribute('aria-pressed', 'false');
+    await expect(lr).toHaveAttribute('title', 'Flow: Left to right (LR)');
+    await expect(td).toHaveAttribute('title', 'Flow: Top to bottom (TD)');
+    await expect(toggle).toHaveCSS('width', '34px');
+    await expect(toggle).toHaveCSS('height', '82px');
+    await expect(lr).toHaveCSS('height', '40px');
+    await expect(td).toHaveCSS('height', '40px');
     await expect(functions).toHaveCSS('height', '40px');
     await expect(messages).toHaveCSS('height', '40px');
-    const directions = await toggle.locator('span:not([aria-hidden])').evaluateAll(nodes => nodes.map(node => {
+    const directions = await toggle.locator('button').evaluateAll(nodes => nodes.map(node => {
         const box = node.getBoundingClientRect();
         return {x: box.x, y: box.y, width: box.width, height: box.height};
     }));
     assert.ok(Math.abs(directions[0].x - directions[1].x) < 1 &&
-        directions[0].y + directions[0].height < directions[1].y, 'LR and TD are clearly stacked vertically');
+        Math.abs(directions[0].y + directions[0].height - directions[1].y) < 1, 'LR and TD are clearly stacked vertically');
     await expect(graph).toHaveAttribute('data-direction', 'LR');
     assert.equal(await tabs.locator('button:not([role="tab"])').count(), 0);
     const rail = await root.locator('.tw-plus-sprite-toolbar-rail').boundingBox();
@@ -213,18 +219,23 @@ test('rail controls change graph direction and independently filter function and
         'the lowest button aligns with the Add function button');
     const flowBounds = await toggle.boundingBox();
     const messageBounds = await messages.boundingBox();
-    assert.ok(Math.abs(flowBounds.y + flowBounds.height - messageBounds.y) <= 1 &&
-        Math.abs(messageBounds.y + messageBounds.height - lowest.y) <= 1, 'segments meet without gaps');
-    await expect(controls).toHaveCSS('border-radius', '5px');
+    assert.ok(Math.abs(flowBounds.y + flowBounds.height + 21 - messageBounds.y) <= 1 &&
+        Math.abs(messageBounds.y + messageBounds.height - lowest.y) <= 1, 'the direction and relation groups have a half-button gap, and relation segments meet');
+    await expect(controls).toHaveCSS('gap', '20px');
+    await expect(toggle).toHaveCSS('border-radius', '5px');
+    await expect(root.locator('.tw-sprite-functions__relation-toggles')).toHaveCSS('border-radius', '5px');
     await expect(functions).toHaveCSS('border-radius', '0px');
-    await toggle.focus();
-    await toggle.press('Enter');
+    await td.focus();
+    await td.press('Enter');
     await expect(graph).toHaveAttribute('data-direction', 'TD');
-    await expect(toggle.locator('[data-selected]')).toHaveText('TD');
-    await expect(toggle).toBeFocused();
-    await toggle.press('Space');
+    await expect(td).toHaveAttribute('aria-pressed', 'true');
+    await expect(lr).toHaveAttribute('aria-pressed', 'false');
+    await expect(td).toBeFocused();
+    await lr.focus();
+    await lr.press('Space');
     await expect(graph).toHaveAttribute('data-direction', 'LR');
-    await expect(toggle.locator('[data-selected]')).toHaveText('LR');
+    await expect(lr).toHaveAttribute('aria-pressed', 'true');
+    await expect(td).toHaveAttribute('aria-pressed', 'false');
     await expect(root.locator('figure .tw-sprite-functions__flow-toggle')).toHaveCount(0);
     await expect(functions).toHaveAttribute('title', 'Hide function calls');
     await expect(messages).toHaveAttribute('title', 'Hide message sends and receivers');
@@ -258,6 +269,9 @@ test('rail controls change graph direction and independently filter function and
     await expect(functions).toHaveCSS('background-color', 'rgb(36, 99, 188)');
     await expect(functions).toHaveCSS('color', 'rgb(255, 255, 255)');
     await expect(functions.locator('svg')).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(lr).toHaveCSS('background-color', 'rgb(36, 99, 188)');
+    await expect(lr).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(td).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await root.evaluate(element => {element.style.setProperty('--looks-secondary', '#bc4530');});
     await expect(messages).toHaveCSS('background-color', 'rgb(188, 69, 48)');
     await functions.click();

@@ -136,7 +136,11 @@ export interface FunctionPaneSettings {
     create: FunctionKind;
     /** The call graph's independent relation filters, when the host offers them. */
     relationVisibility?: FunctionRelationVisibility;
+    /** Diagram positions are separate for each target and flow direction; project blocks never move. */
+    graphPositions?: Record<string, Partial<Record<CallGraphDirection, GraphNodePositions>>>;
 }
+
+export type GraphNodePositions = Record<string, {x: number; y: number}>;
 const defaultSettings: FunctionPaneSettings = {mode: 'list', order: 'name', direction: 'LR', create: 'procedure'};
 
 /**
@@ -409,6 +413,8 @@ export interface CallGraphNode {
     layer: number;
     /** A function that calls no function and that no function calls, set apart below the others. */
     isolated?: boolean;
+    /** This node was placed in the diagram by hand. */
+    manual?: boolean;
     x: number;
     y: number;
 }
@@ -425,6 +431,8 @@ export interface CallGraphLayout {
     edges: CallGraphEdge[];
     width: number;
     height: number;
+    left?: number;
+    top?: number;
 }
 
 interface RelationGraph {
@@ -736,7 +744,7 @@ function FunctionEditor({targetId, functionId, editable, label, mountEditor, lar
         role="group" aria-label={label} data-function-editor={functionId} data-editable={editable || undefined} />;
 }
 
-/** A compact direction switch for the host's section rail, separate from the call graph. */
+/** Two mutually exclusive directions in the host's section rail, separate from the call graph. */
 export function FunctionFlowToggle({locale, value, onChange}: {
     locale: string;
     value: CallGraphDirection;
@@ -744,16 +752,14 @@ export function FunctionFlowToggle({locale, value, onChange}: {
 }) {
     const ja = /^ja(?:-|$)/i.test(locale);
     const labels = ja ? japanese : english;
-    const next = value === 'LR' ? 'TD' : 'LR';
-    const label = ja ? `${labels.flow}: ${labels.directions[value]}。${labels.directions[next]}に切り替え` :
-        `${labels.flow}: ${labels.directions[value]}. Switch to ${labels.directions[next]}`;
-    return <button type="button" className="tw-sprite-functions__flow-toggle" data-direction={value}
-        title={label} aria-label={label} onClick={() => onChange(next)}
-        onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
-        <span data-selected={value === 'LR' || undefined}>LR</span>
-        <span aria-hidden="true" className="tw-sprite-functions__flow-divider">|</span>
-        <span data-selected={value === 'TD' || undefined}>TD</span>
-    </button>;
+    return <div className="tw-sprite-functions__flow-toggle" role="group" aria-label={labels.flow}>
+        {(['LR', 'TD'] as const).map(direction => {
+            const label = `${labels.flow}: ${labels.directions[direction]}`;
+            return <button key={direction} type="button" data-direction={direction} aria-pressed={value === direction}
+                title={label} aria-label={label} onClick={() => { if (direction !== value) onChange(direction); }}
+                onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>{direction}</button>;
+        })}
+    </div>;
 }
 
 /** The host places these two independent graph filters beside the direction switch in its rail. */
@@ -928,6 +934,28 @@ function edgePath(from: CallGraphNode, to: CallGraphNode, kind: CallGraphEdge['k
         // Stay within the graph padding above the first row.
         return `M${x} ${y} C${x} ${y - 20}, ${x + 32} ${y - 20}, ${x + 20} ${y}`;
     }
+    if (from.manual || to.manual) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const horizontal = Math.abs(dx) >= width + 24 || Math.abs(dy) < height + 24 &&
+            (direction === 'LR' || Math.abs(dx) / width >= Math.abs(dy) / height);
+        if (horizontal) {
+            const sign = dx >= 0 ? 1 : -1;
+            const sx = from.x + (sign > 0 ? width : 0);
+            const sy = from.y + height / 2 + lane;
+            const tx = to.x + (sign > 0 ? 0 : width);
+            const ty = to.y + height / 2 + lane;
+            const bend = Math.max(24, Math.abs(tx - sx) / 2);
+            return `M${sx} ${sy} C${sx + bend * sign} ${sy}, ${tx - bend * sign} ${ty}, ${tx} ${ty}`;
+        }
+        const sign = dy >= 0 ? 1 : -1;
+        const sx = from.x + width / 2 + lane;
+        const sy = from.y + (sign > 0 ? height : 0);
+        const tx = to.x + width / 2 + lane;
+        const ty = to.y + (sign > 0 ? 0 : height);
+        const bend = Math.max(24, Math.abs(ty - sy) / 2);
+        return `M${sx} ${sy} C${sx} ${sy + bend * sign}, ${tx} ${ty - bend * sign}, ${tx} ${ty}`;
+    }
     if (direction === 'LR') {
         if (kind === 'back') {
             const sx = from.x + width / 2 + lane;
@@ -1023,6 +1051,15 @@ function edgeLabelBox(edge: CallGraphEdge, from: CallGraphNode, to: CallGraphNod
     const values = path.match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
     const tx = values[6];
     const ty = values[7];
+    if (edge.kind !== 'self' && (from.manual || to.manual)) {
+        const bx = values[4];
+        const by = values[5];
+        return Math.abs(tx - bx) >= Math.abs(ty - by) ?
+            {x: tx >= bx ? tx - 12 - label.width : tx + 12,
+                y: ty + (side < 0 ? -12 - label.height : 12), width: label.width, height: label.height} :
+            {x: tx + (side < 0 ? -12 - label.width : 12),
+                y: ty >= by ? ty - 12 - label.height : ty + 12, width: label.width, height: label.height};
+    }
     if (edge.kind === 'self') return {x: to.x + callGraphNodeSize.width + 24,
         y: to.y + index * (label.height + 12), width: label.width, height: label.height};
     if (edge.kind === 'back') return direction === 'LR' ?
@@ -1031,6 +1068,66 @@ function edgeLabelBox(edge: CallGraphEdge, from: CallGraphNode, to: CallGraphNod
     return direction === 'LR' ?
         {x: tx - 12 - label.width, y: ty + (side < 0 ? -12 - label.height : 12), width: label.width, height: label.height} :
         {x: tx + (side < 0 ? -12 - label.width : 12), y: ty - 12 - label.height, width: label.width, height: label.height};
+}
+
+/** A moved node must not hide another edge's receiving label. Both drawing and bounds use this choice. */
+function graphLabelBoxes(nodes: readonly CallGraphNode[], edges: readonly CallGraphEdge[], direction: CallGraphDirection,
+    labels: Map<string, EdgeLabel[]>) {
+    const byId = new Map(nodes.map(node => [node.fn.id, node]));
+    const result = new Map<string, {x: number; y: number; width: number; height: number}>();
+    const manual = nodes.some(node => node.manual);
+    const overlap = (a: {x: number; y: number; width: number; height: number}, b: {x: number; y: number; width: number; height: number}) =>
+        Math.max(0, Math.min(a.x + a.width, b.x + b.width + 6) - Math.max(a.x, b.x - 6)) *
+        Math.max(0, Math.min(a.y + a.height, b.y + b.height + 6) - Math.max(a.y, b.y - 6));
+    for (const edge of edges) {
+        const key = `${edge.from}>${edge.to}`;
+        const from = byId.get(edge.from);
+        const to = byId.get(edge.to);
+        const variants = labels.get(key) ?? [];
+        variants.forEach((label, index) => {
+            if (!label.width) return;
+            const preferred = edgeLabelBox(edge, from, to, label, direction, index, variants.length);
+            let chosen = preferred;
+            if (manual) {
+                const lane = variants.length > 1 ? index === 0 ? -16 : 16 : 0;
+                const coordinates = edgePath(from, to, edge.kind, direction, lane).match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
+                const tx = coordinates[6];
+                const ty = coordinates[7];
+                const left = to.x - label.width - 12;
+                const right = to.x + callGraphNodeSize.width + 12;
+                const above = to.y - label.height - 12;
+                const below = to.y + callGraphNodeSize.height + 12;
+                const candidates = [preferred,
+                    {x: left, y: ty - label.height / 2}, {x: right, y: ty - label.height / 2},
+                    {x: tx - label.width / 2, y: above}, {x: tx - label.width / 2, y: below},
+                    {x: left, y: above}, {x: right, y: above}, {x: left, y: below}, {x: right, y: below}
+                ].map(point => ({...point, width: label.width, height: label.height}));
+                const samples = Array.from({length: 25}, (_, sample) => {
+                    const t = sample / 24;
+                    const u = 1 - t;
+                    return {x: u ** 3 * coordinates[0] + 3 * u * u * t * coordinates[2] +
+                        3 * u * t * t * coordinates[4] + t ** 3 * tx,
+                    y: u ** 3 * coordinates[1] + 3 * u * u * t * coordinates[3] +
+                        3 * u * t * t * coordinates[5] + t ** 3 * ty};
+                });
+                const score = (box: typeof preferred) => {
+                    const blocked = nodes.reduce((sum, node) => sum + overlap(box, {...node, ...callGraphNodeSize}), 0);
+                    const labels = [...result.values()].reduce((sum, other) => sum + overlap(box, other), 0);
+                    const line = samples.filter(point => point.x >= box.x - 3 && point.x <= box.x + box.width + 3 &&
+                        point.y >= box.y - 3 && point.y <= box.y + box.height + 3).length;
+                    return blocked * 100000 + labels * 1000 + line * 500 +
+                        Math.hypot(box.x + box.width / 2 - tx, box.y + box.height / 2 - ty);
+                };
+                let best = score(preferred);
+                for (const candidate of candidates) {
+                    const value = score(candidate);
+                    if (value < best) { best = value; chosen = candidate; }
+                }
+            }
+            result.set(`${key}:${label.kind}`, chosen);
+        });
+    }
+    return result;
 }
 
 /** Reserve room for concrete edge labels in both the graph's fitting bounds and its node spacing. */
@@ -1055,6 +1152,34 @@ function labelledGraph(functions: readonly SpriteFunction[], direction: CallGrap
 
 // Keep the same sixteen-unit hourglass as the code area's relation badge.
 const relationWaitGlyph = 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12';
+
+/** A hand-placed node may cross the origin; include its paths and labels in navigation bounds. */
+function positionedGraph(base: CallGraphLayout, positions: GraphNodePositions, direction: CallGraphDirection,
+    labels: Map<string, EdgeLabel[]>): CallGraphLayout {
+    const nodes = base.nodes.map(node => {
+        const point = Object.hasOwn(positions, node.fn.id) && positions[node.fn.id];
+        return point && Number.isFinite(point.x) && Number.isFinite(point.y) ? {...node, ...point, manual: true} : node;
+    });
+    if (!nodes.some(node => node.manual)) return base;
+    const byId = new Map(nodes.map(node => [node.fn.id, node]));
+    const boxes = nodes.map(node => ({x: node.x, y: node.y, ...callGraphNodeSize}));
+    boxes.push(...graphLabelBoxes(nodes, base.edges, direction, labels).values());
+    for (const edge of base.edges) {
+        const variants = labels.get(`${edge.from}>${edge.to}`) ?? [];
+        const lanes = variants.length > 1 ? [-16, 16] : [0];
+        for (const lane of lanes) {
+            const coordinates = edgePath(byId.get(edge.from), byId.get(edge.to), edge.kind, direction, lane)
+                .match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
+            const x = coordinates.filter((_, index) => index % 2 === 0);
+            const y = coordinates.filter((_, index) => index % 2 === 1);
+            boxes.push({x: Math.min(...x), y: Math.min(...y), width: Math.max(...x) - Math.min(...x), height: Math.max(...y) - Math.min(...y)});
+        }
+    }
+    const left = Math.min(0, ...boxes.map(box => box.x - graphPadding));
+    const top = Math.min(0, ...boxes.map(box => box.y - graphPadding));
+    return {...base, nodes, left, top, width: Math.max(...boxes.map(box => box.x + box.width + graphPadding)) - left,
+        height: Math.max(...boxes.map(box => box.y + box.height + graphPadding)) - top};
+}
 
 /** How an edge or a node relates to the function under the pointer. */
 export interface CallGraphHighlight {
@@ -1091,6 +1216,8 @@ interface GraphView {
     scale: number;
     x: number;
     y: number;
+    /** A node drag keeps its viewport until the next explicit pan, zoom or reset. */
+    preserve?: boolean;
 }
 interface Size {
     width: number;
@@ -1110,8 +1237,8 @@ function startView(size: Size, layout: CallGraphLayout): GraphView {
     // Center a graph that fits, as the code area does; otherwise start from its first function.
     return {
         scale: 1,
-        x: Math.max(0, (size.width - layout.width) / 2),
-        y: Math.max(0, (size.height - layout.height) / 2)
+        x: Math.max(0, (size.width - layout.width) / 2) - (layout.left ?? 0),
+        y: Math.max(0, (size.height - layout.height) / 2) - (layout.top ?? 0)
     };
 }
 
@@ -1124,8 +1251,8 @@ function fitView(view: GraphView, size: Size, layout: CallGraphLayout): GraphVie
     const keepY = Math.min(height, size.height / 2);
     return {
         scale,
-        x: clamp(view.x, keepX - width, size.width - keepX),
-        y: clamp(view.y, keepY - height, size.height - keepY)
+        x: clamp(view.x, keepX - width - (layout.left ?? 0) * scale, size.width - keepX - (layout.left ?? 0) * scale),
+        y: clamp(view.y, keepY - height - (layout.top ?? 0) * scale, size.height - keepY - (layout.top ?? 0) * scale)
     };
 }
 
@@ -1133,7 +1260,8 @@ function fitView(view: GraphView, size: Size, layout: CallGraphLayout): GraphVie
 function scrollArea(view: GraphView, size: Size, layout: CallGraphLayout) {
     const padX = (size.width - Math.min(layout.width * view.scale, size.width / 2)) / view.scale;
     const padY = (size.height - Math.min(layout.height * view.scale, size.height / 2)) / view.scale;
-    return {x: -padX, y: -padY, width: layout.width + 2 * padX, height: layout.height + 2 * padY};
+    return {x: (layout.left ?? 0) - padX, y: (layout.top ?? 0) - padY,
+        width: layout.width + 2 * padX, height: layout.height + 2 * padY};
 }
 
 function zoomAround(view: GraphView, factor: number, x: number, y: number): GraphView {
@@ -1153,7 +1281,8 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, settings, selectedId, corner, notice, onOpen, onOpenScript}: {
+function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, settings, positions, onPositionsChange,
+    selectedId, corner, notice, onOpen, onOpenScript}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
@@ -1161,6 +1290,8 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     relations: Map<string, ScriptRelation[]>;
     targetId: string;
     settings: FunctionPaneSettings;
+    positions: GraphNodePositions;
+    onPositionsChange(positions: GraphNodePositions): void;
     selectedId?: string;
     /** Drawn in the bottom left corner, over the graph. */
     corner?: React.ReactNode;
@@ -1172,8 +1303,11 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     // Functions in the same column or row follow their names.
     const edgeLabels = React.useMemo(() => graphEdgeLabels(relations, functions, scripts, targetId, labels === japanese ? '背景' : labels.stage),
         [relations, functions, scripts, targetId, labels.stage]);
-    const layout = React.useMemo(() => labelledGraph(functions, settings.direction, edgeLabels),
+    const automaticLayout = React.useMemo(() => labelledGraph(functions, settings.direction, edgeLabels),
         [functions, settings.direction, edgeLabels]);
+    const [nodeDraft, setNodeDraft] = React.useState<{id: string; positions: GraphNodePositions; view: GraphView} | null>(null);
+    const layout = React.useMemo(() => positionedGraph(automaticLayout, nodeDraft?.positions ?? positions, settings.direction, edgeLabels),
+        [automaticLayout, positions, nodeDraft?.positions, settings.direction, edgeLabels]);
     const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
     // A global function of another sprite may call one here; the uses of one there are not counted here.
     const called = React.useMemo(() => new Set(layout.edges.filter(edge => edge.from !== edge.to).map(edge => edge.to)),
@@ -1181,8 +1315,8 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     const unused = (fn: SpriteFunction) => !fn.owner && fn.calls === 0 && !called.has(fn.id);
     const marker = `${idPrefix}-arrow`;
     // Isolated functions keep their rows; the sort is stable.
-    const reading = [...layout.nodes].sort((a, b) => a.layer - b.layer || (a.isolated ? 0 :
-        settings.direction === 'LR' ? a.y - b.y : a.x - b.x));
+    const reading = [...automaticLayout.nodes].sort((a, b) => a.layer - b.layer || (a.isolated ? 0 :
+        settings.direction === 'LR' ? a.y - b.y : a.x - b.x)).map(node => byId.get(node.fn.id));
 
     const frame = React.useRef<HTMLElement>(null);
     const minimap = React.useRef<HTMLDivElement>(null);
@@ -1193,10 +1327,15 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     const [focused, setFocused] = React.useState<string | null>(null);
     const [panning, setPanning] = React.useState(false);
     const [mapDragging, setMapDragging] = React.useState(false);
-    const view = fitView(moved ?? startView(size, layout), size, layout);
+    const view = nodeDraft?.view ?? (moved?.preserve ? moved : fitView(moved ?? startView(size, layout), size, layout));
     const current = React.useRef({view, size, layout});
     current.current = {view, size, layout};
     const suppressClick = React.useRef(false);
+    const nodeGesture = React.useRef<{cancel(): void} | null>(null);
+    const graphContext = React.useRef({targetId, direction: settings.direction});
+    graphContext.current = {targetId, direction: settings.direction};
+    const savePositions = React.useRef(onPositionsChange);
+    savePositions.current = onPositionsChange;
 
     const move = React.useCallback((next: (view: GraphView, size: Size, layout: CallGraphLayout) => GraphView) => {
         const {view, size, layout} = current.current;
@@ -1206,6 +1345,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     }, []);
 
     React.useEffect(() => setMoved(null), [settings.direction]);
+    React.useEffect(() => () => nodeGesture.current?.cancel(), [targetId, settings.direction]);
 
     React.useLayoutEffect(() => {
         const element = frame.current;
@@ -1243,9 +1383,77 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
         return () => element.removeEventListener('wheel', wheel);
     }, [move]);
 
+    function startNodeDrag(event: React.PointerEvent, node: CallGraphNode) {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        // Focusing the button would reveal it and change the drag's coordinate system before movement.
+        event.preventDefault();
+        nodeGesture.current?.cancel();
+        const window = frame.current.ownerDocument.defaultView;
+        const button = event.currentTarget;
+        const pointerId = event.pointerId;
+        const start = {x: event.clientX, y: event.clientY, node: {x: node.x, y: node.y},
+            view: current.current.view, positions, context: graphContext.current};
+        let dragging = false;
+        let next = positions;
+        const matches = (pointer: PointerEvent) => pointerId === undefined || pointer.pointerId === undefined || pointer.pointerId === pointerId;
+        const sameGraph = () => graphContext.current.targetId === start.context.targetId &&
+            graphContext.current.direction === start.context.direction;
+        const clean = () => {
+            window.removeEventListener('pointermove', pointerMove);
+            window.removeEventListener('pointerup', pointerUp);
+            window.removeEventListener('pointercancel', cancel);
+            window.removeEventListener('blur', cancel);
+            button.removeEventListener('lostpointercapture', cancel);
+            if (typeof pointerId === 'number' && button.hasPointerCapture?.(pointerId)) button.releasePointerCapture(pointerId);
+            nodeGesture.current = null;
+        };
+        const preventDragClick = () => {
+            if (!dragging) return;
+            suppressClick.current = true;
+            window.setTimeout(() => {suppressClick.current = false;});
+        };
+        const cancel = (pointer?: Event) => {
+            if (pointer?.type === 'pointercancel' && !matches(pointer as PointerEvent)) return;
+            clean();
+            preventDragClick();
+            setNodeDraft(null);
+        };
+        const pointerMove = (pointer: PointerEvent) => {
+            if (!matches(pointer)) return;
+            if (!sameGraph()) { cancel(); return; }
+            const dx = pointer.clientX - start.x;
+            const dy = pointer.clientY - start.y;
+            if (!dragging && Math.hypot(dx, dy) < dragThreshold) return;
+            if (!dragging && typeof pointerId === 'number') button.setPointerCapture?.(pointerId);
+            dragging = true;
+            pointer.preventDefault();
+            next = {...start.positions, [node.fn.id]: {x: start.node.x + dx / start.view.scale,
+                y: start.node.y + dy / start.view.scale}};
+            setNodeDraft({id: node.fn.id, positions: next, view: start.view});
+        };
+        const pointerUp = (pointer: PointerEvent) => {
+            if (!matches(pointer)) return;
+            clean();
+            if (dragging && sameGraph()) {
+                preventDragClick();
+                // Expanding navigation bounds must not recenter the graph under the released pointer.
+                setMoved({...start.view, preserve: true});
+                savePositions.current(next);
+            }
+            setNodeDraft(null);
+        };
+        nodeGesture.current = {cancel};
+        window.addEventListener('pointermove', pointerMove, {passive: false});
+        window.addEventListener('pointerup', pointerUp);
+        window.addEventListener('pointercancel', cancel);
+        window.addEventListener('blur', cancel);
+        button.addEventListener('lostpointercapture', cancel);
+    }
+
     function startPan(event: React.PointerEvent) {
         if (event.button !== 0 || (event.target as Element)
-            .closest('.tw-sprite-functions__zoom, .tw-sprite-functions__minimap, .tw-sprite-functions__corner')) return;
+            .closest('.tw-sprite-functions__node, .tw-sprite-functions__zoom, .tw-sprite-functions__minimap, .tw-sprite-functions__corner')) return;
         const window = frame.current.ownerDocument.defaultView;
         const start = {x: event.clientX, y: event.clientY, view: current.current.view};
         let dragging = false;
@@ -1340,10 +1548,10 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     // Bring the function shown beside the pane, such as one just added, into view.
     const selectedNode = selectedId ? byId.get(selectedId) : undefined;
     React.useEffect(() => {
-        if (selectedNode && size.width) reveal(selectedNode);
+        if (selectedNode && size.width && !nodeDraft && !nodeGesture.current) reveal(selectedNode);
     }, [selectedNode?.fn.id, selectedNode?.x, selectedNode?.y, size.width > 0]);
 
-    const highlightId = pointed ?? focused;
+    const highlightId = nodeDraft?.id ?? pointed ?? focused;
     const highlight = highlightId && byId.has(highlightId) ? callGraphHighlight(layout.edges, highlightId) : null;
     // Draw the highlighted links over the others.
     const edges = highlight ? [...layout.edges].sort((a, b) =>
@@ -1368,11 +1576,12 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
             </path>;
         });
     });
-    const concreteLabels = edges.flatMap(edge => {
+    const labelBoxes = graphLabelBoxes(layout.nodes, layout.edges, settings.direction, edgeLabels);
+    const concreteLabels = layout.edges.flatMap(edge => {
         const key = `${edge.from}>${edge.to}`;
         return (edgeLabels.get(key) ?? []).flatMap((label, index, variants) => {
             if (!label.width) return [];
-            const box = edgeLabelBox(edge, byId.get(edge.from), byId.get(edge.to), label, settings.direction, index, variants.length);
+            const box = labelBoxes.get(`${key}:${label.kind}`);
             let offset = 6 + label.owner.length * 18;
             return [<g key={`${key}:${label.kind}`} className="tw-sprite-functions__edge-label"
                 data-edge={key} data-script-relation={label.kind} data-highlight={highlight?.edges.get(key)}
@@ -1406,6 +1615,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
 
     return <figure ref={frame} className="tw-sprite-functions__graph" data-direction={settings.direction}
         data-highlighting={highlight ? '' : undefined} data-panning={panning ? '' : undefined}
+        data-node-dragging={nodeDraft?.id}
         onPointerDown={startPan}
         onScroll={event => {
             // Focus may scroll the clipped frame; the view moves by its transform instead.
@@ -1413,7 +1623,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
             event.currentTarget.scrollTop = 0;
         }}
         onClickCapture={event => {
-            if (!suppressClick.current) return;
+            if (!suppressClick.current || event.detail === 0) return;
             suppressClick.current = false;
             event.preventDefault();
             event.stopPropagation();
@@ -1442,6 +1652,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
                     return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: callGraphNodeSize.height}}
                         data-isolated={node.isolated || undefined}>
                         <button type="button" className="tw-sprite-functions__node" data-function-key={script ? undefined : fn.id}
+                            data-dragging={nodeDraft?.id === fn.id || undefined} onPointerDown={event => startNodeDrag(event, node)}
                             data-script-key={script ? fn.id : undefined} data-kind={script ? 'script' : fn.kind}
                             data-scope={fn.scope === 'global' ? 'global' : undefined}
                             data-owner={script?.targetId ?? (fn.owner ? fn.owner.targetId : undefined)} aria-current={selectedId === fn.id || undefined}
@@ -1459,7 +1670,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
                             onPointerLeave={() => setPointed(id => id === fn.id ? null : id)}
                             onFocus={() => {
                                 setFocused(fn.id);
-                                reveal(node);
+                                if (!nodeGesture.current) reveal(node);
                             }}
                             onBlur={() => setFocused(id => id === fn.id ? null : id)}>
                             <span className="tw-sprite-functions__name">{label}</span>
@@ -1476,7 +1687,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
             onPointerDown={startMinimapDrag}>
             <svg viewBox={`${area.x} ${area.y} ${area.width} ${area.height}`} preserveAspectRatio="xMidYMid meet" focusable="false">
                 <g className="tw-sprite-functions__minimap-edges">{paths(false)}</g>
-                {layout.nodes.map(({fn, x, y}) => <rect key={fn.id} x={x} y={y} rx={8} width={callGraphNodeSize.width}
+                {layout.nodes.map(({fn, x, y}) => <rect key={fn.id} data-node-key={fn.id} x={x} y={y} rx={8} width={callGraphNodeSize.width}
                     height={callGraphNodeSize.height} data-highlight={highlight?.nodes.get(fn.id)} />)}
                 <rect className="tw-sprite-functions__minimap-view" x={-view.x / view.scale} y={-view.y / view.scale}
                     width={size.width / view.scale} height={size.height / view.scale} />
@@ -1720,6 +1931,9 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         {/* Without functions the graph stays, blank, and points to the button that makes one. */}
         {mode === 'graph' ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graph.functions}
             scripts={graph.scripts} relations={graph.relations} targetId={data.targetId} settings={settings} selectedId={graphSelection ?? added}
+            positions={settings.graphPositions?.[data.targetId]?.[settings.direction] ?? {}}
+            onPositionsChange={positions => change({graphPositions: {...settings.graphPositions,
+                [data.targetId]: {...settings.graphPositions?.[data.targetId], [settings.direction]: positions}}})}
             corner={addButton} notice={graph.functions.length || !visibility.function ? undefined : emptyText('graph')}
             onOpen={fn => setDialogId(fn.id)} onOpenScript={onOpenRelationScript} /> :
             !hats.length && !ordered.length ? <p className="tw-sprite-functions__empty">{emptyText('list')}</p> :
