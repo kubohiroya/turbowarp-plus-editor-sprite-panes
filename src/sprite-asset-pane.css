@@ -1836,11 +1836,46 @@
     inset-block-start: 8px;
     inset-inline-end: 8px;
     cursor: default;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    max-width: calc(100% - 16px);
 }
 
 .tw-sprite-functions__flow .tw-sprite-functions__choice {
     background: var(--ui-white, #fff);
     box-shadow: 0 1px 4px hsla(0, 0%, 0%, .15);
+}
+
+/* Message links use an event color and a dotted line, including in the minimap. */
+.tw-sprite-functions__edges path[data-relation="message"]:not([data-highlight]),
+.tw-sprite-functions__minimap-edges path[data-relation="message"] {
+    stroke: #9b7400;
+    stroke-dasharray: 2 4;
+}
+
+.tw-sprite-functions__edges marker[data-highlight="message"] path {
+    fill: #9b7400;
+}
+
+.tw-sprite-functions__edge-label {
+    fill: var(--text-primary, #575e75);
+    stroke: var(--ui-primary, #e6f0ff);
+    stroke-width: 4px;
+    paint-order: stroke;
+    font-size: 11px;
+    pointer-events: none;
+}
+
+.tw-sprite-functions__graph[data-highlighting] .tw-sprite-functions__edge-label:not([data-highlight]) {
+    opacity: .25;
+}
+
+.tw-sprite-functions__node[data-kind="script"] {
+    border-color: #9b7400;
+    color: var(--text-primary, #575e75);
+    background: var(--ui-white, #fff);
 }
 
 .tw-sprite-functions__corner .tw-sprite-functions__add {
@@ -1854,7 +1889,7 @@
     background: #8a8f98;
 }
 
-.tw-sprite-functions__node[data-owner] {
+.tw-sprite-functions__node[data-owner][aria-disabled="true"] {
     cursor: default;
 }
 

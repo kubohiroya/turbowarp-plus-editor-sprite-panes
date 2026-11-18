@@ -1,4 +1,5 @@
 import React from 'react';
+import {readMessageCallGraph, type MessageCallGraph, type MessageCallGraphScript} from './message-call-graph.ts';
 
 /**
  * A function of one sprite or the stage: a Scratch custom block (`procedure`) or a function of the
@@ -57,6 +58,8 @@ export const namedFunctionExtensions: readonly string[] = ['kubohiroyanamedfunct
 export interface SpriteHatScript {
     /** The id of the hat block. */
     id: string;
+    /** The owning target when a graph opens a script from another sprite or the stage. */
+    targetId?: string;
     /** How the hat reads, such as `when this sprite clicked`. The host spells it, as it knows the block. */
     label: string;
     /** Where the script sits in the code area. */
@@ -83,6 +86,8 @@ export interface FunctionPaneData {
      * are `<target id>:<hat id>`, so they cannot clash with this target's.
      */
     globals?: readonly SpriteFunction[];
+    /** Message senders and receivers, including scripts in other targets connected to this target. */
+    messageGraph?: MessageCallGraph;
 }
 
 export type FunctionOrder = 'name' | 'z' | 'n';
@@ -96,10 +101,15 @@ export interface FunctionPaneSettings {
     mode: FunctionPaneMode;
     order: FunctionOrder;
     direction: CallGraphDirection;
+    /** Arrow visibility only; toggling these leaves node positions and the view unchanged. */
+    showCalls?: boolean;
+    showMessages?: boolean;
     /** Which kind of function the add dialog starts with: the kind added last. */
     create: FunctionKind;
 }
-const defaultSettings: FunctionPaneSettings = {mode: 'list', order: 'name', direction: 'LR', create: 'procedure'};
+const defaultSettings: FunctionPaneSettings = {
+    mode: 'list', order: 'name', direction: 'LR', create: 'procedure', showCalls: true, showMessages: true
+};
 
 /**
  * Why creating a function failed: `duplicate` when a function of that name already exists, `invalid`
@@ -155,11 +165,13 @@ interface RuntimeBlock {
     id: string;
     opcode: string;
     parent?: string | null;
+    next?: string | null;
+    shadow?: boolean;
     topLevel?: boolean;
     x?: number;
     y?: number;
     inputs?: Record<string, {block?: string | null; shadow?: string | null}>;
-    fields?: Record<string, {value?: unknown}>;
+    fields?: Record<string, {id?: string; value?: unknown}>;
     mutation?: {proccode?: string; argumentnames?: string; warp?: string | boolean};
 }
 
@@ -167,6 +179,8 @@ interface RuntimeBlock {
 export interface FunctionTarget {
     id: string;
     isStage?: boolean;
+    isOriginal?: boolean;
+    variables?: Record<string, {name: string; type?: string}>;
     /** The name of the sprite, as the VM's `getName()` gives it. */
     getName?(): string;
     sprite?: {name?: string};
@@ -271,7 +285,10 @@ const targetName = (target: FunctionTarget) =>
  * in `globals`, with the target that defines them, and link to this target's functions by their ids.
  */
 export function readTargetFunctions(target: FunctionTarget,
-    {extensions = namedFunctionExtensions, others = []}: {extensions?: readonly string[]; others?: readonly FunctionTarget[]} = {}
+    {extensions = namedFunctionExtensions, others = [], describeScript}: {
+        extensions?: readonly string[]; others?: readonly FunctionTarget[];
+        describeScript?(targetId: string, scriptId: string): string | undefined;
+    } = {}
 ): FunctionPaneData {
     const own = scanTarget(target, extensions);
     const elsewhere = others.filter(other => other !== target && other.id !== target.id)
@@ -321,6 +338,10 @@ export function readTargetFunctions(target: FunctionTarget,
     }
     const data: FunctionPaneData = {targetId: target.id, isStage: Boolean(target.isStage), functions: own.functions};
     if (globals.size) data.globals = [...globals.values()];
+    const messageGraph = readMessageCallGraph(target, others,
+        new Map([[target.id, own.functions], ...elsewhere.map(other => [other.target.id, other.functions] as const)]),
+        describeScript);
+    if (messageGraph.scripts.length) data.messageGraph = messageGraph;
     return data;
 }
 
@@ -361,8 +382,14 @@ export function orderFunctions<T extends Pick<SpriteFunction, 'id' | 'proccode' 
     return bands.flatMap(items => items.sort((a, b) => compare(a, b, scan, band)));
 }
 
+interface CallGraphScript extends Omit<SpriteFunction, 'kind'> {
+    kind: 'script';
+    script: MessageCallGraphScript;
+}
+type CallGraphItem = SpriteFunction | CallGraphScript;
+
 export interface CallGraphNode {
-    fn: SpriteFunction;
+    fn: CallGraphItem;
     layer: number;
     /** A function that calls no function and that no function calls, set apart below the others. */
     isolated?: boolean;
@@ -375,6 +402,10 @@ export interface CallGraphEdge {
     to: string;
     /** `back` points to the same or an earlier layer, as recursion through other functions does. */
     kind: 'forward' | 'back' | 'self';
+    relation?: 'call' | 'message';
+    messageKey?: string;
+    messageName?: string;
+    wait?: boolean;
 }
 
 export interface CallGraphLayout {
@@ -399,7 +430,7 @@ const isolatedMinColumns = 4;
  * Functions that call no function and that no function calls go in rows of their own below,
  * apart from the rest, whichever the direction.
  */
-export function layoutCallGraph(all: readonly SpriteFunction[], direction: CallGraphDirection,
+export function layoutCallGraph(all: readonly CallGraphItem[], direction: CallGraphDirection,
     order: FunctionOrder = 'name', locale = 'en'): CallGraphLayout {
     const known = new Set(all.map(fn => fn.id));
     const linked = new Set(all.flatMap(fn => {
@@ -411,7 +442,7 @@ export function layoutCallGraph(all: readonly SpriteFunction[], direction: CallG
     const ordered = orderFunctions(functions, order, locale);
     const rank = new Map(ordered.map((fn, index) => [fn.id, index]));
     const byId = new Map(functions.map(fn => [fn.id, fn]));
-    const callees = (fn: SpriteFunction) => fn.callees.filter(id => byId.has(id))
+    const callees = (fn: CallGraphItem) => fn.callees.filter(id => byId.has(id))
         .sort((a, b) => rank.get(a) - rank.get(b));
     const called = new Set(functions.flatMap(fn => fn.callees.filter(id => id !== fn.id)));
 
@@ -441,7 +472,7 @@ export function layoutCallGraph(all: readonly SpriteFunction[], direction: CallG
         }
     }
 
-    const columns: SpriteFunction[][] = [];
+    const columns: CallGraphItem[][] = [];
     for (const fn of ordered) (columns[layers.get(fn.id)] ??= []).push(fn);
     const slot = new Map<string, number>();
     const callers = new Map<string, string[]>();
@@ -450,7 +481,7 @@ export function layoutCallGraph(all: readonly SpriteFunction[], direction: CallG
     }
     columns.forEach((column, layer) => {
         // Sit each function near the callers already placed, so edges cross less.
-        const weight = (fn: SpriteFunction) => {
+        const weight = (fn: CallGraphItem) => {
             const placed = (callers.get(fn.id) ?? []).filter(id => layers.get(id) < layer && slot.has(id));
             return placed.length ? placed.reduce((sum, id) => sum + slot.get(id), 0) / placed.length : Infinity;
         };
@@ -498,6 +529,61 @@ export function layoutCallGraph(all: readonly SpriteFunction[], direction: CallG
     return {nodes, edges, width: graphWidth, height: graphHeight};
 }
 
+/** Keep one layout for both arrow types so visibility switches never move the scripts. */
+function layoutScriptRelations(functions: readonly SpriteFunction[], messages: MessageCallGraph | undefined,
+    direction: CallGraphDirection): CallGraphLayout {
+    const items = new Map<string, CallGraphItem>(functions.map(fn => [fn.id, fn]));
+    for (const script of messages?.scripts ?? []) {
+        if (items.has(script.id)) continue;
+        const definition = script.definition;
+        const owner = {targetId: script.targetId, name: script.targetName, isStage: script.isStage, functionId: script.scriptId};
+        items.set(script.id, definition ? {...definition, id: script.id,
+            owner: script.id === script.scriptId ? undefined : owner} : {
+            id: script.id, kind: 'script', script, proccode: script.label ?? script.opcode, argumentNames: [],
+            x: script.x, y: script.y, calls: 0, scriptCalls: 0, callees: [], warp: false,
+            owner: script.id === script.scriptId ? undefined : owner
+        });
+    }
+    const calls = new Map([...items].map(([id, fn]) => [id, new Set(fn.callees)]));
+    const supplied = new Set(functions.map(fn => fn.id));
+    // Message hats may also call functions; show those arrows when both scripts are present.
+    for (const fn of items.values()) {
+        for (const use of fn.uses ?? []) {
+            // Uses of a supplied global belong to this view's target, rather than its defining target.
+            const from = fn.owner && !supplied.has(fn.id) ? `${fn.owner.targetId}:${use.script}` : use.script;
+            calls.get(from)?.add(fn.id);
+        }
+    }
+    const links = new Map([...calls].map(([id, to]) => [id, new Set(to)]));
+    for (const edge of messages?.edges ?? []) links.get(edge.from)?.add(edge.to);
+    const layout = layoutCallGraph([...items.values()].map(fn => ({...fn, callees: [...links.get(fn.id)]})), direction);
+    const routes = new Map(layout.edges.map(edge => [`${edge.from}>${edge.to}`, edge.kind]));
+    const edges: CallGraphEdge[] = [];
+    for (const [from, to] of calls) {
+        for (const id of to) if (items.has(id)) edges.push({from, to: id, kind: routes.get(`${from}>${id}`), relation: 'call'});
+    }
+    for (const edge of messages?.edges ?? []) {
+        if (items.has(edge.from) && items.has(edge.to)) {
+            edges.push({...edge, kind: routes.get(`${edge.from}>${edge.to}`), relation: 'message'});
+        }
+    }
+    return {...layout, nodes: layout.nodes.map(node => ({...node, fn: items.get(node.fn.id)})), edges};
+}
+
+function graphEdgeKey(edge: CallGraphEdge) {
+    const pair = `${edge.from}>${edge.to}`;
+    return edge.relation === 'message' ? `${pair}:message:${JSON.stringify([edge.messageKey, edge.wait])}` : pair;
+}
+
+function graphItemLabel(item: CallGraphItem, labels: Labels) {
+    if (item.kind !== 'script') return functionLabel(item);
+    const script = item.script;
+    if (script.label) return script.label;
+    if (script.opcode === 'event_whenbroadcastreceived') return labels.receive.replace('%1', () => script.receivedMessage ?? '');
+    if (script.opcode === 'event_whenflagclicked') return labels.flag;
+    return script.opcode;
+}
+
 /** Order hat scripts as `orderFunctions` orders functions, by their labels or by where they sit. */
 function orderHats(hats: readonly SpriteHatScript[], order: FunctionOrder, locale: string) {
     if (order === 'name') {
@@ -526,6 +612,13 @@ const english = {
     view: 'View',
     modes: {list: 'List', graph: 'Call graph'} as Record<FunctionPaneMode, string>,
     flow: 'Flow',
+    arrows: 'Arrows',
+    callArrows: 'Function calls',
+    messageArrows: 'Messages',
+    receive: 'when I receive %1',
+    flag: 'when green flag clicked',
+    messageWait: 'Send and wait',
+    scriptIn: 'A script of %1',
     directions: {LR: 'Left to right (LR)', TD: 'Top to bottom (TD)'} as Record<CallGraphDirection, string>,
     order: 'Order',
     orders: {name: 'Name (A–Z)', z: 'Z order (rows)', n: 'N order (columns)'} as Record<FunctionOrder, string>,
@@ -544,7 +637,7 @@ const english = {
     warp: 'Runs without screen refresh',
     editor: 'Code of %1',
     readOnly: 'Click this view to edit.',
-    graph: 'Which function calls which',
+    graph: 'Function calls and message sends and receives',
     openCode: 'Open the code of %1',
     zoom: 'Zoom',
     zoomOut: 'Zoom out',
@@ -580,6 +673,13 @@ const japanese: typeof english = {
     view: '表示',
     modes: {list: '一覧', graph: '呼び出し図'},
     flow: '流れ',
+    arrows: '矢印',
+    callArrows: '関数呼び出し',
+    messageArrows: 'メッセージ送受信',
+    receive: '%1 を受け取ったとき',
+    flag: '緑の旗が押されたとき',
+    messageWait: '送って待つ',
+    scriptIn: '%1 のスクリプト',
     directions: {LR: '左から右 (LR)', TD: '上から下 (TD)'},
     order: '並べ方',
     orders: {name: '名前順', z: 'Z順（行ごと）', n: 'N順（列ごと）'},
@@ -597,7 +697,7 @@ const japanese: typeof english = {
     warp: '画面を再描画せずに実行',
     editor: '%1 のコード',
     readOnly: 'このビューをクリックすると編集できます。',
-    graph: '関数の呼び出し関係',
+    graph: '関数の呼び出しとメッセージの送受信の関係',
     openCode: '%1 のコードを開く',
     zoom: '拡大・縮小',
     zoomOut: '縮小',
@@ -841,7 +941,7 @@ export function callGraphHighlight(edges: readonly CallGraphEdge[], id: string):
         result.nodes.set(other, current ? 'both' : role);
     };
     for (const edge of edges) {
-        const key = `${edge.from}>${edge.to}`;
+        const key = graphEdgeKey(edge);
         if (edge.from === id && edge.to === id) result.edges.set(key, 'self');
         else if (edge.to === id) {
             result.edges.set(key, 'in');
@@ -921,10 +1021,11 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, flow, notice, onOpen}: {
+function CallGraph({labels, idPrefix, functions, messages, settings, selectedId, corner, flow, notice, onOpen, canOpen}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
+    messages?: MessageCallGraph;
     settings: FunctionPaneSettings;
     selectedId?: string;
     /** Drawn in the bottom left corner, over the graph. */
@@ -933,16 +1034,19 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
     flow?: React.ReactNode;
     /** Shown over the middle of the graph, as when it has no functions. */
     notice?: React.ReactNode;
-    onOpen(fn: SpriteFunction): void;
+    onOpen(fn: CallGraphItem): void;
+    canOpen(fn: CallGraphItem): boolean;
 }) {
     // Functions in the same column or row follow their names.
-    const layout = React.useMemo(() => layoutCallGraph(functions, settings.direction, 'name'),
-        [functions, settings.direction]);
+    const layout = React.useMemo(() => layoutScriptRelations(functions, messages, settings.direction),
+        [functions, messages, settings.direction]);
+    const visibleEdges = layout.edges.filter(edge => edge.relation === 'message' ?
+        settings.showMessages !== false : settings.showCalls !== false);
     const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
     // A global function of another sprite may call one here; the uses of one there are not counted here.
     const called = React.useMemo(() => new Set(layout.edges.filter(edge => edge.from !== edge.to).map(edge => edge.to)),
         [layout]);
-    const unused = (fn: SpriteFunction) => !fn.owner && fn.calls === 0 && !called.has(fn.id);
+    const unused = (fn: CallGraphItem) => fn.kind !== 'script' && !fn.owner && fn.calls === 0 && !called.has(fn.id);
     const marker = `${idPrefix}-arrow`;
     // Isolated functions keep their rows; the sort is stable.
     const reading = [...layout.nodes].sort((a, b) => a.layer - b.layer || (a.isolated ? 0 :
@@ -1108,17 +1212,36 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
     }, [selectedNode?.fn.id, selectedNode?.x, selectedNode?.y, size.width > 0]);
 
     const highlightId = pointed ?? focused;
-    const highlight = highlightId && byId.has(highlightId) ? callGraphHighlight(layout.edges, highlightId) : null;
+    const highlight = highlightId && byId.has(highlightId) ? callGraphHighlight(visibleEdges, highlightId) : null;
     // Draw the highlighted links over the others.
-    const edges = highlight ? [...layout.edges].sort((a, b) =>
-        Number(highlight.edges.has(`${a.from}>${a.to}`)) - Number(highlight.edges.has(`${b.from}>${b.to}`))) : layout.edges;
-    const edgeMarker = (kind?: string) => `url(#${marker}${kind === 'in' ? '-in' : kind ? '-out' : ''})`;
+    const edges = highlight ? [...visibleEdges].sort((a, b) =>
+        Number(highlight.edges.has(graphEdgeKey(a))) - Number(highlight.edges.has(graphEdgeKey(b)))) : visibleEdges;
+    const edgeMarker = (edge: CallGraphEdge, kind?: string) =>
+        `url(#${marker}${kind === 'in' ? '-in' : kind ? '-out' : edge.relation === 'message' ? '-message' : ''})`;
+    // Offset parallel links sideways; a call and a broadcast between the same scripts stay distinct.
+    const offsets = new Map<string, number>();
+    const pairs = new Map<string, CallGraphEdge[]>();
+    for (const edge of layout.edges) {
+        const pair = `${edge.from}>${edge.to}`;
+        const group = pairs.get(pair) ?? [];
+        group.push(edge);
+        pairs.set(pair, group);
+    }
+    for (const group of pairs.values()) group.forEach((edge, index) =>
+        offsets.set(graphEdgeKey(edge), group.length > 1 ? (index / (group.length - 1) - 0.5) * 24 : 0));
+    const shifted = (node: CallGraphNode, offset: number): CallGraphNode => settings.direction === 'LR' ?
+        {...node, y: node.y + offset} : {...node, x: node.x + offset};
     const paths = (withMarkers: boolean) => edges.map(edge => {
-        const key = `${edge.from}>${edge.to}`;
+        const key = graphEdgeKey(edge);
         const kind = highlight?.edges.get(key);
+        const offset = offsets.get(key) ?? 0;
         return <path key={key} data-edge={withMarkers ? key : undefined} data-kind={edge.kind} data-highlight={kind}
-            markerEnd={withMarkers ? edgeMarker(kind) : undefined}
-            d={edgePath(byId.get(edge.from), byId.get(edge.to), edge.kind, settings.direction)} />;
+            data-relation={edge.relation} data-wait={edge.wait || undefined}
+            markerEnd={withMarkers ? edgeMarker(edge, kind) : undefined}
+            d={edgePath(shifted(byId.get(edge.from), offset), shifted(byId.get(edge.to), offset), edge.kind, settings.direction)}>
+            {withMarkers && edge.relation === 'message' &&
+                <title>{edge.wait ? `${edge.messageName} (${labels.messageWait})` : edge.messageName}</title>}
+        </path>;
     });
     const area = scrollArea(view, size, layout);
     const mapSize = {
@@ -1146,29 +1269,60 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
             <svg className="tw-sprite-functions__edges" width={layout.width} height={layout.height} aria-hidden="true"
                 focusable="false">
                 <defs>
-                    {['', '-in', '-out'].map(suffix => <marker key={suffix} id={marker + suffix} viewBox="0 0 10 10" refX="9"
+                    {['', '-in', '-out', '-message'].map(suffix => <marker key={suffix} id={marker + suffix} viewBox="0 0 10 10" refX="9"
                         refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"
                         data-highlight={suffix.slice(1) || undefined}><path d="M0 0 10 5 0 10Z" /></marker>)}
                 </defs>
                 {paths(true)}
+                {edges.filter(edge => edge.relation === 'message').map(edge => {
+                    const from = byId.get(edge.from);
+                    const to = byId.get(edge.to);
+                    const offset = offsets.get(graphEdgeKey(edge)) ?? 0;
+                    const self = edge.kind === 'self';
+                    let x = self ? from.x + callGraphNodeSize.width + 12 :
+                        (from.x + to.x + callGraphNodeSize.width) / 2 + (settings.direction === 'TD' ? offset : 0);
+                    let y = self ? from.y + 12 + offset :
+                        (from.y + to.y + callGraphNodeSize.height) / 2 + (settings.direction === 'LR' ? offset : 0) - 5;
+                    // A back link bends below (LR) or to the right (TD). Label its curve, rather
+                    // than the straight midpoint, which can coincide with the forward link.
+                    if (edge.kind === 'back') {
+                        if (settings.direction === 'LR') {
+                            const sy = from.y + callGraphNodeSize.height + offset;
+                            const ty = to.y + callGraphNodeSize.height + offset;
+                            y = (sy + ty) / 8 + 0.75 * (Math.max(sy, ty) + 36) - 5;
+                        } else {
+                            const sx = from.x + callGraphNodeSize.width + offset;
+                            const tx = to.x + callGraphNodeSize.width + offset;
+                            x = (sx + tx) / 8 + 0.75 * (Math.max(sx, tx) + 36);
+                        }
+                    }
+                    return <text key={graphEdgeKey(edge)} className="tw-sprite-functions__edge-label" x={x} y={y}
+                        data-highlight={highlight?.edges.get(graphEdgeKey(edge))} textAnchor={self ? 'start' : 'middle'}>
+                        {edge.messageName}{edge.wait ? ' ⏳' : ''}
+                    </text>;
+                })}
             </svg>
             <ul className="tw-sprite-functions__nodes">
                 {reading.map(node => {
                     const {fn, x, y} = node;
-                    const label = functionLabel(fn);
+                    const label = graphItemLabel(fn, labels);
                     const owner = fn.owner && (fn.owner.isStage ? labels.stage : fn.owner.name);
                     return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: callGraphNodeSize.height}}
                         data-isolated={node.isolated || undefined}>
-                        <button type="button" className="tw-sprite-functions__node" data-function-key={fn.id}
+                        <button type="button" className="tw-sprite-functions__node"
+                            data-function-key={fn.kind !== 'script' ? fn.id : undefined}
+                            data-script-key={fn.kind === 'script' ? fn.id : undefined}
                             data-kind={fn.kind} data-scope={fn.scope === 'global' ? 'global' : undefined}
                             data-owner={fn.owner ? fn.owner.targetId : undefined} aria-current={selectedId === fn.id || undefined}
                             data-unused={unused(fn) || undefined} data-entry={fn.scriptCalls > 0 || undefined}
                             data-highlight={highlight?.nodes.get(fn.id)}
-                            title={[owner ? labels.globalIn.replace('%1', () => owner) : labels.openCode.replace('%1', () => label),
+                            title={[owner ? (fn.kind === 'script' ? labels.scriptIn : labels.globalIn).replace('%1', () => owner) :
+                                labels.openCode.replace('%1', () => label),
+                                owner && label,
                                 fn.kind === 'named' && labels.named, fn.scope === 'global' && labels.global,
                                 fn.description].filter(Boolean).join('\n')}
                             // A function of another sprite opens with that sprite, not here.
-                            aria-disabled={owner ? true : undefined} onClick={() => !owner && onOpen(fn)}
+                            aria-disabled={!canOpen(fn) || undefined} onClick={() => canOpen(fn) && onOpen(fn)}
                             onPointerEnter={() => setPointed(fn.id)}
                             onPointerLeave={() => setPointed(id => id === fn.id ? null : id)}
                             onFocus={() => {
@@ -1191,7 +1345,7 @@ function CallGraph({labels, idPrefix, functions, settings, selectedId, corner, f
             <svg viewBox={`${area.x} ${area.y} ${area.width} ${area.height}`} preserveAspectRatio="xMidYMid meet" focusable="false">
                 <g className="tw-sprite-functions__minimap-edges">{paths(false)}</g>
                 {layout.nodes.map(({fn, x, y}) => <rect key={fn.id} x={x} y={y} rx={8} width={callGraphNodeSize.width}
-                    height={callGraphNodeSize.height} data-highlight={highlight?.nodes.get(fn.id)} />)}
+                    height={callGraphNodeSize.height} data-kind={fn.kind} data-highlight={highlight?.nodes.get(fn.id)} />)}
                 <rect className="tw-sprite-functions__minimap-view" x={-view.x / view.scale} y={-view.y / view.scale}
                     width={size.width / view.scale} height={size.height / view.scale} />
             </svg>
@@ -1415,8 +1569,33 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
     const graphFunctions = React.useMemo(() => data.globals?.length ? [...data.functions, ...data.globals] : data.functions,
         [data.functions, data.globals]);
     // The flow switch sits inside the graph, at its top right.
-    const flowChoice = <Choice label={labels.flow} value={settings.direction} icons={flowGlyphs}
-        options={labels.directions} onChange={direction => change({direction})} />;
+    const flowChoice = <>
+        <div className="tw-sprite-functions__choice" role="group" aria-label={labels.arrows} data-icons="">
+            {(['calls', 'messages'] as const).map(kind => {
+                const setting = kind === 'calls' ? 'showCalls' : 'showMessages';
+                const label = kind === 'calls' ? labels.callArrows : labels.messageArrows;
+                return <button key={kind} type="button" data-edge-toggle={kind} title={label}
+                    aria-label={label} aria-pressed={settings[setting] !== false}
+                    onClick={() => change({[setting]: settings[setting] === false})}>
+                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor"
+                        strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+                        <path d={kind === 'calls' ? 'M2 4h4v8h4m-3-3 3 3-3 3M10 2h4v4h-4Z' :
+                            'M3 2.5h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H7l-4 3v-3A1.5 1.5 0 0 1 1.5 10V4A1.5 1.5 0 0 1 3 2.5Z'} />
+                    </svg>
+                </button>;
+            })}
+        </div>
+        <Choice label={labels.flow} value={settings.direction} icons={flowGlyphs}
+            options={labels.directions} onChange={direction => change({direction})} />
+    </>;
+    function openGraphItem(item: CallGraphItem) {
+        if (item.kind === 'script') {
+            const script = item.script;
+            onOpenScript?.({id: script.scriptId, targetId: script.targetId,
+                label: graphItemLabel(item, labels), x: script.x, y: script.y});
+        } else if (item.owner) onOpenFunction?.(item);
+        else setDialogId(item.id);
+    }
     const hint = !editable && ordered.length > 0;
     return <section ref={list} className="tw-sprite-functions" aria-label={view ? labels.panels[view] : labels.panel} data-mode={mode}>
         {(!view || mode === 'list' || hint) && <div className="tw-sprite-functions__bar">
@@ -1432,8 +1611,11 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         </div>}
         {/* Without functions the graph stays, blank, and points to the button that makes one. */}
         {mode === 'graph' ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graphFunctions}
+            messages={data.messageGraph}
             settings={settings} selectedId={selectedId ?? added} corner={addButton} flow={flowChoice}
-            notice={ordered.length ? undefined : emptyText('graph')} onOpen={fn => setDialogId(fn.id)} /> :
+            notice={graphFunctions.length || data.messageGraph?.scripts.length ? undefined : emptyText('graph')}
+            onOpen={openGraphItem} canOpen={item => item.kind === 'script' ? Boolean(onOpenScript) :
+                !item.owner || Boolean(onOpenFunction)} /> :
             !hats.length && !ordered.length ? <p className="tw-sprite-functions__empty">{emptyText('list')}</p> :
             !hats.length && !grouped ? functionList(ordered) : <>
                 {hats.length > 0 && <>
