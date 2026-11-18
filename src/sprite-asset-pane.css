@@ -1345,6 +1345,23 @@
     stroke: none;
 }
 
+.tw-sprite-functions__edges > path[data-script-relation="message"],
+.tw-sprite-functions__minimap-edges path[data-script-relation="message"] {
+    stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    stroke-dasharray: 7 5;
+}
+
+.tw-sprite-functions__edges marker[data-script-relation="message"] path {
+    fill: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+}
+
+.tw-sprite-functions__relation-wait {
+    fill: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    font: 12px sans-serif;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
 .tw-sprite-functions__nodes {
     margin: 0;
     padding: 0;
@@ -1802,52 +1819,89 @@
     content: "⚠ ";
 }
 
-/* The top right corner of the call graph, above the minimap and the zoom buttons. */
-.tw-sprite-functions__flow {
-    position: absolute;
-    inset-block-start: 8px;
-    inset-inline-end: 8px;
-    cursor: default;
+/* A single control fits the section rail; the selected direction remains visible. */
+.tw-sprite-functions__flow-toggle {
+    display: inline-flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    gap: 1px;
+    inline-size: 36px;
+    block-size: 28px;
+    padding: 2px;
+    border: 1px solid var(--ui-black-transparent, #c6cfda);
+    border-radius: 6px;
+    background: var(--ui-white, light-dark(#fff, #111));
+    color: var(--text-primary, CanvasText);
+    font: 10px sans-serif;
+    cursor: pointer;
+}
+
+.tw-sprite-functions__flow-toggle [data-selected] {
+    border-radius: 3px;
+    background: var(--looks-light-transparent, light-dark(#e6dff3, #493e63));
+    color: var(--looks-secondary, light-dark(#7051c7, #c9abff));
+    font-weight: 700;
+}
+
+.tw-sprite-functions__flow-divider { opacity: .5; }
+
+.tw-sprite-functions__flow-toggle:focus-visible {
+    outline: 2px solid var(--looks-secondary, #855cd6);
+    outline-offset: 1px;
+}
+
+.tw-sprite-functions__relation-toggles {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 6px;
-    max-width: calc(100% - 16px);
+    flex-direction: column;
+    gap: 3px;
+    inline-size: 36px;
 }
 
-.tw-sprite-functions__flow .tw-sprite-functions__choice {
-    background: var(--ui-white, #fff);
-    box-shadow: 0 1px 4px hsla(0, 0%, 0%, .15);
+.tw-sprite-functions__relation-toggles button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    inline-size: 36px;
+    block-size: 28px;
+    padding: 3px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary, CanvasText);
+    opacity: .5;
+    cursor: pointer;
 }
 
-/* Message links use an event color and a dotted line, including in the minimap. */
-.tw-sprite-functions__edges path[data-relation="message"]:not([data-highlight]),
-.tw-sprite-functions__minimap-edges path[data-relation="message"] {
-    stroke: #9b7400;
-    stroke-dasharray: 2 4;
+.tw-sprite-functions__relation-toggles button[aria-pressed="true"] {
+    border-color: var(--ui-black-transparent, #c6cfda);
+    background: var(--ui-white, light-dark(#fff, #111));
+    opacity: 1;
 }
 
-.tw-sprite-functions__edges marker[data-highlight="message"] path {
-    fill: #9b7400;
+.tw-sprite-functions__relation-toggles button[data-relation-kind="function"] {
+    color: var(--tw-script-function-stroke, light-dark(#7051c7, #c9abff));
 }
 
-.tw-sprite-functions__edge-label {
-    fill: var(--text-primary, #575e75);
-    stroke: var(--ui-primary, #e6f0ff);
-    stroke-width: 4px;
-    paint-order: stroke;
-    font-size: 11px;
-    pointer-events: none;
+.tw-sprite-functions__relation-toggles button[data-relation-kind="message"] {
+    color: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
 }
 
-.tw-sprite-functions__graph[data-highlighting] .tw-sprite-functions__edge-label:not([data-highlight]) {
-    opacity: .25;
+.tw-sprite-functions__relation-toggles svg {
+    inline-size: 16px;
+    block-size: 16px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
-.tw-sprite-functions__node[data-kind="script"] {
-    border-color: #9b7400;
-    color: var(--text-primary, #575e75);
-    background: var(--ui-white, #fff);
+.tw-sprite-functions__relation-toggles button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 1px;
 }
 
 .tw-sprite-functions__corner .tw-sprite-functions__add {
@@ -1861,7 +1915,7 @@
     background: #8a8f98;
 }
 
-.tw-sprite-functions__node[data-owner][aria-disabled="true"] {
+.tw-sprite-functions__node[data-owner] {
     cursor: default;
 }
 

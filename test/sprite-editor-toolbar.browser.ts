@@ -12,7 +12,9 @@ const toolbar = '/example/sprite-editor-toolbar.html';
 const files = new Map([
     [toolbar, fileURLToPath(new URL('../example/sprite-editor-toolbar.html', import.meta.url))],
     ['/dist/sprite-editor-toolbar.js', fileURLToPath(new URL('../dist/sprite-editor-toolbar.js', import.meta.url))],
-    ['/src/sprite-editor-toolbar.css', fileURLToPath(new URL('../src/sprite-editor-toolbar.css', import.meta.url))]
+    ['/dist/sprite-function-pane.js', fileURLToPath(new URL('../dist/sprite-function-pane.js', import.meta.url))],
+    ['/src/sprite-editor-toolbar.css', fileURLToPath(new URL('../src/sprite-editor-toolbar.css', import.meta.url))],
+    ['/src/sprite-asset-pane.css', fileURLToPath(new URL('../src/sprite-asset-pane.css', import.meta.url))]
 ]);
 for (const name of ['react', 'react-dom']) {
     const entry = `/umd/${name}.development.js`;
@@ -136,5 +138,109 @@ test('the sprite toolbar selects one section and searches in the active section'
     await expect(selected).toHaveCSS('height', '28px');
     await expect(tooltip).toHaveText('Messages');
     assert.ok(await strip.evaluate(element => element.scrollTop > 0));
+});
+
+test('rail controls change graph direction and independently filter function and message relations by keyboard', {timeout: 30_000}, async t => {
+    const page = await openExample(t);
+    await page.goto(origin + toolbar);
+    await page.evaluate(async () => {
+        const {SpriteEditorToolbar} = await import('/dist/sprite-editor-toolbar.js');
+        const {FunctionFlowToggle, FunctionRelationToggles, SpriteFunctionPane} = await import('/dist/sprite-function-pane.js');
+        const {React, ReactDOM} = globalThis as any;
+        const style = document.createElement('link');
+        style.rel = 'stylesheet';
+        style.href = '/src/sprite-asset-pane.css';
+        document.head.append(style);
+        const container = document.createElement('div');
+        container.id = 'rail-controls-example';
+        container.className = 'pane';
+        document.body.append(container);
+        function Example() {
+            const [direction, setDirection] = React.useState('LR');
+            const [section, setSection] = React.useState('calls');
+            const [visibility, setVisibility] = React.useState({function: true, message: true});
+            const functions = ['jump', 'spare'].map(id => ({id, kind: 'procedure', proccode: id,
+                argumentNames: [], warp: false, x: 0, y: 0, calls: 0, scriptCalls: 0, callees: []}));
+            const data = {targetId: 'cat', isStage: false, functions,
+                scripts: [{targetId: 'cat', scriptId: 'flag', label: 'Green flag'},
+                    {targetId: 'cat', scriptId: 'receive', label: 'Receive ready'}],
+                scriptRelations: [{kind: 'function', source: {targetId: 'cat', blockId: 'call', scriptId: 'flag'},
+                    destination: {targetId: 'cat', blockId: 'jump', scriptId: 'jump'}, label: 'jump', wait: true},
+                    {kind: 'message', source: {targetId: 'cat', blockId: 'send', scriptId: 'flag'},
+                        destination: {targetId: 'cat', blockId: 'receive', scriptId: 'receive'}, label: 'ready', wait: false}]};
+            return React.createElement('div', {className: 'tw-plus-sprite-tab-slot--split', style: {height: 180}},
+                React.createElement('div', {className: 'tw-plus-sprite-tab-toolbar'},
+                    React.createElement(SpriteEditorToolbar, {viewId: 'flow', locale: 'en', section,
+                        onSectionChange: setSection, sectionControls: section === 'calls' ?
+                            React.createElement(React.Fragment, null,
+                                React.createElement(FunctionFlowToggle, {locale: 'en', value: direction, onChange: setDirection}),
+                                React.createElement(FunctionRelationToggles, {locale: 'en', value: visibility, onChange: setVisibility})) : null})),
+                React.createElement('div', {className: 'tw-plus-sprite-tab-body'},
+                    React.createElement(SpriteFunctionPane, {kind: 'functions', locale: 'en', editable: true,
+                        view: 'graph', direction, relationVisibility: visibility, data})));
+        }
+        ReactDOM.createRoot(container).render(React.createElement(Example));
+    });
+    const root = page.locator('#rail-controls-example');
+    const toggle = root.locator('.tw-sprite-functions__flow-toggle');
+    const tabs = root.getByRole('tablist');
+    const graph = root.locator('figure');
+    const functions = root.getByRole('button', {name: 'Functions', exact: true});
+    const messages = root.getByRole('button', {name: 'Messages', exact: true});
+    const edges = (kind: string) => graph.locator(`.tw-sprite-functions__edges > path[data-script-relation="${kind}"]`);
+    const nodes = graph.locator('.tw-sprite-functions__node');
+    const controls = root.locator('.tw-plus-sprite-toolbar-section-controls');
+    await expect(toggle).toHaveAttribute('data-direction', 'LR');
+    await expect(toggle).toHaveText('LR|TD');
+    await expect(toggle).toHaveCSS('width', '36px');
+    await expect(graph).toHaveAttribute('data-direction', 'LR');
+    assert.equal(await tabs.locator('button:not([role="tab"])').count(), 0);
+    const rail = await root.locator('.tw-plus-sprite-toolbar-rail').boundingBox();
+    let bounds = await controls.boundingBox();
+    assert.ok(bounds.x >= rail.x && bounds.x + bounds.width <= rail.x + rail.width);
+    assert.ok(rail.y + rail.height - bounds.y - bounds.height <= 1, 'pinned to the rail foot');
+    await toggle.focus();
+    await toggle.press('Enter');
+    await expect(graph).toHaveAttribute('data-direction', 'TD');
+    await expect(toggle.locator('[data-selected]')).toHaveText('TD');
+    await expect(toggle).toBeFocused();
+    await toggle.press('Space');
+    await expect(graph).toHaveAttribute('data-direction', 'LR');
+    await expect(toggle.locator('[data-selected]')).toHaveText('LR');
+    await expect(root.locator('figure .tw-sprite-functions__flow-toggle')).toHaveCount(0);
+    await expect(functions).toHaveAttribute('title', 'Hide function calls');
+    await expect(messages).toHaveAttribute('title', 'Hide message sends and receivers');
+    await expect(edges('function')).toHaveCount(1);
+    await expect(edges('message')).toHaveCount(1);
+    await expect(nodes).toHaveCount(4);
+    const colors = await graph.locator('.tw-sprite-functions__edges > path').evaluateAll(paths => paths.map(path => ({
+        color: getComputedStyle(path).stroke, dash: getComputedStyle(path).strokeDasharray})));
+    assert.notEqual(colors[0].color, colors[1].color);
+    assert.notEqual(colors[0].dash, colors[1].dash);
+    await functions.focus();
+    await functions.press('Enter');
+    await expect(functions).toHaveAttribute('aria-pressed', 'false');
+    await expect(functions).toHaveAttribute('title', 'Show function calls');
+    await expect(edges('function')).toHaveCount(0);
+    await expect(edges('message')).toHaveCount(1);
+    await expect(nodes).toHaveCount(2);
+    await expect(functions).toBeFocused();
+    await messages.focus();
+    await messages.press('Space');
+    await expect(messages).toHaveAttribute('title', 'Show message sends and receivers');
+    await expect(nodes).toHaveCount(0);
+    await functions.click();
+    await expect(edges('function')).toHaveCount(1);
+    await expect(edges('message')).toHaveCount(0);
+    await expect(nodes).toHaveCount(3);
+    await messages.click();
+    await expect(nodes).toHaveCount(4);
+    await tabs.evaluate(element => {element.scrollTop = element.scrollHeight;});
+    bounds = await controls.boundingBox();
+    assert.ok(rail.y + rail.height - bounds.y - bounds.height <= 1, 'tab scrolling leaves the controls at the foot');
+    await root.getByRole('tab', {name: 'Calls', exact: true}).focus();
+    await root.getByRole('tab', {name: 'Calls', exact: true}).press('Home');
+    await expect(root.getByRole('tab', {name: 'Free layout', exact: true})).toBeFocused();
+    await expect(toggle).toHaveCount(0, 'the host offers direction only in the calls section');
 });
 
