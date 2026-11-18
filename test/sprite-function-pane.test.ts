@@ -261,8 +261,8 @@ test('the rail direction group has two mutually exclusive labeled buttons', t =>
     draw('LR');
     const [lr, td] = [...container.querySelectorAll<HTMLButtonElement>('button')];
     assert.equal(container.querySelectorAll('button').length, 2);
-    assert.equal(lr.textContent, 'LR');
-    assert.equal(td.textContent, 'TD');
+    assert.equal(lr.querySelectorAll('svg').length, 1);
+    assert.equal(td.querySelectorAll('svg').length, 1);
     assert.equal(lr.getAttribute('aria-pressed'), 'true');
     assert.equal(td.getAttribute('aria-pressed'), 'false');
     assert.equal(lr.getAttribute('title'), '流れ: 左から右 (LR)');

@@ -757,7 +757,15 @@ export function FunctionFlowToggle({locale, value, onChange}: {
             const label = `${labels.flow}: ${labels.directions[direction]}`;
             return <button key={direction} type="button" data-direction={direction} aria-pressed={value === direction}
                 title={label} aria-label={label} onClick={() => { if (direction !== value) onChange(direction); }}
-                onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>{direction}</button>;
+                onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
+                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <g transform={direction === 'TD' ? 'rotate(90 10 10)' : undefined}>
+                        <rect x="1" y="7" width="5" height="6" rx="1" />
+                        <path d="M8 10h4m-2-2 2 2-2 2" />
+                        <rect x="14" y="7" width="5" height="6" rx="1" />
+                    </g>
+                </svg>
+            </button>;
         })}
     </div>;
 }

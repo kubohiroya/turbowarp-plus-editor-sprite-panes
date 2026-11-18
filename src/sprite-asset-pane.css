@@ -1904,6 +1904,16 @@
     font-weight: 700;
 }
 
+.tw-sprite-functions__flow-toggle button svg {
+    inline-size: 20px;
+    block-size: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .tw-sprite-functions__flow-toggle button + button {
     border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
 }
