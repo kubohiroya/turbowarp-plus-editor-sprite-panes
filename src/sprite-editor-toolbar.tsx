@@ -38,6 +38,8 @@ interface SpriteEditorToolbarProps {
     availableSections?: readonly SpriteEditorSection[];
     propertiesInVariables?: boolean;
     actions?: React.ReactNode;
+    /** Section-specific controls at the bottom of the selection rail, outside its tab list. */
+    sectionControls?: React.ReactNode;
 }
 
 const glyphs: Record<SpriteEditorSection | 'search', string> = {
@@ -112,7 +114,8 @@ function SearchBox({viewId, section, japanese, search}: {
 }
 
 export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, isStage, activeGroup, search,
-    availableSections: available = spriteEditorSections, propertiesInVariables = false, actions}: SpriteEditorToolbarProps) {
+    availableSections: available = spriteEditorSections, propertiesInVariables = false, actions,
+    sectionControls}: SpriteEditorToolbarProps) {
     const availableSections = spriteEditorSectionOrder.filter(id => available.includes(id));
     const [tooltip, setTooltip] = React.useState<{button: HTMLButtonElement; id: SpriteEditorSection; y: number}>();
     const japanese = /^ja(?:-|$)/i.test(locale);
@@ -140,6 +143,7 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
     }
 
     return <div className="tw-plus-sprite-toolbar" data-active-group={activeGroup}>
+        <div className="tw-plus-sprite-toolbar-rail">
         <div className="tw-plus-sprite-toolbar-sections" role="tablist" aria-orientation="vertical"
             aria-label={japanese ? 'スプライトの編集内容' : 'Sprite editor sections'}
             onScroll={() => { if (tooltip) showTooltip(tooltip.button, tooltip.id); }}>
@@ -172,6 +176,8 @@ export function SpriteEditorToolbar({viewId, locale, section, onSectionChange, i
                 }}>
                 <Icon kind={id} />
             </button>)}
+        </div>
+        {sectionControls && <div className="tw-plus-sprite-toolbar-section-controls">{sectionControls}</div>}
         </div>
         {tooltip && <span className="tw-plus-sprite-toolbar-tooltip" aria-hidden="true"
             style={{top: tooltip.y}}>{tooltip.id === 'variables' ? variableTooltip : labels[tooltip.id]}</span>}

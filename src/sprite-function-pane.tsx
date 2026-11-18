@@ -39,6 +39,8 @@ export interface GlobalFunctionOwner {
     isStage: boolean;
     /** The id of its `define function` hat in that target. */
     functionId: string;
+    /** A host-provided preview of the owner's current costume or backdrop. */
+    thumbnailUrl?: string;
 }
 
 /** A block that calls a function, and the top block of its script: a hat, a definition, or a loose stack. */
@@ -58,7 +60,7 @@ export const namedFunctionExtensions: readonly string[] = ['kubohiroyanamedfunct
 export interface SpriteHatScript {
     /** The id of the hat block. */
     id: string;
-    /** The owning target when a graph opens a script from another sprite or the stage. */
+    /** The owning target when opening a script of another sprite or the stage. */
     targetId?: string;
     /** How the hat reads, such as `when this sprite clicked`. The host spells it, as it knows the block. */
     label: string;
@@ -86,9 +88,45 @@ export interface FunctionPaneData {
      * are `<target id>:<hat id>`, so they cannot clash with this target's.
      */
     globals?: readonly SpriteFunction[];
-    /** Message senders and receivers, including scripts in other targets connected to this target. */
+    /** Message relationships read by the package scanner. */
     messageGraph?: MessageCallGraph;
+    /** Static calls and message sends supplied by the editor for the relation graph. */
+    scriptRelations?: readonly ScriptRelation[];
+    /** Names and positions of the scripts referred to by `scriptRelations`. */
+    scripts?: readonly GraphScript[];
 }
+
+export interface ScriptEndpoint {
+    targetId: string;
+    blockId: string;
+    scriptId: string;
+}
+
+export interface ScriptRelation {
+    kind: 'function' | 'message';
+    source: ScriptEndpoint;
+    destination?: ScriptEndpoint;
+    label: string;
+    wait: boolean;
+    unresolved?: 'dynamic' | 'missing' | 'ambiguous';
+}
+
+export interface GraphScript {
+    targetId: string;
+    scriptId: string;
+    label: string;
+    targetName?: string;
+    isStage?: boolean;
+    x?: number;
+    y?: number;
+}
+
+export interface FunctionRelationVisibility {
+    function: boolean;
+    message: boolean;
+}
+
+const allRelationKinds: FunctionRelationVisibility = {function: true, message: true};
 
 export type FunctionOrder = 'name' | 'z' | 'n';
 export const functionOrders: readonly FunctionOrder[] = ['name', 'z', 'n'];
@@ -101,15 +139,19 @@ export interface FunctionPaneSettings {
     mode: FunctionPaneMode;
     order: FunctionOrder;
     direction: CallGraphDirection;
-    /** Arrow visibility only; toggling these leaves node positions and the view unchanged. */
-    showCalls?: boolean;
-    showMessages?: boolean;
     /** Which kind of function the add dialog starts with: the kind added last. */
     create: FunctionKind;
+    /** Legacy arrow-only filters; node positions and the view remain unchanged. */
+    showCalls?: boolean;
+    showMessages?: boolean;
+    /** The call graph's independent relation filters, when the host offers them. */
+    relationVisibility?: FunctionRelationVisibility;
+    /** Diagram positions are separate for each target and flow direction; project blocks never move. */
+    graphPositions?: Record<string, Partial<Record<CallGraphDirection, GraphNodePositions>>>;
 }
-const defaultSettings: FunctionPaneSettings = {
-    mode: 'list', order: 'name', direction: 'LR', create: 'procedure', showCalls: true, showMessages: true
-};
+
+export type GraphNodePositions = Record<string, {x: number; y: number}>;
+const defaultSettings: FunctionPaneSettings = {mode: 'list', order: 'name', direction: 'LR', create: 'procedure'};
 
 /**
  * Why creating a function failed: `duplicate` when a function of that name already exists, `invalid`
@@ -133,6 +175,11 @@ export interface SpriteFunctionPaneProps {
     /** The settings to start with, such as the ones this view used before. */
     defaultSettings?: Partial<FunctionPaneSettings>;
     onSettingsChange?(settings: FunctionPaneSettings): void;
+    /** The host's current graph direction, controlled by its section rail. */
+    direction?: CallGraphDirection;
+    relationVisibility?: FunctionRelationVisibility;
+    /** Open a graph script endpoint without treating its hat as a function definition. */
+    onOpenRelationScript?(endpoint: ScriptEndpoint): void;
     mountEditor?: MountFunctionEditor;
     /**
      * Open one function outside the pane, such as in a tab beside it. The call graph uses it in place of
@@ -285,9 +332,10 @@ const targetName = (target: FunctionTarget) =>
  * in `globals`, with the target that defines them, and link to this target's functions by their ids.
  */
 export function readTargetFunctions(target: FunctionTarget,
-    {extensions = namedFunctionExtensions, others = [], describeScript}: {
+    {extensions = namedFunctionExtensions, others = [], describeScript, getTargetThumbnail}: {
         extensions?: readonly string[]; others?: readonly FunctionTarget[];
         describeScript?(targetId: string, scriptId: string): string | undefined;
+        getTargetThumbnail?(targetId: string): string | undefined;
     } = {}
 ): FunctionPaneData {
     const own = scanTarget(target, extensions);
@@ -307,8 +355,10 @@ export function readTargetFunctions(target: FunctionTarget,
         const id = `${owner.id}:${fn.id}`;
         let node = globals.get(id);
         if (!node) {
+            const thumbnailUrl = getTargetThumbnail?.(owner.id);
             node = {...fn, id, calls: 0, scriptCalls: 0, callees: [], uses: [],
-                owner: {targetId: owner.id, name: targetName(owner), isStage: Boolean(owner.isStage), functionId: fn.id}};
+                owner: {targetId: owner.id, name: targetName(owner), isStage: Boolean(owner.isStage), functionId: fn.id,
+                    ...(thumbnailUrl ? {thumbnailUrl} : {})}};
             globals.set(id, node);
         }
         return node;
@@ -393,6 +443,10 @@ export interface CallGraphNode {
     layer: number;
     /** A function that calls no function and that no function calls, set apart below the others. */
     isolated?: boolean;
+    /** This node was placed in the diagram by hand. */
+    manual?: boolean;
+    /** The diagram can grow to fit complete multi-line node labels. */
+    height?: number;
     x: number;
     y: number;
 }
@@ -413,12 +467,108 @@ export interface CallGraphLayout {
     edges: CallGraphEdge[];
     width: number;
     height: number;
+    left?: number;
+    top?: number;
+}
+
+interface RelationGraph {
+    functions: readonly SpriteFunction[];
+    scripts: Map<string, GraphScript>;
+    relations: Map<string, ScriptRelation[]>;
+}
+
+/** Keep the package's message scanner and existing host data compatible with endpoint relations. */
+function scannedRelations(data: FunctionPaneData, japanese: boolean): FunctionPaneData {
+    if (data.scriptRelations || !data.messageGraph) return data;
+    const {messageGraph} = data;
+    const definitions = new Map([...data.functions, ...(data.globals ?? [])].map(fn => [fn.id, fn]));
+    const endpointById = new Map<string, ScriptEndpoint>();
+    const scripts: GraphScript[] = [];
+    for (const fn of definitions.values()) endpointById.set(fn.id, {
+        targetId: fn.owner?.targetId ?? data.targetId,
+        scriptId: fn.owner?.functionId ?? fn.id, blockId: fn.owner?.functionId ?? fn.id
+    });
+    for (const script of messageGraph.scripts) {
+        endpointById.set(script.id, {targetId: script.targetId, scriptId: script.scriptId, blockId: script.scriptId});
+        if (script.definition && !definitions.has(script.id)) definitions.set(script.id, {...script.definition,
+            id: script.id, ...(script.targetId === data.targetId ? {} : {owner: {
+                targetId: script.targetId, name: script.targetName, isStage: script.isStage, functionId: script.scriptId
+            }})});
+        scripts.push({...script, label: script.label ?? (script.opcode === 'event_whenbroadcastreceived' ?
+            japanese ? `${script.receivedMessage ?? ''} を受け取ったとき` : `when I receive ${script.receivedMessage ?? ''}` :
+            script.opcode === 'event_whenflagclicked' ? japanese ? '緑の旗が押されたとき' : 'when green flag clicked' : script.opcode)});
+    }
+    const relations: ScriptRelation[] = [];
+    function call(from: string, fn: SpriteFunction) {
+        const source = endpointById.get(from);
+        const destination = endpointById.get(fn.id);
+        if (source && destination) relations.push({kind: 'function', source, destination, label: functionLabel(fn), wait: false});
+    }
+    const supplied = new Set(data.globals?.map(fn => fn.id));
+    for (const fn of definitions.values()) {
+        for (const id of fn.callees) if (definitions.has(id)) call(fn.id, definitions.get(id));
+        for (const use of fn.uses ?? []) call(fn.owner && !supplied.has(fn.id) ?
+            `${fn.owner.targetId}:${use.script}` : use.script, fn);
+    }
+    for (const edge of messageGraph.edges) {
+        const source = endpointById.get(edge.from);
+        const destination = endpointById.get(edge.to);
+        if (source && destination) relations.push({kind: 'message', source, destination, label: edge.messageName, wait: edge.wait});
+    }
+    return {...data, functions: [...definitions.values()].filter(fn => !fn.owner),
+        globals: [...definitions.values()].filter(fn => fn.owner), scripts, scriptRelations: relations};
+}
+
+/** Adapt script endpoints to the existing graph layout, keeping script navigation separate from functions. */
+function relationGraph(data: FunctionPaneData, visibility: FunctionRelationVisibility, scanned = false): RelationGraph {
+    const functions = [...data.functions, ...(data.globals ?? [])];
+    const scripts = new Map<string, GraphScript>();
+    const relations = new Map<string, ScriptRelation[]>();
+    if (!data.scriptRelations) return {functions: visibility.function ? functions : [], scripts, relations};
+    const key = (targetId: string, scriptId: string) => JSON.stringify([targetId, scriptId]);
+    const definitions = new Map(functions.map(fn => [key(fn.owner?.targetId ?? data.targetId, fn.owner?.functionId ?? fn.id), fn]));
+    const descriptions = new Map((data.scripts ?? []).map(script => [key(script.targetId, script.scriptId), script]));
+    const nodes = new Map<string, SpriteFunction>();
+    if (visibility.function) for (const fn of functions) nodes.set(fn.id, {...fn, callees: []});
+    function node(endpoint: ScriptEndpoint) {
+        const identity = key(endpoint.targetId, endpoint.scriptId);
+        const fn = definitions.get(identity);
+        if (fn) {
+            if (!nodes.has(fn.id)) nodes.set(fn.id, {...fn, callees: []});
+            return fn.id;
+        }
+        const id = `script:${identity}`;
+        if (!nodes.has(id)) {
+            const script = descriptions.get(identity) ?? {targetId: endpoint.targetId, scriptId: endpoint.scriptId,
+                label: endpoint.scriptId};
+            scripts.set(id, script);
+            // Only the layout reads this adapter; the script map owns its label and navigation.
+            nodes.set(id, {id, kind: 'procedure', proccode: script.label, argumentNames: [], warp: false,
+                x: script.x ?? 0, y: script.y ?? 0, calls: 1, scriptCalls: 0, callees: []});
+        }
+        return id;
+    }
+    if (visibility.message && scanned) for (const script of data.scripts ?? []) {
+        node({targetId: script.targetId, scriptId: script.scriptId, blockId: script.scriptId});
+    }
+    for (const relation of data.scriptRelations) {
+        if (!visibility[relation.kind] || !scanned && relation.source.targetId !== data.targetId &&
+            relation.destination?.targetId !== data.targetId) continue;
+        const from = node(relation.source);
+        if (!relation.destination) continue;
+        const to = node(relation.destination);
+        const caller = nodes.get(from);
+        if (!caller.callees.includes(to)) caller.callees = [...caller.callees, to];
+        const identity = `${from}>${to}`;
+        const group = relations.get(identity);
+        if (group) group.push(relation);
+        else relations.set(identity, [relation]);
+    }
+    return {functions: [...nodes.values()], scripts, relations};
 }
 
 export const callGraphNodeSize = {width: 176, height: 44};
 const graphPadding = 24;
-const layerGap = 64;
-const siblingGap = 18;
 // Wider than the bend of a back edge under the lowest row, so the isolated functions stand apart.
 const isolatedGap = 72;
 const isolatedMinColumns = 4;
@@ -431,7 +581,9 @@ const isolatedMinColumns = 4;
  * apart from the rest, whichever the direction.
  */
 export function layoutCallGraph(all: readonly CallGraphItem[], direction: CallGraphDirection,
-    order: FunctionOrder = 'name', locale = 'en'): CallGraphLayout {
+    order: FunctionOrder = 'name', locale = 'en', spacing: {layerGap?: number; siblingGap?: number; nodeHeight?: number} = {}): CallGraphLayout {
+    const layerGap = spacing.layerGap ?? 64;
+    const siblingGap = spacing.siblingGap ?? 18;
     const known = new Set(all.map(fn => fn.id));
     const linked = new Set(all.flatMap(fn => {
         const callees = fn.callees.filter(id => known.has(id));
@@ -492,14 +644,15 @@ export function layoutCallGraph(all: readonly CallGraphItem[], direction: CallGr
         column.forEach((fn, index) => slot.set(fn.id, index));
     });
 
-    const {width, height} = callGraphNodeSize;
+    const {width} = callGraphNodeSize;
+    const height = spacing.nodeHeight ?? callGraphNodeSize.height;
     const across = direction === 'LR' ? height + siblingGap : width + siblingGap;
     const along = direction === 'LR' ? width + layerGap : height + layerGap;
     const nodes: CallGraphNode[] = ordered.map(fn => {
         const layer = layers.get(fn.id);
         const main = graphPadding + layer * along;
         const cross = graphPadding + slot.get(fn.id) * across;
-        return {fn, layer, x: direction === 'LR' ? main : cross, y: direction === 'LR' ? cross : main};
+        return {fn, layer, height, x: direction === 'LR' ? main : cross, y: direction === 'LR' ? cross : main};
     });
     const edges = functions.flatMap(fn => fn.callees.filter(id => byId.has(id)).map((to): CallGraphEdge => ({
         from: fn.id, to,
@@ -518,7 +671,7 @@ export function layoutCallGraph(all: readonly CallGraphItem[], direction: CallGr
     const perRow = Math.max(isolatedMinColumns, Math.floor((graphWidth - graphPadding * 2 + siblingGap) / step));
     const top = nodes.length ? graphHeight - graphPadding + isolatedGap : graphPadding;
     isolated.forEach((fn, index) => nodes.push({
-        fn, layer: depth, isolated: true,
+        fn, layer: depth, isolated: true, height,
         x: graphPadding + (index % perRow) * step,
         y: top + Math.floor(index / perRow) * (height + siblingGap)
     }));
@@ -527,61 +680,6 @@ export function layoutCallGraph(all: readonly CallGraphItem[], direction: CallGr
         graphPadding * 2 + Math.min(perRow, isolated.length) * step - siblingGap);
     graphHeight = top + rows * (height + siblingGap) - siblingGap + graphPadding;
     return {nodes, edges, width: graphWidth, height: graphHeight};
-}
-
-/** Keep one layout for both arrow types so visibility switches never move the scripts. */
-function layoutScriptRelations(functions: readonly SpriteFunction[], messages: MessageCallGraph | undefined,
-    direction: CallGraphDirection): CallGraphLayout {
-    const items = new Map<string, CallGraphItem>(functions.map(fn => [fn.id, fn]));
-    for (const script of messages?.scripts ?? []) {
-        if (items.has(script.id)) continue;
-        const definition = script.definition;
-        const owner = {targetId: script.targetId, name: script.targetName, isStage: script.isStage, functionId: script.scriptId};
-        items.set(script.id, definition ? {...definition, id: script.id,
-            owner: script.id === script.scriptId ? undefined : owner} : {
-            id: script.id, kind: 'script', script, proccode: script.label ?? script.opcode, argumentNames: [],
-            x: script.x, y: script.y, calls: 0, scriptCalls: 0, callees: [], warp: false,
-            owner: script.id === script.scriptId ? undefined : owner
-        });
-    }
-    const calls = new Map([...items].map(([id, fn]) => [id, new Set(fn.callees)]));
-    const supplied = new Set(functions.map(fn => fn.id));
-    // Message hats may also call functions; show those arrows when both scripts are present.
-    for (const fn of items.values()) {
-        for (const use of fn.uses ?? []) {
-            // Uses of a supplied global belong to this view's target, rather than its defining target.
-            const from = fn.owner && !supplied.has(fn.id) ? `${fn.owner.targetId}:${use.script}` : use.script;
-            calls.get(from)?.add(fn.id);
-        }
-    }
-    const links = new Map([...calls].map(([id, to]) => [id, new Set(to)]));
-    for (const edge of messages?.edges ?? []) links.get(edge.from)?.add(edge.to);
-    const layout = layoutCallGraph([...items.values()].map(fn => ({...fn, callees: [...links.get(fn.id)]})), direction);
-    const routes = new Map(layout.edges.map(edge => [`${edge.from}>${edge.to}`, edge.kind]));
-    const edges: CallGraphEdge[] = [];
-    for (const [from, to] of calls) {
-        for (const id of to) if (items.has(id)) edges.push({from, to: id, kind: routes.get(`${from}>${id}`), relation: 'call'});
-    }
-    for (const edge of messages?.edges ?? []) {
-        if (items.has(edge.from) && items.has(edge.to)) {
-            edges.push({...edge, kind: routes.get(`${edge.from}>${edge.to}`), relation: 'message'});
-        }
-    }
-    return {...layout, nodes: layout.nodes.map(node => ({...node, fn: items.get(node.fn.id)})), edges};
-}
-
-function graphEdgeKey(edge: CallGraphEdge) {
-    const pair = `${edge.from}>${edge.to}`;
-    return edge.relation === 'message' ? `${pair}:message:${JSON.stringify([edge.messageKey, edge.wait])}` : pair;
-}
-
-function graphItemLabel(item: CallGraphItem, labels: Labels) {
-    if (item.kind !== 'script') return functionLabel(item);
-    const script = item.script;
-    if (script.label) return script.label;
-    if (script.opcode === 'event_whenbroadcastreceived') return labels.receive.replace('%1', () => script.receivedMessage ?? '');
-    if (script.opcode === 'event_whenflagclicked') return labels.flag;
-    return script.opcode;
 }
 
 /** Order hat scripts as `orderFunctions` orders functions, by their labels or by where they sit. */
@@ -612,13 +710,6 @@ const english = {
     view: 'View',
     modes: {list: 'List', graph: 'Call graph'} as Record<FunctionPaneMode, string>,
     flow: 'Flow',
-    arrows: 'Arrows',
-    callArrows: 'Function calls',
-    messageArrows: 'Messages',
-    receive: 'when I receive %1',
-    flag: 'when green flag clicked',
-    messageWait: 'Send and wait',
-    scriptIn: 'A script of %1',
     directions: {LR: 'Left to right (LR)', TD: 'Top to bottom (TD)'} as Record<CallGraphDirection, string>,
     order: 'Order',
     orders: {name: 'Name (A–Z)', z: 'Z order (rows)', n: 'N order (columns)'} as Record<FunctionOrder, string>,
@@ -637,7 +728,9 @@ const english = {
     warp: 'Runs without screen refresh',
     editor: 'Code of %1',
     readOnly: 'Click this view to edit.',
-    graph: 'Function calls and message sends and receives',
+    graph: 'Script relationships',
+    sendAndWait: 'Send and wait',
+    sendMessage: 'Send',
     openCode: 'Open the code of %1',
     zoom: 'Zoom',
     zoomOut: 'Zoom out',
@@ -673,13 +766,6 @@ const japanese: typeof english = {
     view: '表示',
     modes: {list: '一覧', graph: '呼び出し図'},
     flow: '流れ',
-    arrows: '矢印',
-    callArrows: '関数呼び出し',
-    messageArrows: 'メッセージ送受信',
-    receive: '%1 を受け取ったとき',
-    flag: '緑の旗が押されたとき',
-    messageWait: '送って待つ',
-    scriptIn: '%1 のスクリプト',
     directions: {LR: '左から右 (LR)', TD: '上から下 (TD)'},
     order: '並べ方',
     orders: {name: '名前順', z: 'Z順（行ごと）', n: 'N順（列ごと）'},
@@ -697,7 +783,9 @@ const japanese: typeof english = {
     warp: '画面を再描画せずに実行',
     editor: '%1 のコード',
     readOnly: 'このビューをクリックすると編集できます。',
-    graph: '関数の呼び出しとメッセージの送受信の関係',
+    graph: '呼び出し関係',
+    sendAndWait: '送って待つ',
+    sendMessage: '送る',
     openCode: '%1 のコードを開く',
     zoom: '拡大・縮小',
     zoomOut: '縮小',
@@ -738,11 +826,55 @@ function FunctionEditor({targetId, functionId, editable, label, mountEditor, lar
         role="group" aria-label={label} data-function-editor={functionId} data-editable={editable || undefined} />;
 }
 
-/** The flow of the call graph drawn as two boxes and the arrow between them. */
-const flowGlyphs: Record<CallGraphDirection, string> = {
-    LR: 'M1.5 5.5h4v5h-4Zm9 0h4v5h-4ZM5.5 8h4.5m-1.5-1.5L10 8 8.5 9.5',
-    TD: 'M5.5 1.5h5v4h-5Zm0 9h5v4h-5ZM8 5.5V10m-1.5-1.5L8 10l1.5-1.5'
-};
+/** Two mutually exclusive directions in the host's section rail, separate from the call graph. */
+export function FunctionFlowToggle({locale, value, onChange}: {
+    locale: string;
+    value: CallGraphDirection;
+    onChange(value: CallGraphDirection): void;
+}) {
+    const ja = /^ja(?:-|$)/i.test(locale);
+    const labels = ja ? japanese : english;
+    return <div className="tw-sprite-functions__flow-toggle" role="group" aria-label={labels.flow}>
+        {(['LR', 'TD'] as const).map(direction => {
+            const label = `${labels.flow}: ${labels.directions[direction]}`;
+            return <button key={direction} type="button" data-direction={direction} aria-pressed={value === direction}
+                title={label} aria-label={label} onClick={() => { if (direction !== value) onChange(direction); }}
+                onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
+                <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+                    <g transform={direction === 'TD' ? 'rotate(90 10 10)' : undefined}>
+                        <rect x="1" y="7" width="5" height="6" rx="1" />
+                        <path d="M8 10h4m-2-2 2 2-2 2" />
+                        <rect x="14" y="7" width="5" height="6" rx="1" />
+                    </g>
+                </svg>
+            </button>;
+        })}
+    </div>;
+}
+
+/** The host places these two independent graph filters beside the direction switch in its rail. */
+export function FunctionRelationToggles({locale, value, onChange}: {
+    locale: string;
+    value: FunctionRelationVisibility;
+    onChange(value: FunctionRelationVisibility): void;
+}) {
+    const ja = /^ja(?:-|$)/i.test(locale);
+    const labels = ja ? {function: '関数', message: 'メッセージ'} : {function: 'Functions', message: 'Messages'};
+    const tooltip = (kind: 'function' | 'message') => ja ?
+        `${kind === 'function' ? '関数の呼び出し関係' : 'メッセージの送受信関係'}を${value[kind] ? '隠す' : '表示'}` :
+        `${value[kind] ? 'Hide' : 'Show'} ${kind === 'function' ? 'function calls' : 'message sends and receivers'}`;
+    return <div className="tw-sprite-functions__relation-toggles" role="group"
+        aria-label={ja ? '呼び出し関係の表示' : 'Visible relations'}>
+        {(['function', 'message'] as const).map(kind => <button key={kind} type="button"
+            data-relation-kind={kind} aria-label={labels[kind]} title={tooltip(kind)} aria-pressed={value[kind]}
+            onClick={() => onChange({...value, [kind]: !value[kind]})}
+            onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
+            {kind === 'function' ? <FunctionIcon /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path d="M3 3.5h10v7H8L5 13v-2.5H3Z" />
+            </svg>}
+        </button>)}
+    </div>;
+}
 
 /** Buttons for one of a few choices. With `icons`, each shows its icon and keeps its name for tooltips and readers. */
 function Choice<T extends string>({label, value, options, icons, onChange}: {
@@ -884,44 +1016,253 @@ function FunctionDialog({labels, fn, children, onClose}: {
     </dialog>;
 }
 
-function edgePath(from: CallGraphNode, to: CallGraphNode, kind: CallGraphEdge['kind'], direction: CallGraphDirection) {
-    const {width, height} = callGraphNodeSize;
+function edgePath(from: CallGraphNode, to: CallGraphNode, kind: CallGraphEdge['kind'], direction: CallGraphDirection, lane = 0) {
+    const {width} = callGraphNodeSize;
+    const height = from.height ?? callGraphNodeSize.height;
+    const targetHeight = to.height ?? callGraphNodeSize.height;
     if (kind === 'self') {
-        const x = from.x + width - 24;
+        const x = from.x + (lane < 0 ? 24 : width - 24);
         const y = from.y;
         // Stay within the graph padding above the first row.
         return `M${x} ${y} C${x} ${y - 20}, ${x + 32} ${y - 20}, ${x + 20} ${y}`;
     }
+    if (from.manual || to.manual) {
+        const dx = to.x - from.x;
+        const dy = to.y - from.y;
+        const horizontal = Math.abs(dx) >= width + 24 || Math.abs(dy) < height + 24 &&
+            (direction === 'LR' || Math.abs(dx) / width >= Math.abs(dy) / height);
+        if (horizontal) {
+            const sign = dx >= 0 ? 1 : -1;
+            const sx = from.x + (sign > 0 ? width : 0);
+            const sy = from.y + height / 2 + lane;
+            const tx = to.x + (sign > 0 ? 0 : width);
+            const ty = to.y + targetHeight / 2 + lane;
+            const bend = Math.max(24, Math.abs(tx - sx) / 2);
+            return `M${sx} ${sy} C${sx + bend * sign} ${sy}, ${tx - bend * sign} ${ty}, ${tx} ${ty}`;
+        }
+        const sign = dy >= 0 ? 1 : -1;
+        const sx = from.x + width / 2 + lane;
+        const sy = from.y + (sign > 0 ? height : 0);
+        const tx = to.x + width / 2 + lane;
+        const ty = to.y + (sign > 0 ? 0 : targetHeight);
+        const bend = Math.max(24, Math.abs(ty - sy) / 2);
+        return `M${sx} ${sy} C${sx} ${sy + bend * sign}, ${tx} ${ty - bend * sign}, ${tx} ${ty}`;
+    }
     if (direction === 'LR') {
         if (kind === 'back') {
-            const sx = from.x + width / 2;
+            const sx = from.x + width / 2 + lane;
             const sy = from.y + height;
-            const tx = to.x + width / 2;
-            const ty = to.y + height;
-            const bend = Math.max(sy, ty) + 36;
+            const tx = to.x + width / 2 + lane;
+            const ty = to.y + targetHeight;
+            const bend = Math.max(sy, ty) + 36 + Math.abs(lane) + (lane < 0 ? 12 : 0);
             return `M${sx} ${sy} C${sx} ${bend}, ${tx} ${bend}, ${tx} ${ty}`;
         }
         const sx = from.x + width;
-        const sy = from.y + height / 2;
+        const sy = from.y + height / 2 + lane;
         const tx = to.x;
-        const ty = to.y + height / 2;
+        const ty = to.y + targetHeight / 2 + lane;
         const middle = (sx + tx) / 2;
         return `M${sx} ${sy} C${middle} ${sy}, ${middle} ${ty}, ${tx} ${ty}`;
     }
     if (kind === 'back') {
         const sx = from.x + width;
-        const sy = from.y + height / 2;
+        const sy = from.y + height / 2 + lane;
         const tx = to.x + width;
-        const ty = to.y + height / 2;
-        const bend = Math.max(sx, tx) + 36;
+        const ty = to.y + targetHeight / 2 + lane;
+        const bend = Math.max(sx, tx) + 36 + Math.abs(lane) + (lane < 0 ? 12 : 0);
         return `M${sx} ${sy} C${bend} ${sy}, ${bend} ${ty}, ${tx} ${ty}`;
     }
-    const sx = from.x + width / 2;
+    const sx = from.x + width / 2 + lane;
     const sy = from.y + height;
-    const tx = to.x + width / 2;
+    const tx = to.x + width / 2 + lane;
     const ty = to.y;
     const middle = (sy + ty) / 2;
     return `M${sx} ${sy} C${sx} ${middle}, ${tx} ${middle}, ${tx} ${ty}`;
+}
+
+interface EdgeLabel {
+    kind: ScriptRelation['kind'];
+    rows: {name: string; lines: string[]; wait: boolean; ordinary: boolean}[];
+    width: number;
+    height: number;
+}
+
+const labelTextWidth = (value: string) => [...value].reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 12 : 8), 0);
+function labelLines(value: string) {
+    const lines: string[] = [];
+    let line = '';
+    for (const char of value) {
+        if (line && labelTextWidth(line + char) > 208) { lines.push(line); line = ''; }
+        line += char;
+    }
+    return [...lines, line];
+}
+
+function graphEdgeLabels(relations: Map<string, ScriptRelation[]>, targetId: string) {
+    const result = new Map<string, EdgeLabel[]>();
+    for (const [key, values] of relations) {
+        const kinds: EdgeLabel[] = [];
+        for (const kind of ['function', 'message'] as const) {
+            const matching = values.filter(value => value.kind === kind);
+            if (!matching.length) continue;
+            const names = new Map<string, {wait: boolean; ordinary: boolean}>();
+            for (const value of matching) {
+                const modes = names.get(value.label) ?? {wait: false, ordinary: false};
+                if (kind === 'message' && value.wait) modes.wait = true;
+                else modes.ordinary = true;
+                names.set(value.label, modes);
+            }
+            const foreign = matching[0].destination.targetId !== targetId ? matching[0].destination :
+                matching[0].source.targetId !== targetId ? matching[0].source : undefined;
+            const rows = kind === 'function' && !foreign ? [] : [...names].map(([name, modes]) =>
+                ({name, ...modes, lines: labelLines(`${kind === 'message' ? '💬 ' : ''}${name}`)}));
+            const width = rows.length ? Math.max(56, ...rows.flatMap(row => row.lines.map(line => labelTextWidth(line) + 12 + (row.wait ? 26 : 0))))
+                : 0;
+            const height = rows.length ? 12 + rows.reduce((height, row) => height + row.lines.length * 24, 0) : 0;
+            kinds.push({kind, rows, width, height});
+        }
+        result.set(key, kinds);
+    }
+    return result;
+}
+
+function edgeLabelBox(edge: CallGraphEdge, from: CallGraphNode, to: CallGraphNode, label: EdgeLabel,
+    direction: CallGraphDirection, index: number, count: number) {
+    const side = count > 1 ? index === 0 ? -1 : 1 : direction === 'LR' ? -1 : 1;
+    const lane = count > 1 ? index === 0 ? -16 : 16 : 0;
+    const path = edgePath(from, to, edge.kind, direction, lane);
+    const values = path.match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
+    const tx = values[6];
+    const ty = values[7];
+    if (edge.kind !== 'self' && (from.manual || to.manual)) {
+        const bx = values[4];
+        const by = values[5];
+        return Math.abs(tx - bx) >= Math.abs(ty - by) ?
+            {x: tx >= bx ? tx - 12 - label.width : tx + 12,
+                y: ty + (side < 0 ? -12 - label.height : 12), width: label.width, height: label.height} :
+            {x: tx + (side < 0 ? -12 - label.width : 12),
+                y: ty >= by ? ty - 12 - label.height : ty + 12, width: label.width, height: label.height};
+    }
+    if (edge.kind === 'self') return {x: to.x + callGraphNodeSize.width + 24,
+        y: to.y + index * (label.height + 12), width: label.width, height: label.height};
+    if (edge.kind === 'back') return direction === 'LR' ?
+        {x: tx + (side < 0 ? -12 - label.width : 12), y: ty + 12, width: label.width, height: label.height} :
+        {x: tx + 12, y: ty + (side < 0 ? -12 - label.height : 12), width: label.width, height: label.height};
+    return direction === 'LR' ?
+        {x: tx - 12 - label.width, y: ty + (side < 0 ? -12 - label.height : 12), width: label.width, height: label.height} :
+        {x: tx + (side < 0 ? -12 - label.width : 12), y: ty - 12 - label.height, width: label.width, height: label.height};
+}
+
+/** A moved node must not hide another edge's receiving label. Both drawing and bounds use this choice. */
+function graphLabelBoxes(nodes: readonly CallGraphNode[], edges: readonly CallGraphEdge[], direction: CallGraphDirection,
+    labels: Map<string, EdgeLabel[]>) {
+    const byId = new Map(nodes.map(node => [node.fn.id, node]));
+    const result = new Map<string, {x: number; y: number; width: number; height: number}>();
+    const manual = nodes.some(node => node.manual);
+    const overlap = (a: {x: number; y: number; width: number; height: number}, b: {x: number; y: number; width: number; height: number}) =>
+        Math.max(0, Math.min(a.x + a.width, b.x + b.width + 6) - Math.max(a.x, b.x - 6)) *
+        Math.max(0, Math.min(a.y + a.height, b.y + b.height + 6) - Math.max(a.y, b.y - 6));
+    for (const edge of edges) {
+        const key = `${edge.from}>${edge.to}`;
+        const from = byId.get(edge.from);
+        const to = byId.get(edge.to);
+        const variants = labels.get(key) ?? [];
+        variants.forEach((label, index) => {
+            if (!label.width) return;
+            const preferred = edgeLabelBox(edge, from, to, label, direction, index, variants.length);
+            let chosen = preferred;
+            if (manual) {
+                const lane = variants.length > 1 ? index === 0 ? -16 : 16 : 0;
+                const coordinates = edgePath(from, to, edge.kind, direction, lane).match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
+                const tx = coordinates[6];
+                const ty = coordinates[7];
+                const left = to.x - label.width - 12;
+                const right = to.x + callGraphNodeSize.width + 12;
+                const above = to.y - label.height - 12;
+                const below = to.y + (to.height ?? callGraphNodeSize.height) + 12;
+                const candidates = [preferred,
+                    {x: left, y: ty - label.height / 2}, {x: right, y: ty - label.height / 2},
+                    {x: tx - label.width / 2, y: above}, {x: tx - label.width / 2, y: below},
+                    {x: left, y: above}, {x: right, y: above}, {x: left, y: below}, {x: right, y: below}
+                ].map(point => ({...point, width: label.width, height: label.height}));
+                const samples = Array.from({length: 25}, (_, sample) => {
+                    const t = sample / 24;
+                    const u = 1 - t;
+                    return {x: u ** 3 * coordinates[0] + 3 * u * u * t * coordinates[2] +
+                        3 * u * t * t * coordinates[4] + t ** 3 * tx,
+                    y: u ** 3 * coordinates[1] + 3 * u * u * t * coordinates[3] +
+                        3 * u * t * t * coordinates[5] + t ** 3 * ty};
+                });
+                const score = (box: typeof preferred) => {
+                    const blocked = nodes.reduce((sum, node) => sum + overlap(box, {...node, width: callGraphNodeSize.width, height: node.height ?? callGraphNodeSize.height}), 0);
+                    const labels = [...result.values()].reduce((sum, other) => sum + overlap(box, other), 0);
+                    const line = samples.filter(point => point.x >= box.x - 3 && point.x <= box.x + box.width + 3 &&
+                        point.y >= box.y - 3 && point.y <= box.y + box.height + 3).length;
+                    return blocked * 100000 + labels * 1000 + line * 500 +
+                        Math.hypot(box.x + box.width / 2 - tx, box.y + box.height / 2 - ty);
+                };
+                let best = score(preferred);
+                for (const candidate of candidates) {
+                    const value = score(candidate);
+                    if (value < best) { best = value; chosen = candidate; }
+                }
+            }
+            result.set(`${key}:${label.kind}`, chosen);
+        });
+    }
+    return result;
+}
+
+/** Reserve room for concrete edge labels in both the graph's fitting bounds and its node spacing. */
+function labelledGraph(functions: readonly SpriteFunction[], direction: CallGraphDirection, labels: Map<string, EdgeLabel[]>, nodeHeight: number) {
+    const entries = [...labels.values()].flat().filter(label => label.width);
+    if (!entries.length) return layoutCallGraph(functions, direction, 'name', 'en', {nodeHeight});
+    const maxWidth = Math.max(...entries.map(label => label.width));
+    const maxHeight = Math.max(...entries.map(label => label.height));
+    const layout = layoutCallGraph(functions, direction, 'name', 'en', {
+        nodeHeight,
+        layerGap: Math.max(64, (direction === 'LR' ? maxWidth : maxHeight) + 48),
+        siblingGap: Math.max(18, 2 * (direction === 'LR' ? maxHeight : maxWidth) + 32)
+    });
+    const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
+    const boxes = layout.edges.flatMap(edge => (labels.get(`${edge.from}>${edge.to}`) ?? []).flatMap((label, index, variants) =>
+        label.width ? [edgeLabelBox(edge, byId.get(edge.from), byId.get(edge.to), label, direction, index, variants.length)] : []));
+    const shiftX = Math.max(0, 24 - Math.min(24, ...boxes.map(box => box.x)));
+    const shiftY = Math.max(0, 24 - Math.min(24, ...boxes.map(box => box.y)));
+    return {...layout, nodes: layout.nodes.map(node => ({...node, x: node.x + shiftX, y: node.y + shiftY})),
+        width: Math.max(layout.width, ...boxes.map(box => box.x + box.width + 24)) + shiftX,
+        height: Math.max(layout.height, ...boxes.map(box => box.y + box.height + 24)) + shiftY};
+}
+
+// Keep the same sixteen-unit hourglass as the code area's relation badge.
+const relationWaitGlyph = 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12';
+
+/** A hand-placed node may cross the origin; include its paths and labels in navigation bounds. */
+function positionedGraph(base: CallGraphLayout, positions: GraphNodePositions, direction: CallGraphDirection,
+    labels: Map<string, EdgeLabel[]>): CallGraphLayout {
+    const nodes = base.nodes.map(node => {
+        const point = Object.hasOwn(positions, node.fn.id) && positions[node.fn.id];
+        return point && Number.isFinite(point.x) && Number.isFinite(point.y) ? {...node, ...point, manual: true} : node;
+    });
+    if (!nodes.some(node => node.manual)) return base;
+    const byId = new Map(nodes.map(node => [node.fn.id, node]));
+    const boxes = nodes.map(node => ({x: node.x, y: node.y, width: callGraphNodeSize.width, height: node.height ?? callGraphNodeSize.height}));
+    boxes.push(...graphLabelBoxes(nodes, base.edges, direction, labels).values());
+    for (const edge of base.edges) {
+        const variants = labels.get(`${edge.from}>${edge.to}`) ?? [];
+        const lanes = variants.length > 1 ? [-16, 16] : [0];
+        for (const lane of lanes) {
+            const coordinates = edgePath(byId.get(edge.from), byId.get(edge.to), edge.kind, direction, lane)
+                .match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
+            const x = coordinates.filter((_, index) => index % 2 === 0);
+            const y = coordinates.filter((_, index) => index % 2 === 1);
+            boxes.push({x: Math.min(...x), y: Math.min(...y), width: Math.max(...x) - Math.min(...x), height: Math.max(...y) - Math.min(...y)});
+        }
+    }
+    const left = Math.min(0, ...boxes.map(box => box.x - graphPadding));
+    const top = Math.min(0, ...boxes.map(box => box.y - graphPadding));
+    return {...base, nodes, left, top, width: Math.max(...boxes.map(box => box.x + box.width + graphPadding)) - left,
+        height: Math.max(...boxes.map(box => box.y + box.height + graphPadding)) - top};
 }
 
 /** How an edge or a node relates to the function under the pointer. */
@@ -941,7 +1282,8 @@ export function callGraphHighlight(edges: readonly CallGraphEdge[], id: string):
         result.nodes.set(other, current ? 'both' : role);
     };
     for (const edge of edges) {
-        const key = graphEdgeKey(edge);
+        const pair = `${edge.from}>${edge.to}`;
+        const key = edge.relation === 'message' ? `${pair}:message:${JSON.stringify([edge.messageKey, edge.wait])}` : pair;
         if (edge.from === id && edge.to === id) result.edges.set(key, 'self');
         else if (edge.to === id) {
             result.edges.set(key, 'in');
@@ -959,6 +1301,8 @@ interface GraphView {
     scale: number;
     x: number;
     y: number;
+    /** A node drag keeps its viewport until the next explicit pan, zoom or reset. */
+    preserve?: boolean;
 }
 interface Size {
     width: number;
@@ -978,8 +1322,8 @@ function startView(size: Size, layout: CallGraphLayout): GraphView {
     // Center a graph that fits, as the code area does; otherwise start from its first function.
     return {
         scale: 1,
-        x: Math.max(0, (size.width - layout.width) / 2),
-        y: Math.max(0, (size.height - layout.height) / 2)
+        x: Math.max(0, (size.width - layout.width) / 2) - (layout.left ?? 0),
+        y: Math.max(0, (size.height - layout.height) / 2) - (layout.top ?? 0)
     };
 }
 
@@ -992,8 +1336,8 @@ function fitView(view: GraphView, size: Size, layout: CallGraphLayout): GraphVie
     const keepY = Math.min(height, size.height / 2);
     return {
         scale,
-        x: clamp(view.x, keepX - width, size.width - keepX),
-        y: clamp(view.y, keepY - height, size.height - keepY)
+        x: clamp(view.x, keepX - width - (layout.left ?? 0) * scale, size.width - keepX - (layout.left ?? 0) * scale),
+        y: clamp(view.y, keepY - height - (layout.top ?? 0) * scale, size.height - keepY - (layout.top ?? 0) * scale)
     };
 }
 
@@ -1001,7 +1345,8 @@ function fitView(view: GraphView, size: Size, layout: CallGraphLayout): GraphVie
 function scrollArea(view: GraphView, size: Size, layout: CallGraphLayout) {
     const padX = (size.width - Math.min(layout.width * view.scale, size.width / 2)) / view.scale;
     const padY = (size.height - Math.min(layout.height * view.scale, size.height / 2)) / view.scale;
-    return {x: -padX, y: -padY, width: layout.width + 2 * padX, height: layout.height + 2 * padY};
+    return {x: (layout.left ?? 0) - padX, y: (layout.top ?? 0) - padY,
+        width: layout.width + 2 * padX, height: layout.height + 2 * padY};
 }
 
 function zoomAround(view: GraphView, factor: number, x: number, y: number): GraphView {
@@ -1021,36 +1366,78 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-function CallGraph({labels, idPrefix, functions, messages, settings, selectedId, corner, flow, notice, onOpen, canOpen}: {
+/** Conservative character widths keep all text inside the 176px node, including unbroken names. */
+function nodeTextLines(value: string, width: number) {
+    const lines: string[] = [];
+    let line = '';
+    let used = 0;
+    for (const char of value) {
+        const advance = char.charCodeAt(0) > 255 ? 14 : /[MW@#%&mw]/.test(char) ? 13 : /[A-Z]/.test(char) ? 10 : 8;
+        if (char === '\n' || line && used + advance > width) {
+            lines.push(line);
+            line = '';
+            used = 0;
+            if (char === '\n') continue;
+        }
+        line += char;
+        used += advance;
+    }
+    return [...lines, line];
+}
+
+function graphNodeText(fn: CallGraphItem, script: GraphScript | undefined, labels: Labels) {
+    const label = script?.label ?? functionLabel(fn);
+    const stageName = labels === japanese ? '背景' : labels.stage;
+    const owner = script ? script.isStage ? stageName : script.targetName : fn.owner && (fn.owner.isStage ? stageName : fn.owner.name);
+    const foreignFunction = !script && Boolean(fn.owner);
+    const thumbnail = foreignFunction && fn.owner.thumbnailUrl;
+    const available = 146 - (thumbnail ? 28 : 0) - (fn.scriptCalls > 0 ? 20 : 0);
+    const lines = nodeTextLines(foreignFunction ? owner : label, available);
+    const ownerLines = owner && !foreignFunction ? nodeTextLines(owner, available) : [];
+    return {label, owner, foreignFunction, thumbnail, lines, ownerLines,
+        height: Math.max(callGraphNodeSize.height, 12 + (lines.length + ownerLines.length) * 16)};
+}
+
+function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, settings, positions, onPositionsChange,
+    selectedId, corner, notice, onOpen, onOpenScript, canOpenExternal}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
-    messages?: MessageCallGraph;
+    scripts: Map<string, GraphScript>;
+    relations: Map<string, ScriptRelation[]>;
+    targetId: string;
     settings: FunctionPaneSettings;
+    positions: GraphNodePositions;
+    onPositionsChange(positions: GraphNodePositions): void;
     selectedId?: string;
     /** Drawn in the bottom left corner, over the graph. */
     corner?: React.ReactNode;
-    /** The switch of the flow, drawn in the top right corner over the graph. */
-    flow?: React.ReactNode;
     /** Shown over the middle of the graph, as when it has no functions. */
     notice?: React.ReactNode;
-    onOpen(fn: CallGraphItem): void;
-    canOpen(fn: CallGraphItem): boolean;
+    onOpen(fn: SpriteFunction): void;
+    canOpenExternal?: boolean;
+    onOpenScript?(endpoint: ScriptEndpoint): void;
 }) {
     // Functions in the same column or row follow their names.
-    const layout = React.useMemo(() => layoutScriptRelations(functions, messages, settings.direction),
-        [functions, messages, settings.direction]);
-    const visibleEdges = layout.edges.filter(edge => edge.relation === 'message' ?
-        settings.showMessages !== false : settings.showCalls !== false);
+    const edgeLabels = React.useMemo(() => graphEdgeLabels(relations, targetId),
+        [relations, targetId]);
+    const nodeText = React.useMemo(() => new Map(functions.map(fn => [fn.id, graphNodeText(fn, scripts.get(fn.id), labels)])),
+        [functions, scripts, labels]);
+    const nodeHeight = Math.max(callGraphNodeSize.height, ...[...nodeText.values()].map(text => text.height));
+    const automaticLayout = React.useMemo(() => labelledGraph(functions, settings.direction, edgeLabels, nodeHeight),
+        [functions, settings.direction, edgeLabels, nodeHeight]);
+    const [nodeDraft, setNodeDraft] = React.useState<{id: string; positions: GraphNodePositions; view: GraphView} | null>(null);
+    const layout = React.useMemo(() => positionedGraph(automaticLayout, nodeDraft?.positions ?? positions, settings.direction, edgeLabels),
+        [automaticLayout, positions, nodeDraft?.positions, settings.direction, edgeLabels]);
     const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
     // A global function of another sprite may call one here; the uses of one there are not counted here.
     const called = React.useMemo(() => new Set(layout.edges.filter(edge => edge.from !== edge.to).map(edge => edge.to)),
         [layout]);
-    const unused = (fn: CallGraphItem) => fn.kind !== 'script' && !fn.owner && fn.calls === 0 && !called.has(fn.id);
+    const unused = (fn: CallGraphItem) => !fn.owner && fn.calls === 0 && !called.has(fn.id);
     const marker = `${idPrefix}-arrow`;
     // Isolated functions keep their rows; the sort is stable.
-    const reading = [...layout.nodes].sort((a, b) => a.layer - b.layer || (a.isolated ? 0 :
-        settings.direction === 'LR' ? a.y - b.y : a.x - b.x));
+    const reading = [...automaticLayout.nodes].sort((a, b) => a.layer - b.layer || (a.isolated ? 0 :
+        settings.direction === 'LR' ? a.y - b.y : a.x - b.x)).map(node => byId.get(node.fn.id));
 
     const frame = React.useRef<HTMLElement>(null);
     const minimap = React.useRef<HTMLDivElement>(null);
@@ -1061,10 +1448,15 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
     const [focused, setFocused] = React.useState<string | null>(null);
     const [panning, setPanning] = React.useState(false);
     const [mapDragging, setMapDragging] = React.useState(false);
-    const view = fitView(moved ?? startView(size, layout), size, layout);
+    const view = nodeDraft?.view ?? (moved?.preserve ? moved : fitView(moved ?? startView(size, layout), size, layout));
     const current = React.useRef({view, size, layout});
     current.current = {view, size, layout};
     const suppressClick = React.useRef(false);
+    const nodeGesture = React.useRef<{cancel(): void} | null>(null);
+    const graphContext = React.useRef({targetId, direction: settings.direction});
+    graphContext.current = {targetId, direction: settings.direction};
+    const savePositions = React.useRef(onPositionsChange);
+    savePositions.current = onPositionsChange;
 
     const move = React.useCallback((next: (view: GraphView, size: Size, layout: CallGraphLayout) => GraphView) => {
         const {view, size, layout} = current.current;
@@ -1074,6 +1466,7 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
     }, []);
 
     React.useEffect(() => setMoved(null), [settings.direction]);
+    React.useEffect(() => () => nodeGesture.current?.cancel(), [targetId, settings.direction]);
 
     React.useLayoutEffect(() => {
         const element = frame.current;
@@ -1094,7 +1487,7 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
     React.useEffect(() => {
         const element = frame.current;
         const wheel = (event: WheelEvent) => {
-            if ((event.target as Element).closest?.('.tw-sprite-functions__zoom, .tw-sprite-functions__corner, .tw-sprite-functions__flow')) return;
+            if ((event.target as Element).closest?.('.tw-sprite-functions__zoom, .tw-sprite-functions__corner')) return;
             event.preventDefault();
             const delta = wheelPixels(event, element.clientHeight);
             if (event.ctrlKey || event.metaKey) {
@@ -1111,9 +1504,77 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
         return () => element.removeEventListener('wheel', wheel);
     }, [move]);
 
+    function startNodeDrag(event: React.PointerEvent, node: CallGraphNode) {
+        if (event.button !== 0) return;
+        event.stopPropagation();
+        // Focusing the button would reveal it and change the drag's coordinate system before movement.
+        event.preventDefault();
+        nodeGesture.current?.cancel();
+        const window = frame.current.ownerDocument.defaultView;
+        const button = event.currentTarget;
+        const pointerId = event.pointerId;
+        const start = {x: event.clientX, y: event.clientY, node: {x: node.x, y: node.y},
+            view: current.current.view, positions, context: graphContext.current};
+        let dragging = false;
+        let next = positions;
+        const matches = (pointer: PointerEvent) => pointerId === undefined || pointer.pointerId === undefined || pointer.pointerId === pointerId;
+        const sameGraph = () => graphContext.current.targetId === start.context.targetId &&
+            graphContext.current.direction === start.context.direction;
+        const clean = () => {
+            window.removeEventListener('pointermove', pointerMove);
+            window.removeEventListener('pointerup', pointerUp);
+            window.removeEventListener('pointercancel', cancel);
+            window.removeEventListener('blur', cancel);
+            button.removeEventListener('lostpointercapture', cancel);
+            if (typeof pointerId === 'number' && button.hasPointerCapture?.(pointerId)) button.releasePointerCapture(pointerId);
+            nodeGesture.current = null;
+        };
+        const preventDragClick = () => {
+            if (!dragging) return;
+            suppressClick.current = true;
+            window.setTimeout(() => {suppressClick.current = false;});
+        };
+        const cancel = (pointer?: Event) => {
+            if (pointer?.type === 'pointercancel' && !matches(pointer as PointerEvent)) return;
+            clean();
+            preventDragClick();
+            setNodeDraft(null);
+        };
+        const pointerMove = (pointer: PointerEvent) => {
+            if (!matches(pointer)) return;
+            if (!sameGraph()) { cancel(); return; }
+            const dx = pointer.clientX - start.x;
+            const dy = pointer.clientY - start.y;
+            if (!dragging && Math.hypot(dx, dy) < dragThreshold) return;
+            if (!dragging && typeof pointerId === 'number') button.setPointerCapture?.(pointerId);
+            dragging = true;
+            pointer.preventDefault();
+            next = {...start.positions, [node.fn.id]: {x: start.node.x + dx / start.view.scale,
+                y: start.node.y + dy / start.view.scale}};
+            setNodeDraft({id: node.fn.id, positions: next, view: start.view});
+        };
+        const pointerUp = (pointer: PointerEvent) => {
+            if (!matches(pointer)) return;
+            clean();
+            if (dragging && sameGraph()) {
+                preventDragClick();
+                // Expanding navigation bounds must not recenter the graph under the released pointer.
+                setMoved({...start.view, preserve: true});
+                savePositions.current(next);
+            }
+            setNodeDraft(null);
+        };
+        nodeGesture.current = {cancel};
+        window.addEventListener('pointermove', pointerMove, {passive: false});
+        window.addEventListener('pointerup', pointerUp);
+        window.addEventListener('pointercancel', cancel);
+        window.addEventListener('blur', cancel);
+        button.addEventListener('lostpointercapture', cancel);
+    }
+
     function startPan(event: React.PointerEvent) {
         if (event.button !== 0 || (event.target as Element)
-            .closest('.tw-sprite-functions__zoom, .tw-sprite-functions__minimap, .tw-sprite-functions__corner, .tw-sprite-functions__flow')) return;
+            .closest('.tw-sprite-functions__node, .tw-sprite-functions__zoom, .tw-sprite-functions__minimap, .tw-sprite-functions__corner')) return;
         const window = frame.current.ownerDocument.defaultView;
         const start = {x: event.clientX, y: event.clientY, view: current.current.view};
         let dragging = false;
@@ -1198,7 +1659,7 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
             const left = view.x + node.x * view.scale;
             const top = view.y + node.y * view.scale;
             const right = left + callGraphNodeSize.width * view.scale;
-            const bottom = top + callGraphNodeSize.height * view.scale;
+            const bottom = top + (node.height ?? callGraphNodeSize.height) * view.scale;
             const dx = left < margin ? margin - left : right > size.width - margin ? size.width - margin - right : 0;
             const dy = top < margin ? margin - top : bottom > size.height - margin ? size.height - margin - bottom : 0;
             return dx || dy ? {...view, x: view.x + dx, y: view.y + dy} : view;
@@ -1208,40 +1669,67 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
     // Bring the function shown beside the pane, such as one just added, into view.
     const selectedNode = selectedId ? byId.get(selectedId) : undefined;
     React.useEffect(() => {
-        if (selectedNode && size.width) reveal(selectedNode);
-    }, [selectedNode?.fn.id, selectedNode?.x, selectedNode?.y, size.width > 0]);
+        if (selectedNode && size.width && !nodeDraft && !nodeGesture.current) reveal(selectedNode);
+    }, [selectedNode?.fn.id, selectedNode?.x, selectedNode?.y, selectedNode?.height, size.width > 0]);
 
-    const highlightId = pointed ?? focused;
+    const highlightId = nodeDraft?.id ?? pointed ?? focused;
+    const visibleKind = (kind: 'function' | 'message') => settings.relationVisibility ||
+        (kind === 'function' ? settings.showCalls !== false : settings.showMessages !== false);
+    const visibleEdges = layout.edges.filter(edge => (edgeLabels.get(`${edge.from}>${edge.to}`) ?? [{kind: 'function' as const}])
+        .some(label => visibleKind(label.kind)));
     const highlight = highlightId && byId.has(highlightId) ? callGraphHighlight(visibleEdges, highlightId) : null;
     // Draw the highlighted links over the others.
     const edges = highlight ? [...visibleEdges].sort((a, b) =>
-        Number(highlight.edges.has(graphEdgeKey(a))) - Number(highlight.edges.has(graphEdgeKey(b)))) : visibleEdges;
-    const edgeMarker = (edge: CallGraphEdge, kind?: string) =>
-        `url(#${marker}${kind === 'in' ? '-in' : kind ? '-out' : edge.relation === 'message' ? '-message' : ''})`;
-    // Offset parallel links sideways; a call and a broadcast between the same scripts stay distinct.
-    const offsets = new Map<string, number>();
-    const pairs = new Map<string, CallGraphEdge[]>();
-    for (const edge of layout.edges) {
-        const pair = `${edge.from}>${edge.to}`;
-        const group = pairs.get(pair) ?? [];
-        group.push(edge);
-        pairs.set(pair, group);
-    }
-    for (const group of pairs.values()) group.forEach((edge, index) =>
-        offsets.set(graphEdgeKey(edge), group.length > 1 ? (index / (group.length - 1) - 0.5) * 24 : 0));
-    const shifted = (node: CallGraphNode, offset: number): CallGraphNode => settings.direction === 'LR' ?
-        {...node, y: node.y + offset} : {...node, x: node.x + offset};
-    const paths = (withMarkers: boolean) => edges.map(edge => {
-        const key = graphEdgeKey(edge);
+        Number(highlight.edges.has(`${a.from}>${a.to}`)) - Number(highlight.edges.has(`${b.from}>${b.to}`))) : visibleEdges;
+    const edgeMarker = (kind?: string, relation = 'function') =>
+        `url(#${marker}${relation === 'message' ? '-message' : ''}${kind === 'in' ? '-in' : kind ? '-out' : ''})`;
+    const paths = (withMarkers: boolean) => edges.flatMap(edge => {
+        const key = `${edge.from}>${edge.to}`;
         const kind = highlight?.edges.get(key);
-        const offset = offsets.get(key) ?? 0;
-        return <path key={key} data-edge={withMarkers ? key : undefined} data-kind={edge.kind} data-highlight={kind}
-            data-relation={edge.relation} data-wait={edge.wait || undefined}
-            markerEnd={withMarkers ? edgeMarker(edge, kind) : undefined}
-            d={edgePath(shifted(byId.get(edge.from), offset), shifted(byId.get(edge.to), offset), edge.kind, settings.direction)}>
-            {withMarkers && edge.relation === 'message' &&
-                <title>{edge.wait ? `${edge.messageName} (${labels.messageWait})` : edge.messageName}</title>}
-        </path>;
+        const variants = edgeLabels.get(key) ?? [{kind: 'function' as const, rows: [], width: 0, height: 0}];
+        return variants.flatMap((label, index) => {
+            if (!visibleKind(label.kind)) return [];
+            const from = byId.get(edge.from);
+            const to = byId.get(edge.to);
+            const lane = variants.length > 1 ? index === 0 ? -16 : 16 : 0;
+            const matching = (relations.get(key) ?? []).filter(relation => relation.kind === label.kind);
+            return <path key={`${key}:${label.kind}`} data-edge={withMarkers ? key : undefined}
+                data-kind={edge.kind} data-highlight={kind} data-script-relation={label.kind} data-count={matching.length || 1}
+                data-wait={label.rows.some(row => row.wait) || undefined}
+                markerEnd={withMarkers ? edgeMarker(kind, label.kind) : undefined}
+                d={edgePath(from, to, edge.kind, settings.direction, lane)}>
+                {matching.length > 0 && <title>{[...new Set(matching.map(relation => relation.label))].join(', ')}</title>}
+            </path>;
+        });
+    });
+    const labelBoxes = graphLabelBoxes(layout.nodes, layout.edges, settings.direction, edgeLabels);
+    const concreteLabels = layout.edges.flatMap(edge => {
+        const key = `${edge.from}>${edge.to}`;
+        return (edgeLabels.get(key) ?? []).flatMap((label, index, variants) => {
+            if (!label.width || !visibleKind(label.kind)) return [];
+            const box = labelBoxes.get(`${key}:${label.kind}`);
+            let offset = 6;
+            return [<g key={`${key}:${label.kind}`} className="tw-sprite-functions__edge-label"
+                data-edge={key} data-script-relation={label.kind} data-highlight={highlight?.edges.get(key)}
+                transform={`translate(${box.x} ${box.y})`}>
+                <rect width={box.width} height={box.height} rx="4" />
+                {label.rows.map(row => {
+                    const rowY = offset;
+                    offset += row.lines.length * 24;
+                    return <g key={row.name} className="tw-sprite-functions__edge-label-row" data-message-name={label.kind === 'message' ? row.name : undefined}
+                        transform={`translate(0 ${rowY})`}>
+                        <title>{row.name}{row.wait ? ` · ${row.ordinary ? `${labels.sendMessage} / ` : ''}${labels.sendAndWait}` : ''}</title>
+                        {row.lines.map((line, lineIndex) => <text key={lineIndex} x="6" y={16 + lineIndex * 24}>{line}</text>)}
+                        {row.wait && <g className="tw-sprite-functions__relation-wait" aria-label={labels.sendAndWait}
+                            transform={`translate(${box.width - 14} 12) scale(${1 / Math.max(1, view.scale)})`}>
+                            <title>{labels.sendAndWait}</title>
+                            <rect x="-10" y="-10" width="20" height="20" rx="4" />
+                            <path className="tw-sprite-functions__relation-wait-glyph" d={relationWaitGlyph} transform="translate(-8 -8)" />
+                        </g>}
+                    </g>;
+                })}
+            </g>];
+        });
     });
     const area = scrollArea(view, size, layout);
     const mapSize = {
@@ -1251,6 +1739,7 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
 
     return <figure ref={frame} className="tw-sprite-functions__graph" data-direction={settings.direction}
         data-highlighting={highlight ? '' : undefined} data-panning={panning ? '' : undefined}
+        data-node-dragging={nodeDraft?.id}
         onPointerDown={startPan}
         onScroll={event => {
             // Focus may scroll the clipped frame; the view moves by its transform instead.
@@ -1258,7 +1747,7 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
             event.currentTarget.scrollTop = 0;
         }}
         onClickCapture={event => {
-            if (!suppressClick.current) return;
+            if (!suppressClick.current || event.detail === 0) return;
             suppressClick.current = false;
             event.preventDefault();
             event.stopPropagation();
@@ -1269,69 +1758,52 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
             <svg className="tw-sprite-functions__edges" width={layout.width} height={layout.height} aria-hidden="true"
                 focusable="false">
                 <defs>
-                    {['', '-in', '-out', '-message'].map(suffix => <marker key={suffix} id={marker + suffix} viewBox="0 0 10 10" refX="9"
+                    {['', '-message'].flatMap(relation => ['', '-in', '-out'].map(suffix => <marker key={relation + suffix}
+                        id={marker + relation + suffix} viewBox="0 0 10 10" refX="9"
                         refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"
-                        data-highlight={suffix.slice(1) || undefined}><path d="M0 0 10 5 0 10Z" /></marker>)}
+                        data-script-relation={relation ? 'message' : 'function'}
+                        data-highlight={suffix.slice(1) || undefined}><path d="M0 0 10 5 0 10Z" /></marker>))}
                 </defs>
                 {paths(true)}
-                {edges.filter(edge => edge.relation === 'message').map(edge => {
-                    const from = byId.get(edge.from);
-                    const to = byId.get(edge.to);
-                    const offset = offsets.get(graphEdgeKey(edge)) ?? 0;
-                    const self = edge.kind === 'self';
-                    let x = self ? from.x + callGraphNodeSize.width + 12 :
-                        (from.x + to.x + callGraphNodeSize.width) / 2 + (settings.direction === 'TD' ? offset : 0);
-                    let y = self ? from.y + 12 + offset :
-                        (from.y + to.y + callGraphNodeSize.height) / 2 + (settings.direction === 'LR' ? offset : 0) - 5;
-                    // A back link bends below (LR) or to the right (TD). Label its curve, rather
-                    // than the straight midpoint, which can coincide with the forward link.
-                    if (edge.kind === 'back') {
-                        if (settings.direction === 'LR') {
-                            const sy = from.y + callGraphNodeSize.height + offset;
-                            const ty = to.y + callGraphNodeSize.height + offset;
-                            y = (sy + ty) / 8 + 0.75 * (Math.max(sy, ty) + 36) - 5;
-                        } else {
-                            const sx = from.x + callGraphNodeSize.width + offset;
-                            const tx = to.x + callGraphNodeSize.width + offset;
-                            x = (sx + tx) / 8 + 0.75 * (Math.max(sx, tx) + 36);
-                        }
-                    }
-                    return <text key={graphEdgeKey(edge)} className="tw-sprite-functions__edge-label" x={x} y={y}
-                        data-highlight={highlight?.edges.get(graphEdgeKey(edge))} textAnchor={self ? 'start' : 'middle'}>
-                        {edge.messageName}{edge.wait ? ' ⏳' : ''}
-                    </text>;
-                })}
+                {concreteLabels}
             </svg>
             <ul className="tw-sprite-functions__nodes">
                 {reading.map(node => {
                     const {fn, x, y} = node;
-                    const label = graphItemLabel(fn, labels);
-                    const owner = fn.owner && (fn.owner.isStage ? labels.stage : fn.owner.name);
-                    return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: callGraphNodeSize.height}}
+                    const script = scripts.get(fn.id);
+                    const {label, owner, foreignFunction, thumbnail, lines, ownerLines} = nodeText.get(fn.id);
+                    return <li key={fn.id} style={{left: x, top: y, width: callGraphNodeSize.width, height: node.height ?? callGraphNodeSize.height}}
                         data-isolated={node.isolated || undefined}>
-                        <button type="button" className="tw-sprite-functions__node"
-                            data-function-key={fn.kind !== 'script' ? fn.id : undefined}
-                            data-script-key={fn.kind === 'script' ? fn.id : undefined}
-                            data-kind={fn.kind} data-scope={fn.scope === 'global' ? 'global' : undefined}
-                            data-owner={fn.owner ? fn.owner.targetId : undefined} aria-current={selectedId === fn.id || undefined}
+                        <button type="button" className="tw-sprite-functions__node" data-function-key={script ? undefined : fn.id}
+                            data-dragging={nodeDraft?.id === fn.id || undefined} onPointerDown={event => startNodeDrag(event, node)}
+                            data-script-key={script ? fn.id : undefined} data-kind={script ? 'script' : fn.kind}
+                            data-scope={fn.scope === 'global' ? 'global' : undefined}
+                            data-owner={script?.targetId ?? (fn.owner ? fn.owner.targetId : undefined)} aria-current={selectedId === fn.id || undefined}
                             data-unused={unused(fn) || undefined} data-entry={fn.scriptCalls > 0 || undefined}
                             data-highlight={highlight?.nodes.get(fn.id)}
-                            title={[owner ? (fn.kind === 'script' ? labels.scriptIn : labels.globalIn).replace('%1', () => owner) :
-                                labels.openCode.replace('%1', () => label),
-                                owner && label,
+                            title={script ? [labels.openScript.replace('%1', () => label), owner].filter(Boolean).join('\n') :
+                                [owner ? labels.globalIn.replace('%1', () => owner) : labels.openCode.replace('%1', () => label),
                                 fn.kind === 'named' && labels.named, fn.scope === 'global' && labels.global,
-                                fn.description].filter(Boolean).join('\n')}
+                                owner && label, fn.description].filter(Boolean).join('\n')}
+                            aria-label={foreignFunction ? `${owner} · ${label}` : undefined}
                             // A function of another sprite opens with that sprite, not here.
-                            aria-disabled={!canOpen(fn) || undefined} onClick={() => canOpen(fn) && onOpen(fn)}
+                            aria-disabled={script ? !onOpenScript || undefined : owner && !canOpenExternal || undefined}
+                            onClick={() => script ? onOpenScript?.({targetId: script.targetId, scriptId: script.scriptId,
+                                blockId: script.scriptId}) : (!owner || canOpenExternal) && onOpen(fn as SpriteFunction)}
                             onPointerEnter={() => setPointed(fn.id)}
                             onPointerLeave={() => setPointed(id => id === fn.id ? null : id)}
                             onFocus={() => {
                                 setFocused(fn.id);
-                                reveal(node);
+                                if (!nodeGesture.current) reveal(node);
                             }}
                             onBlur={() => setFocused(id => id === fn.id ? null : id)}>
-                            <span className="tw-sprite-functions__name">{label}</span>
-                            {owner && <span className="tw-sprite-functions__owner">{owner}</span>}
+                            {thumbnail && <img className="tw-sprite-functions__target-thumbnail" src={thumbnail} alt="" draggable={false} />}
+                            <span className="tw-sprite-functions__node-text">
+                                <span className="tw-sprite-functions__name">{lines.map((line, index) => <span key={index}>{line}</span>)}</span>
+                                {ownerLines.length > 0 && <span className="tw-sprite-functions__owner">
+                                    {ownerLines.map((line, index) => <span key={index}>{line}</span>)}
+                                </span>}
+                            </span>
                             {fn.scriptCalls > 0 && <span className="tw-sprite-functions__entry" title={labels.fromScripts}>▶
                                 <span className="tw-sprite-functions__visually-hidden">{labels.fromScripts}</span></span>}
                         </button>
@@ -1344,8 +1816,8 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
             onPointerDown={startMinimapDrag}>
             <svg viewBox={`${area.x} ${area.y} ${area.width} ${area.height}`} preserveAspectRatio="xMidYMid meet" focusable="false">
                 <g className="tw-sprite-functions__minimap-edges">{paths(false)}</g>
-                {layout.nodes.map(({fn, x, y}) => <rect key={fn.id} x={x} y={y} rx={8} width={callGraphNodeSize.width}
-                    height={callGraphNodeSize.height} data-kind={fn.kind} data-highlight={highlight?.nodes.get(fn.id)} />)}
+                {layout.nodes.map(({fn, x, y, height}) => <rect key={fn.id} data-node-key={fn.id} x={x} y={y} rx={8} width={callGraphNodeSize.width}
+                    height={height ?? callGraphNodeSize.height} data-highlight={highlight?.nodes.get(fn.id)} />)}
                 <rect className="tw-sprite-functions__minimap-view" x={-view.x / view.scale} y={-view.y / view.scale}
                     width={size.width / view.scale} height={size.height / view.scale} />
             </svg>
@@ -1360,7 +1832,6 @@ function CallGraph({labels, idPrefix, functions, messages, settings, selectedId,
         </div>
         {corner && <div className="tw-sprite-functions__corner">{corner}</div>}
         {notice && <div className="tw-sprite-functions__notice" role="status">{notice}</div>}
-        {flow && <div className="tw-sprite-functions__flow">{flow}</div>}
     </figure>;
 }
 
@@ -1473,10 +1944,13 @@ function AddDialog({labels, kind: initialKind, onKind, onCreate, onClose}: {
 }
 
 export function SpriteFunctionPane({locale, editable, data, defaultSettings: initial, onSettingsChange, mountEditor,
-    onCreate, onOpenFunction, onOpenScript, view, selectedId}:
+    onCreate, onOpenFunction, onOpenScript, onOpenRelationScript, view, selectedId, direction, relationVisibility}:
     SpriteFunctionPaneProps) {
     const labels = /^ja(?:-|$)/i.test(locale) ? japanese : english;
-    const [settings, setSettings] = React.useState<FunctionPaneSettings>(() => ({...defaultSettings, ...initial}));
+    const [storedSettings, setSettings] = React.useState<FunctionPaneSettings>(() => ({...defaultSettings, ...initial}));
+    const settings = {...storedSettings, ...(direction ? {direction} : {}),
+        ...(relationVisibility ? {relationVisibility} : {})};
+    const visibility = settings.relationVisibility ?? allRelationKinds;
     const [dialogId, setDialogId] = React.useState<string | null>(null);
     const [usesId, setUsesId] = React.useState<string | null>(null);
     const [adding, setAdding] = React.useState(false);
@@ -1565,37 +2039,11 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         </li>)}
     </ul>;
 
-    // Global functions of other sprites join the graph only.
-    const graphFunctions = React.useMemo(() => data.globals?.length ? [...data.functions, ...data.globals] : data.functions,
-        [data.functions, data.globals]);
-    // The flow switch sits inside the graph, at its top right.
-    const flowChoice = <>
-        <div className="tw-sprite-functions__choice" role="group" aria-label={labels.arrows} data-icons="">
-            {(['calls', 'messages'] as const).map(kind => {
-                const setting = kind === 'calls' ? 'showCalls' : 'showMessages';
-                const label = kind === 'calls' ? labels.callArrows : labels.messageArrows;
-                return <button key={kind} type="button" data-edge-toggle={kind} title={label}
-                    aria-label={label} aria-pressed={settings[setting] !== false}
-                    onClick={() => change({[setting]: settings[setting] === false})}>
-                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor"
-                        strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
-                        <path d={kind === 'calls' ? 'M2 4h4v8h4m-3-3 3 3-3 3M10 2h4v4h-4Z' :
-                            'M3 2.5h10a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5H7l-4 3v-3A1.5 1.5 0 0 1 1.5 10V4A1.5 1.5 0 0 1 3 2.5Z'} />
-                    </svg>
-                </button>;
-            })}
-        </div>
-        <Choice label={labels.flow} value={settings.direction} icons={flowGlyphs}
-            options={labels.directions} onChange={direction => change({direction})} />
-    </>;
-    function openGraphItem(item: CallGraphItem) {
-        if (item.kind === 'script') {
-            const script = item.script;
-            onOpenScript?.({id: script.scriptId, targetId: script.targetId,
-                label: graphItemLabel(item, labels), x: script.x, y: script.y});
-        } else if (item.owner) onOpenFunction?.(item);
-        else setDialogId(item.id);
-    }
+    // Scripts join only the relation graph; the function list and its editors keep their existing data.
+    const graph = React.useMemo(() => relationGraph(scannedRelations(data, labels === japanese), visibility, !data.scriptRelations && Boolean(data.messageGraph)),
+        [data.targetId, data.functions, data.globals, data.scriptRelations, data.scripts, data.messageGraph, labels, visibility.function, visibility.message]);
+    const graphSelection = selectedId && (graph.functions.some(fn => fn.id === selectedId) ? selectedId :
+        [...graph.scripts].find(([, script]) => script.targetId === data.targetId && script.scriptId === selectedId)?.[0]);
     const hint = !editable && ordered.length > 0;
     return <section ref={list} className="tw-sprite-functions" aria-label={view ? labels.panels[view] : labels.panel} data-mode={mode}>
         {(!view || mode === 'list' || hint) && <div className="tw-sprite-functions__bar">
@@ -1610,12 +2058,18 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
             {hint && <p className="tw-sprite-functions__hint">{labels.readOnly}</p>}
         </div>}
         {/* Without functions the graph stays, blank, and points to the button that makes one. */}
-        {mode === 'graph' ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graphFunctions}
-            messages={data.messageGraph}
-            settings={settings} selectedId={selectedId ?? added} corner={addButton} flow={flowChoice}
-            notice={graphFunctions.length || data.messageGraph?.scripts.length ? undefined : emptyText('graph')}
-            onOpen={openGraphItem} canOpen={item => item.kind === 'script' ? Boolean(onOpenScript) :
-                !item.owner || Boolean(onOpenFunction)} /> :
+        {mode === 'graph' ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graph.functions}
+            scripts={graph.scripts} relations={graph.relations} targetId={data.targetId} settings={settings} selectedId={graphSelection ?? added}
+            positions={settings.graphPositions?.[data.targetId]?.[settings.direction] ?? {}}
+            onPositionsChange={positions => change({graphPositions: {...settings.graphPositions,
+                [data.targetId]: {...settings.graphPositions?.[data.targetId], [settings.direction]: positions}}})}
+            corner={addButton} notice={graph.functions.length || !visibility.function ? undefined : emptyText('graph')}
+            onOpen={fn => fn.owner ? onOpenFunction?.(fn) : setDialogId(fn.id)} canOpenExternal={Boolean(onOpenFunction)}
+            onOpenScript={onOpenRelationScript ?? (onOpenScript ? endpoint => {
+                const script = graph.scripts.get(`script:${JSON.stringify([endpoint.targetId, endpoint.scriptId])}`);
+                onOpenScript({id: endpoint.scriptId, targetId: endpoint.targetId, label: script?.label ?? endpoint.scriptId,
+                    x: script?.x ?? 0, y: script?.y ?? 0});
+            } : undefined)} /> :
             !hats.length && !ordered.length ? <p className="tw-sprite-functions__empty">{emptyText('list')}</p> :
             !hats.length && !grouped ? functionList(ordered) : <>
                 {hats.length > 0 && <>

@@ -46,3 +46,23 @@ test('a host without the own panes shows only the groups it has', t => {
     assert.deepEqual(buttons.filter(button => button.hasAttribute('data-group-start')).map(button => button.getAttribute('aria-label')),
         ['Costumes']);
 });
+
+test('section controls occupy a separate rail slot without entering tab navigation', t => {
+    const changes: string[] = [];
+    const container = render(t, {section: 'calls', onSectionChange: value => changes.push(value),
+        sectionControls: React.createElement('button', {type: 'button'}, 'LR|TD')});
+    const list = container.querySelector('[role="tablist"]');
+    const slot = container.querySelector('.tw-plus-sprite-toolbar-section-controls');
+    assert.ok(slot);
+    assert.equal(slot.parentElement, list.parentElement);
+    assert.equal(list.nextElementSibling, slot);
+    assert.equal(list.contains(slot), false);
+    assert.equal(list.querySelectorAll('button').length, spriteEditorSections.length);
+    assert.equal(list.querySelectorAll('button:not([role="tab"])').length, 0);
+    assert.equal(slot.querySelector('button').hasAttribute('role'), false);
+    const selected = list.querySelector<HTMLButtonElement>('[aria-selected="true"]');
+    act(() => selected.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'End', bubbles: true})));
+    assert.deepEqual(changes, ['messages']);
+    act(() => slot.querySelector<HTMLButtonElement>('button').click());
+    assert.deepEqual(changes, ['messages'], 'a section control does not select a tab');
+});

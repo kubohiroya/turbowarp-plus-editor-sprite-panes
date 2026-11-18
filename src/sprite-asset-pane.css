@@ -1017,7 +1017,7 @@
     block-size: 100%;
     min-block-size: 0;
     min-inline-size: 0;
-    padding: .6rem;
+    padding: var(--tw-sprite-functions-panel-padding, .6rem);
     overflow: auto;
     color: var(--text-primary, #273146);
     background: var(--ui-white, #fff);
@@ -1336,18 +1336,62 @@
 
 .tw-sprite-functions__edges path {
     fill: none;
-    stroke: var(--text-primary-transparent, #575e75);
+    stroke: var(--tw-function-edge-stroke);
     stroke-width: 1.5;
 }
 
-.tw-sprite-functions__edges path[data-kind="back"],
-.tw-sprite-functions__edges path[data-kind="self"] {
-    stroke-dasharray: 5 4;
+.tw-sprite-functions__edges marker path {
+    fill: var(--tw-function-edge-stroke);
+    stroke: none;
 }
 
-.tw-sprite-functions__edges marker path {
-    fill: var(--text-primary-transparent, #575e75);
-    stroke: none;
+.tw-sprite-functions__edges > path[data-script-relation="message"],
+.tw-sprite-functions__minimap-edges path[data-script-relation="message"] {
+    stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    stroke-dasharray: 7 5;
+}
+
+.tw-sprite-functions__edges marker[data-script-relation="message"] path {
+    fill: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+}
+
+.tw-sprite-functions__edge-label {
+    --tw-relation-label-stroke: var(--tw-script-function-stroke, light-dark(#7051c7, #c9abff));
+    pointer-events: none;
+}
+
+.tw-sprite-functions__edge-label[data-script-relation="message"] {
+    --tw-relation-label-stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+}
+
+.tw-sprite-functions__edge-label > rect {
+    fill: var(--ui-primary, Canvas);
+    fill-opacity: .96;
+    stroke: var(--tw-relation-label-stroke);
+    stroke-width: 1;
+}
+
+.tw-sprite-functions__edge-label text {
+    fill: var(--text-primary, CanvasText);
+    font: 12px sans-serif;
+}
+
+.tw-sprite-functions__relation-wait {
+    pointer-events: visiblePainted;
+}
+
+.tw-sprite-functions__relation-wait rect {
+    fill: var(--ui-primary, Canvas);
+    stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    stroke-width: 1;
+}
+
+.tw-sprite-functions__relation-wait .tw-sprite-functions__relation-wait-glyph {
+    fill: none;
+    stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .tw-sprite-functions__nodes {
@@ -1380,11 +1424,41 @@
     cursor: pointer;
 }
 
+.tw-sprite-functions__node-text {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-inline-size: 0;
+    line-height: 16px;
+}
+
 .tw-sprite-functions__node .tw-sprite-functions__name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    overflow-wrap: normal;
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.tw-sprite-functions__node-text .tw-sprite-functions__name > span,
+.tw-sprite-functions__node-text .tw-sprite-functions__owner > span {
+    display: block;
+    line-height: 16px;
+}
+
+.tw-sprite-functions__node-text .tw-sprite-functions__owner {
+    max-inline-size: none;
+    margin-inline-start: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.tw-sprite-functions__target-thumbnail {
+    flex: none;
+    inline-size: 22px;
+    block-size: 22px;
+    object-fit: contain;
+    pointer-events: none;
 }
 
 .tw-sprite-functions__node[data-unused] {
@@ -1394,6 +1468,15 @@
 
 .tw-sprite-functions__node:hover {
     filter: brightness(1.05);
+}
+
+.tw-sprite-functions__node {
+    touch-action: none;
+}
+
+.tw-sprite-functions__graph[data-node-dragging] .tw-sprite-functions__node {
+    cursor: grabbing;
+    user-select: none;
 }
 
 .tw-sprite-functions__node:focus-visible {
@@ -1406,9 +1489,9 @@
     font-size: .7rem;
 }
 
-/* Hovering or focusing a function: its callers' links come in blue, its callees' go out in orange.
-   Both stay at 3:1 or more against the graph in the light theme (#e6f0ff) and the dark theme (#111). */
+/* Node rings distinguish callers and callees. Every function arrow keeps the Editor's shared style. */
 .tw-sprite-functions__graph {
+    --tw-function-edge-stroke: var(--tw-script-function-stroke, light-dark(#7051c7, #c9abff));
     --tw-call-in: #3373cc;
     --tw-call-out: #c96b00;
 }
@@ -1428,25 +1511,6 @@
 
 .tw-sprite-functions__edges path[data-highlight] {
     stroke-width: 2.5;
-}
-
-.tw-sprite-functions__edges path[data-highlight="in"],
-.tw-sprite-functions__edges marker[data-highlight="in"] path {
-    stroke: var(--tw-call-in);
-}
-
-.tw-sprite-functions__edges path[data-highlight="out"],
-.tw-sprite-functions__edges path[data-highlight="self"],
-.tw-sprite-functions__edges marker[data-highlight="out"] path {
-    stroke: var(--tw-call-out);
-}
-
-.tw-sprite-functions__edges marker[data-highlight="in"] path {
-    fill: var(--tw-call-in);
-}
-
-.tw-sprite-functions__edges marker[data-highlight="out"] path {
-    fill: var(--tw-call-out);
 }
 
 .tw-sprite-functions__node[data-highlight="self"] {
@@ -1535,21 +1599,17 @@
 
 .tw-sprite-functions__minimap-edges path {
     fill: none;
-    stroke: currentColor;
+    stroke: var(--tw-function-edge-stroke);
     stroke-opacity: .35;
     stroke-width: 1px;
     vector-effect: non-scaling-stroke;
 }
 
-.tw-sprite-functions__minimap-edges path[data-highlight="in"] {
-    stroke: var(--tw-call-in);
-    stroke-opacity: 1;
-}
-
+.tw-sprite-functions__minimap-edges path[data-highlight="in"],
 .tw-sprite-functions__minimap-edges path[data-highlight="out"],
 .tw-sprite-functions__minimap-edges path[data-highlight="self"] {
-    stroke: var(--tw-call-out);
     stroke-opacity: 1;
+    stroke-width: 1.75px;
 }
 
 .tw-sprite-functions__minimap rect {
@@ -1799,7 +1859,7 @@
 /* The bottom left corner of the call graph, across from the zoom buttons. */
 .tw-sprite-functions__corner {
     position: absolute;
-    inset-block-end: 8px;
+    inset-block-end: var(--tw-sprite-functions-corner-inset, 8px);
     inset-inline-start: 8px;
     cursor: default;
 }
@@ -1830,52 +1890,105 @@
     content: "⚠ ";
 }
 
-/* The top right corner of the call graph, above the minimap and the zoom buttons. */
-.tw-sprite-functions__flow {
-    position: absolute;
-    inset-block-start: 8px;
-    inset-inline-end: 8px;
-    cursor: default;
+/* Direction and relation filters are separate segmented groups in the section rail. */
+.tw-sprite-functions__flow-toggle,
+.tw-sprite-functions__relation-toggles {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 6px;
-    max-width: calc(100% - 16px);
+    flex-direction: column;
+    flex: none;
+    box-sizing: border-box;
+    inline-size: 34px;
+    gap: 0;
+    overflow: hidden;
+    border: 1px solid var(--ui-black-transparent, #ccd5e2);
+    border-radius: 5px;
+    background: var(--ui-white, Canvas);
+    box-shadow: 0 1px 4px rgb(0 0 0 / .16);
 }
 
-.tw-sprite-functions__flow .tw-sprite-functions__choice {
-    background: var(--ui-white, #fff);
-    box-shadow: 0 1px 4px hsla(0, 0%, 0%, .15);
+.tw-sprite-functions__flow-toggle button {
+    display: inline-flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    inline-size: 32px;
+    block-size: 40px;
+    min-block-size: 40px;
+    padding: 4px;
+    border: 0;
+    border-radius: 0;
+    background: var(--ui-white, Canvas);
+    color: var(--text-primary, CanvasText);
+    font: 12px/16px sans-serif;
+    cursor: pointer;
 }
 
-/* Message links use an event color and a dotted line, including in the minimap. */
-.tw-sprite-functions__edges path[data-relation="message"]:not([data-highlight]),
-.tw-sprite-functions__minimap-edges path[data-relation="message"] {
-    stroke: #9b7400;
-    stroke-dasharray: 2 4;
+.tw-sprite-functions__flow-toggle button[aria-pressed="true"] {
+    background: var(--looks-secondary, Highlight);
+    color: var(--tw-plus-accent-text, #fff);
+    font-weight: 700;
 }
 
-.tw-sprite-functions__edges marker[data-highlight="message"] path {
-    fill: #9b7400;
+.tw-sprite-functions__flow-toggle button svg {
+    inline-size: 20px;
+    block-size: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
-.tw-sprite-functions__edge-label {
-    fill: var(--text-primary, #575e75);
-    stroke: var(--ui-primary, #e6f0ff);
-    stroke-width: 4px;
-    paint-order: stroke;
-    font-size: 11px;
-    pointer-events: none;
+.tw-sprite-functions__flow-toggle button + button {
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
 }
 
-.tw-sprite-functions__graph[data-highlighting] .tw-sprite-functions__edge-label:not([data-highlight]) {
-    opacity: .25;
+.tw-sprite-functions__flow-toggle button:focus-visible {
+    outline: 2px solid var(--looks-secondary, Highlight);
+    outline-offset: -3px;
 }
 
-.tw-sprite-functions__node[data-kind="script"] {
-    border-color: #9b7400;
-    color: var(--text-primary, #575e75);
-    background: var(--ui-white, #fff);
+.tw-sprite-functions__relation-toggles button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    inline-size: 32px;
+    flex: none;
+    block-size: 40px;
+    min-block-size: 40px;
+    padding: 6px;
+    border: 0;
+    border-radius: 0;
+    background: var(--ui-white, Canvas);
+    color: var(--text-primary, CanvasText);
+    cursor: pointer;
+}
+
+.tw-sprite-functions__relation-toggles button[aria-pressed="true"] {
+    background: var(--looks-secondary, Highlight);
+    color: var(--tw-plus-accent-text, #fff);
+}
+
+.tw-sprite-functions__relation-toggles button + button {
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
+}
+
+.tw-sprite-functions__relation-toggles button svg {
+    inline-size: 20px;
+    block-size: 20px;
+    color: inherit;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.tw-sprite-functions__relation-toggles button:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: -3px;
 }
 
 .tw-sprite-functions__corner .tw-sprite-functions__add {
@@ -2282,4 +2395,15 @@ button.tw-sprite-messages__source:focus-visible {
 .tw-sprite-messages__menu-item:focus-visible {
     color: #fff;
     background: var(--message-accent);
+}
+
+/* Message scripts retain their distinct node style when supplied by either graph API. */
+.tw-sprite-functions__node[data-kind="script"] {
+    border-color: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    color: var(--text-primary, CanvasText);
+    background: var(--ui-white, Canvas);
+}
+
+.tw-sprite-functions__graph[data-highlighting] .tw-sprite-functions__edge-label:not([data-highlight]) {
+    opacity: .25;
 }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, {type TestContext} from 'node:test';
 import {JSDOM} from 'jsdom';
 import React, {act} from 'react';
-import {callGraphHighlight, callGraphNodeSize, functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane} from '../dist/sprite-function-pane.js';
+import {callGraphHighlight, callGraphNodeSize, FunctionFlowToggle, FunctionRelationToggles, functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane} from '../dist/sprite-function-pane.js';
 
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 const dom = new JSDOM('<main></main>', {pretendToBeVisual: true});
@@ -191,7 +191,7 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
     const mounts: string[] = [];
     const disposed: string[] = [];
     const settings: object[] = [];
-    const {container} = render(t, {
+    const {container, draw} = render(t, {
         defaultSettings: {mode: 'graph'},
         onSettingsChange: (next: object) => settings.push(next),
         data: {targetId: 'cat', isStage: false, functions: [
@@ -204,15 +204,14 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
     });
     assert.deepEqual([...container.querySelectorAll('[data-choice]')].map(node =>
         [node.textContent, node.getAttribute('aria-pressed')]),
-    [['一覧', 'false'], ['呼び出し図', 'true'], ['左から右 (LR)', 'true'], ['上から下 (TD)', 'false']]);
+    [['一覧', 'false'], ['呼び出し図', 'true']]);
     assert.deepEqual(names(container), ['main', 'draw (size)']);
     assert.deepEqual([...container.querySelectorAll('[data-edge]')].map(node => node.getAttribute('data-edge')), ['main>draw']);
     assert.equal(container.querySelectorAll('.tw-sprite-functions__entry').length, 1, 'only main is called from a script');
 
-    act(() => container.querySelector<HTMLButtonElement>('[data-choice="TD"]').click());
+    draw({direction: 'TD'});
     assert.equal(container.querySelector('figure').getAttribute('data-direction'), 'TD');
-    assert.deepEqual(settings.at(-1), {mode: 'graph', order: 'name', direction: 'TD', create: 'procedure',
-        showCalls: true, showMessages: true});
+    assert.equal(settings.length, 0, 'the host owns direction changes');
 
     act(() => container.querySelector<HTMLButtonElement>('[data-function-key="draw"]').click());
     const dialog = container.querySelector('dialog');
@@ -229,6 +228,206 @@ test('the graph mode draws nodes and opens a function in a dialog editor', t => 
     act(() => container.querySelector<HTMLButtonElement>('[data-choice="list"]').click());
     assert.equal(container.querySelector('figure'), null);
     assert.equal(container.querySelectorAll('.tw-sprite-functions__open').length, 2);
+});
+
+test('the external direction overrides saved settings and survives other settings changes', t => {
+    const settings: object[] = [];
+    const {container, draw} = render(t, {direction: 'TD', defaultSettings: {mode: 'graph', direction: 'LR'},
+        onSettingsChange: next => settings.push(next),
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)]}});
+    assert.equal(container.querySelector('figure').getAttribute('data-direction'), 'TD');
+    assert.equal(container.querySelector('.tw-sprite-functions__flow'), null);
+    act(() => container.querySelector<HTMLButtonElement>('[data-choice="list"]').click());
+    assert.deepEqual(settings.at(-1), {mode: 'list', order: 'name', direction: 'TD', create: 'procedure'});
+    const order = container.querySelector('select');
+    act(() => {
+        order.value = 'z';
+        order.dispatchEvent(new window.Event('change', {bubbles: true}));
+    });
+    assert.deepEqual(settings.at(-1), {mode: 'list', order: 'z', direction: 'TD', create: 'procedure'});
+    draw({direction: 'LR', view: 'graph'});
+    assert.equal(container.querySelector('figure').getAttribute('data-direction'), 'LR');
+    assert.equal(settings.length, 2, 'a controlled direction change does not emit a redundant settings update');
+});
+
+test('the rail direction group has two mutually exclusive labeled buttons', t => {
+    const container = window.document.createElement('div');
+    window.document.querySelector('main').append(container);
+    const root = createRoot(container);
+    const changes: string[] = [];
+    const draw = (value: 'LR' | 'TD', locale = 'ja') => act(() => root.render(React.createElement(FunctionFlowToggle,
+        {locale, value, onChange: next => changes.push(next)})));
+    t.after(() => {act(() => root.unmount()); container.remove();});
+    draw('LR');
+    const [lr, td] = [...container.querySelectorAll<HTMLButtonElement>('button')];
+    assert.equal(container.querySelectorAll('button').length, 2);
+    assert.equal(lr.querySelectorAll('svg').length, 1);
+    assert.equal(td.querySelectorAll('svg').length, 1);
+    assert.equal(lr.getAttribute('aria-pressed'), 'true');
+    assert.equal(td.getAttribute('aria-pressed'), 'false');
+    assert.equal(lr.getAttribute('title'), '流れ: 左から右 (LR)');
+    assert.equal(td.getAttribute('title'), '流れ: 上から下 (TD)');
+    act(() => lr.click());
+    assert.deepEqual(changes, [], 'the selected direction stays selected');
+    act(() => td.click());
+    assert.deepEqual(changes, ['TD']);
+    draw('TD', 'en');
+    assert.equal(lr.getAttribute('aria-pressed'), 'false');
+    assert.equal(td.getAttribute('aria-pressed'), 'true');
+    assert.equal(td.getAttribute('aria-label'), 'Flow: Top to bottom (TD)');
+    act(() => lr.click());
+    assert.deepEqual(changes, ['TD', 'LR']);
+});
+
+test('function and message graph filters retain only the nodes needed by their visible relations', t => {
+    const endpoint = (targetId: string, scriptId: string, blockId = scriptId) => ({targetId, scriptId, blockId});
+    const scriptRelations = [
+        {kind: 'function', source: endpoint('cat', 'flag', 'call'), destination: endpoint('cat', 'main'), label: 'main', wait: true},
+        {kind: 'function', source: endpoint('cat', 'main', 'call-draw'), destination: endpoint('cat', 'draw'), label: 'draw', wait: true},
+        {kind: 'message', source: endpoint('cat', 'main', 'send'), destination: endpoint('cat', 'receive'), label: 'ready', wait: false},
+        {kind: 'message', source: endpoint('cat', 'flag', 'wait'), destination: endpoint('other', 'foreign-receive'), label: 'ready', wait: true},
+        {kind: 'message', source: endpoint('cat', 'main', 'send-draw'), destination: endpoint('cat', 'draw'), label: 'draw', wait: false},
+        {kind: 'message', source: endpoint('foreign', 'unrelated-send'), destination: endpoint('other', 'unrelated-receive'), label: 'elsewhere', wait: false}
+    ];
+    const opened: object[] = [];
+    const functions: string[] = [];
+    const {container, draw} = render(t, {view: 'graph', selectedId: 'flag',
+        onOpenRelationScript: value => opened.push(value), onOpenFunction: value => functions.push(value.id),
+        data: {targetId: 'cat', isStage: false,
+            functions: [fn('main', 'main', 0, 0), fn('draw', 'draw', 0, 0), fn('isolated', 'isolated', 0, 0)],
+            scriptRelations, scripts: [
+                {targetId: 'cat', scriptId: 'flag', label: 'Green flag'},
+                {targetId: 'cat', scriptId: 'receive', label: 'Receive ready'},
+                {targetId: 'other', scriptId: 'foreign-receive', label: 'Receive ready', targetName: 'Other'}
+            ]}});
+    const mainEdges = (kind: string) => container.querySelectorAll(`.tw-sprite-functions__edges > path[data-script-relation="${kind}"]`);
+    const nodes = () => [...container.querySelectorAll('.tw-sprite-functions__node .tw-sprite-functions__name')]
+        .map(node => node.textContent);
+    assert.equal(mainEdges('function').length, 2);
+    assert.equal(mainEdges('message').length, 3);
+    assert.equal(nodes().length, 6);
+    assert.ok(nodes().includes('isolated'));
+    assert.equal(nodes().includes('unrelated-send'), false);
+    assert.equal(container.querySelector('.tw-sprite-functions__notice'), null, 'script graphs are not covered by a functions-only empty notice');
+    const flag = [...container.querySelectorAll<HTMLButtonElement>('[data-script-key]')].find(node => node.textContent === 'Green flag');
+    assert.equal(flag.getAttribute('aria-current'), 'true');
+    act(() => flag.click());
+    const remote = container.querySelector<HTMLButtonElement>('[data-script-key][data-owner="other"]');
+    act(() => remote.click());
+    assert.deepEqual(opened, [endpoint('cat', 'flag'), endpoint('other', 'foreign-receive')]);
+    assert.deepEqual(functions, [], 'script hats never enter the function editor');
+    act(() => container.querySelector<HTMLButtonElement>('[data-function-key="main"]').click());
+    assert.deepEqual(functions, ['main']);
+    assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 1);
+    const shared = [...container.querySelectorAll<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge="main>draw"]')];
+    assert.equal(shared.length, 2);
+    assert.notEqual(shared[0].getAttribute('d'), shared[1].getAttribute('d'), 'different relation kinds have separate lanes');
+
+    draw({relationVisibility: {function: true, message: false}});
+    assert.equal(mainEdges('function').length, 2);
+    assert.equal(mainEdges('message').length, 0);
+    assert.equal(container.querySelectorAll('[data-script-key]').length, 1, 'the caller hat stays while message-only scripts disappear');
+    assert.equal(nodes().length, 4);
+    assert.ok(nodes().includes('isolated'), 'functions ON retains isolated definitions');
+    draw({relationVisibility: {function: false, message: true}});
+    assert.equal(mainEdges('function').length, 0);
+    assert.equal(mainEdges('message').length, 3);
+    assert.equal(nodes().length, 5);
+    assert.equal(nodes().includes('isolated'), false);
+    draw({relationVisibility: {function: false, message: false}});
+    assert.equal(nodes().length, 0);
+    assert.equal(container.querySelectorAll('[data-edge]').length, 0);
+    assert.ok(container.querySelector('.tw-sprite-functions__minimap'));
+    assert.ok(container.querySelector('.tw-sprite-functions__zoom'));
+});
+
+test('a message-only graph can show scripts without any function definitions', t => {
+    const {container} = render(t, {view: 'graph', relationVisibility: {function: false, message: true},
+        data: {targetId: 'cat', isStage: false, functions: [], scriptRelations: [{kind: 'message',
+            source: {targetId: 'cat', blockId: 'send', scriptId: 'flag'},
+            destination: {targetId: 'cat', blockId: 'receive', scriptId: 'receive'}, label: 'ready', wait: false}],
+            scripts: [{targetId: 'cat', scriptId: 'flag', label: 'Green flag'},
+                {targetId: 'cat', scriptId: 'receive', label: 'Receive ready'}]}});
+    assert.equal(container.querySelectorAll('[data-script-key]').length, 2);
+    assert.equal(container.querySelectorAll('[data-function-key]').length, 0);
+    assert.equal(container.querySelector('.tw-sprite-functions__notice'), null);
+});
+
+test('each node pair has one edge per kind, with receiver-side message names, wait modes, and foreign owners', t => {
+    const endpoint = (targetId: string, scriptId: string) => ({targetId, scriptId, blockId: scriptId});
+    const send = (name: string, wait = false) => ({kind: 'message', label: name, wait,
+        source: endpoint('cat', 'entry'), destination: endpoint('cat', 'worker')});
+    const {container, draw} = render(t, {view: 'graph', direction: 'LR',
+        data: {targetId: 'cat', isStage: false, functions: [fn('entry', 'entry', 0, 0), fn('worker', 'worker', 0, 0)],
+            scripts: [{targetId: 'other', scriptId: 'remote', label: 'remote_task', targetName: 'Robot Sprite'},
+                {targetId: 'stage', scriptId: 'backdrop', label: 'Backdrop Ready', targetName: 'Stage BG', isStage: true}],
+            scriptRelations: [
+                {kind: 'function', label: 'worker', wait: true, source: endpoint('cat', 'entry'), destination: endpoint('cat', 'worker')},
+                send('Start Signal'), send('Start Signal'), send('Finish Signal', true), send('Mixed Signal'), send('Mixed Signal', true),
+                {kind: 'function', label: 'remote_task', wait: true, source: endpoint('cat', 'entry'), destination: endpoint('other', 'remote')},
+                {kind: 'message', label: 'Backdrop Ready', wait: true, source: endpoint('cat', 'entry'), destination: endpoint('stage', 'backdrop')}
+            ]}});
+    for (const direction of ['LR', 'TD']) {
+        draw({direction});
+        const paths = [...container.querySelectorAll<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge="entry>worker"]')];
+        assert.equal(paths.length, 2);
+        assert.deepEqual(paths.map(path => path.getAttribute('data-script-relation')), ['function', 'message']);
+        assert.notEqual(paths[0].getAttribute('d'), paths[1].getAttribute('d'));
+        const label = container.querySelector('.tw-sprite-functions__edge-label[data-edge="entry>worker"]');
+        assert.equal(label.getAttribute('data-script-relation'), 'message');
+        const rows = [...label.querySelectorAll('.tw-sprite-functions__edge-label-row')];
+        assert.deepEqual(rows.map(row => row.getAttribute('data-message-name')), ['Start Signal', 'Finish Signal', 'Mixed Signal']);
+        assert.deepEqual(rows.map(row => row.querySelector('text').textContent), ['💬 Start Signal', '💬 Finish Signal', '💬 Mixed Signal']);
+        assert.deepEqual(rows.map(row => row.querySelectorAll('.tw-sprite-functions__relation-wait').length), [0, 1, 1]);
+        assert.equal(rows[2].querySelector('title').textContent, 'Mixed Signal · 送る / 送って待つ');
+        const visible = [...container.querySelectorAll('.tw-sprite-functions__edge-label text')].map(node => node.textContent);
+        assert.ok(container.textContent.includes('Robot Sprite'));
+        assert.ok(visible.includes('remote_task'));
+        assert.ok(container.textContent.includes('背景'));
+        assert.ok(visible.includes('💬 Backdrop Ready'));
+        assert.equal(visible.includes('Stage BG'), false, 'target names are shown only in nodes');
+        assert.equal(container.querySelector('.tw-sprite-functions__edge-label-owner'), null);
+        assert.equal(visible.includes('Robot Sprite'), false);
+        assert.equal(visible.includes('背景'), false);
+    }
+});
+
+test('graph filter buttons are independent and their tooltips explain the current action', t => {
+    const container = window.document.createElement('div');
+    window.document.querySelector('main').append(container);
+    const root = createRoot(container);
+    const changes: object[] = [];
+    const draw = (value: {function: boolean; message: boolean}, locale = 'ja') =>
+        act(() => root.render(React.createElement(FunctionRelationToggles, {locale, value, onChange: next => changes.push(next)})));
+    t.after(() => {act(() => root.unmount()); container.remove();});
+    draw({function: true, message: true});
+    const functions = container.querySelector<HTMLButtonElement>('[data-relation-kind="function"]');
+    const messages = container.querySelector<HTMLButtonElement>('[data-relation-kind="message"]');
+    assert.equal(functions.getAttribute('aria-label'), '関数');
+    assert.equal(messages.getAttribute('aria-label'), 'メッセージ');
+    assert.equal(functions.getAttribute('title'), '関数の呼び出し関係を隠す');
+    assert.equal(messages.getAttribute('title'), 'メッセージの送受信関係を隠す');
+    act(() => functions.click());
+    assert.deepEqual(changes.at(-1), {function: false, message: true});
+    draw({function: false, message: true});
+    assert.equal(functions.getAttribute('aria-pressed'), 'false');
+    assert.equal(functions.getAttribute('title'), '関数の呼び出し関係を表示');
+    act(() => messages.click());
+    assert.deepEqual(changes.at(-1), {function: false, message: false});
+    draw({function: false, message: false}, 'en');
+    assert.equal(functions.getAttribute('title'), 'Show function calls');
+    assert.equal(messages.getAttribute('title'), 'Show message sends and receivers');
+});
+
+test('controlled graph filters survive other settings changes without replacing the host value', t => {
+    const settings: object[] = [];
+    const visibility = {function: false, message: true};
+    const {container} = render(t, {view: 'list', direction: 'TD', relationVisibility: visibility,
+        defaultSettings: {relationVisibility: {function: true, message: false}},
+        onSettingsChange: next => settings.push(next), data: {targetId: 'cat', isStage: false, functions: []}});
+    const select = container.querySelector('select');
+    act(() => {select.value = 'n'; select.dispatchEvent(new window.Event('change', {bubbles: true}));});
+    assert.deepEqual(settings.at(-1), {mode: 'list', order: 'n', direction: 'TD', create: 'procedure', relationVisibility: visibility});
 });
 
 // The NAME of a named-functions block is a text input; a reporter dropped on it leaves the shadow below.
@@ -317,13 +516,13 @@ test('global functions of other sprites join the reading with the links into and
         ...defineFunction('wag', 'wag', 'sprite'),
         ...callFunction('wag-meow', 'meow', 'wag')
     }}};
-    const data = readTargetFunctions(cat, {others: [cat, stage, dog]});
+    const data = readTargetFunctions(cat, {others: [cat, stage, dog], getTargetThumbnail: id => `preview:${id}`});
     assert.deepEqual(data.functions.find(fn => fn.id === 'def').callees, ['stage:log']);
     assert.deepEqual(data.globals.map(fn => ({id: fn.id, name: fn.proccode, owner: fn.owner, callees: fn.callees,
         calls: fn.calls, scriptCalls: fn.scriptCalls})).sort((a, b) => a.id < b.id ? -1 : 1), [
-        {id: 'dog:bark', name: 'bark', owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark'},
+        {id: 'dog:bark', name: 'bark', owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark', thumbnailUrl: 'preview:dog'},
             callees: ['meow'], calls: 0, scriptCalls: 0},
-        {id: 'stage:log', name: 'log', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log'},
+        {id: 'stage:log', name: 'log', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log', thumbnailUrl: 'preview:stage'},
             callees: [], calls: 2, scriptCalls: 1}
     ], 'only the global functions linked to this sprite, counted by its own calls');
     assert.equal(readTargetFunctions(cat).globals, undefined, 'without the other targets nothing else is read');
@@ -352,17 +551,20 @@ test('the call graph draws global functions grey, naming the sprite of one defin
     const node = (id: string) => container.querySelector<HTMLButtonElement>(`[data-function-key="${id}"]`);
     assert.deepEqual(['jump', 'meow', 'stage:log', 'dog:bark'].map(id => node(id).getAttribute('data-scope')),
         [null, 'global', 'global', 'global'], 'every global function is grey, this sprite\'s too');
-    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__owner').textContent, 'ステージ');
-    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__owner').textContent, 'Dog');
+    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__name').textContent, '背景');
+    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__name').textContent, 'Dog');
+    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__owner'), null);
+    assert.equal(node('dog:bark').getAttribute('aria-label'), 'Dog · bark');
+    assert.match(node('dog:bark').title, /bark/);
     assert.equal(node('meow').querySelector('.tw-sprite-functions__owner'), null);
     assert.match(node('dog:bark').title, /^Dog のグローバル関数/);
     assert.deepEqual([...container.querySelectorAll('[data-edge]')].map(edge => edge.getAttribute('data-edge')).sort(),
         ['dog:bark>meow', 'jump>stage:log']);
-    // The host uses the owner metadata to open a foreign definition in its original target.
+    // The host opens a foreign function using the original owner metadata.
     act(() => node('dog:bark').click());
     act(() => node('meow').click());
     assert.deepEqual(opened, ['dog:bark', 'meow']);
-    assert.equal(node('dog:bark').hasAttribute('aria-disabled'), false);
+    assert.equal(node('dog:bark').getAttribute('aria-disabled'), null);
     // meow is called from the dog, and the dog's bark is counted there, so neither reads as unused.
     assert.equal(node('meow').hasAttribute('data-unused'), false);
     assert.equal(node('dog:bark').hasAttribute('data-unused'), false);
@@ -447,8 +649,7 @@ test('the add button below the list asks for a name and a kind, and opens what i
     const radios = dialog.querySelectorAll<HTMLInputElement>('input[type="radio"]');
     assert.deepEqual([...radios].map(radio => radio.parentElement.textContent), ['標準（ブロック定義）', 'TurboWarp-Plus の名前付き関数']);
     act(() => radios[1].click());
-    assert.deepEqual(settings.at(-1), {mode: 'list', order: 'name', direction: 'LR', create: 'named',
-        showCalls: true, showMessages: true});
+    assert.deepEqual(settings.at(-1), {mode: 'list', order: 'name', direction: 'LR', create: 'named'});
 
     // A failure stays in the dialog, and typing clears it.
     reply = async () => { throw Object.assign(new Error('taken'), {code: 'duplicate'}); };
@@ -501,7 +702,7 @@ test('in the call graph the add button sits in the bottom left corner, and a new
     assert.equal(figure.querySelector('.tw-sprite-functions__notice[role="status"]').textContent,
         'このスプライトには関数がありません。左下の「＋ 新しい関数を追加」から作れます。');
     assert.ok(figure.querySelector('.tw-sprite-functions__corner .tw-sprite-functions__add'));
-    assert.ok(figure.querySelector('.tw-sprite-functions__flow'));
+    assert.equal(figure.querySelector('.tw-sprite-functions__flow'), null);
     assert.equal(container.querySelector('.tw-sprite-functions__empty'), null, 'no line about My Blocks');
     // The list points below, to its own button.
     draw({view: 'list', data: {targetId: 'stage', isStage: true, functions: []}});
@@ -582,14 +783,9 @@ test('as its own section the call graph has no view switch and leaves the hats o
     });
     assert.equal(container.querySelector('section').getAttribute('aria-label'), '呼び出し関係');
     assert.equal(container.querySelector('[data-choice="list"]'), null);
-    assert.ok(container.querySelector('figure > .tw-sprite-functions__flow [data-choice="LR"]'),
-        'the flow switch stays, inside the graph at its top right');
+    assert.equal(container.querySelector('figure > .tw-sprite-functions__flow'), null,
+        'the host places the flow control in the section rail');
     assert.equal(container.querySelector('.tw-sprite-functions__bar'), null, 'with nothing left above the graph');
-    // The flow buttons show icons and keep their names for tooltips and screen readers.
-    const flow = container.querySelector<HTMLButtonElement>('[data-choice="TD"]');
-    assert.ok(flow.querySelector('svg'));
-    assert.equal(flow.getAttribute('title'), '上から下 (TD)');
-    assert.equal(flow.textContent, '上から下 (TD)');
     // The graph places functions by who calls whom, so it has no order to pick.
     assert.equal(container.querySelector('select'), null);
     assert.ok(container.querySelector('figure'));
@@ -737,16 +933,15 @@ test('the call graph zooms with − + = and Ctrl + wheel, and pans with the whee
     const [, x0, y0] = start.match(/translate\(([-\d.]+)px, ([-\d.]+)px\)/).map(Number);
     assert.equal(transform(), `translate(${x0 - 10}px, ${y0 - 20}px) scale(1)`);
 
-    // Dragging from a function moves the graph and does not open the function.
-    const node = container.querySelector('[data-function-key="main"]');
+    // Dragging the background moves the graph without moving or opening a node.
     act(() => {
-        node.dispatchEvent(new window.MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 50, clientY: 50}));
+        figure.dispatchEvent(new window.MouseEvent('pointerdown', {bubbles: true, button: 0, clientX: 50, clientY: 50}));
         window.dispatchEvent(new window.MouseEvent('pointermove', {clientX: 80, clientY: 60}));
     });
     assert.ok(figure.hasAttribute('data-panning'));
     act(() => {
         window.dispatchEvent(new window.MouseEvent('pointerup', {clientX: 80, clientY: 60}));
-        node.dispatchEvent(new window.MouseEvent('click', {bubbles: true}));
+        figure.dispatchEvent(new window.MouseEvent('click', {bubbles: true, detail: 1}));
     });
     assert.equal(transform(), `translate(${x0 + 20}px, ${y0 - 10}px) scale(1)`);
     assert.equal(container.querySelector('dialog'), null);
@@ -764,91 +959,160 @@ test('the call graph minimap shows every function and the part in view', t => {
     assert.equal(view.getAttribute('height'), '300');
 });
 
-test('uses of supplied global functions belong to this target even when a foreign message script has the same id', t => {
-    const {container} = render(t, {
-        view: 'graph',
-        data: {
-            targetId: 'cat', isStage: false, functions: [],
-            globals: [fn('dog:global', 'global', 0, 0, {kind: 'named', scope: 'global',
-                owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'global'},
-                callees: [], uses: [{block: 'call', script: 'flag'}]})],
-            messageGraph: {
-                scripts: [
-                    {id: 'flag', targetId: 'cat', targetName: 'Cat', isStage: false,
-                        scriptId: 'flag', opcode: 'event_whenflagclicked', x: 0, y: 0},
-                    {id: 'dog:flag', targetId: 'dog', targetName: 'Dog', isStage: false,
-                        scriptId: 'flag', opcode: 'event_whenbroadcastreceived', receivedMessage: 'go', x: 0, y: 0},
-                    {id: 'dog:producer', targetId: 'dog', targetName: 'Dog', isStage: false,
-                        scriptId: 'producer', opcode: 'procedures_definition', x: 0, y: 0,
-                        definition: fn('producer', 'produce', 0, 0,
-                            {uses: [{block: 'foreign-call', script: 'flag'}]})}
-                ],
-                edges: [{from: 'flag', to: 'dog:flag', messageKey: 'go', messageName: 'go', wait: false}]
-            }
-        }
-    });
-    const calls = [...container.querySelectorAll('[data-edge][data-relation="call"]')]
+test('hand-placed graph positions restore per target and direction and survive hidden relation kinds', t => {
+    const data = {targetId: 'cat', isStage: false, functions: [
+        fn('entry', 'entry', 10, 20, callees('entry', ['worker'])), fn('worker', 'worker', 30, 40)
+    ]};
+    const snapshot = structuredClone(data);
+    const positions = {cat: {LR: {worker: {x: -80, y: -60}}, TD: {worker: {x: 250, y: 100}}},
+        other: {LR: {worker: {x: 10, y: 20}}}};
+    const {container, draw} = render(t, {view: 'graph', direction: 'LR', data, defaultSettings: {graphPositions: positions}});
+    const point = () => {
+        const node = container.querySelector<HTMLElement>('[data-function-key="worker"]').parentElement;
+        return {x: parseFloat(node.style.left), y: parseFloat(node.style.top)};
+    };
+    assert.deepEqual(point(), positions.cat.LR.worker);
+    const mini = container.querySelector<SVGRectElement>('[data-node-key="worker"]');
+    assert.deepEqual([Number(mini.getAttribute('x')), Number(mini.getAttribute('y'))], [-80, -60]);
+    const area = container.querySelector('.tw-sprite-functions__minimap svg').getAttribute('viewBox').split(' ').map(Number);
+    assert.ok(area[0] < -80 && area[1] < -60, 'negative positions remain inside the navigable minimap area');
+    draw({direction: 'TD'});
+    assert.deepEqual(point(), positions.cat.TD.worker);
+    draw({direction: 'LR'});
+    assert.deepEqual(point(), positions.cat.LR.worker);
+    draw({data: {...data, targetId: 'other'}});
+    assert.deepEqual(point(), positions.other.LR.worker);
+    draw({data, relationVisibility: {function: false, message: false}});
+    assert.equal(container.querySelector('[data-function-key="worker"]'), null);
+    draw({data, relationVisibility: {function: true, message: true}});
+    assert.deepEqual(point(), positions.cat.LR.worker);
+    assert.deepEqual(data, snapshot, 'diagram settings do not modify the script block positions');
+});
+
+
+test('the 0.9 messageGraph API preserves foreign ownership, unmatched scripts, and arrow-only settings', t => {
+    const script = (id, targetId = 'cat', patch = {}) => ({id, targetId, targetName: targetId === 'cat' ? 'Cat' : 'Dog',
+        isStage: false, scriptId: id.split(':').at(-1), opcode: 'event_whenbroadcastreceived', receivedMessage: 'go', x: 0, y: 0, ...patch});
+    const data = {targetId: 'cat', isStage: false, functions: [],
+        globals: [fn('dog:global', 'global', 0, 0, {kind: 'named', scope: 'global',
+            owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'global'}, uses: [{block: 'call', script: 'flag'}]})],
+        messageGraph: {scripts: [script('flag'), script('dog:flag', 'dog'), script('unmatched'),
+            script('dog:producer', 'dog', {definition: fn('producer', 'produce', 0, 0,
+                {uses: [{block: 'foreign-call', script: 'flag'}]})})],
+            edges: [{from: 'flag', to: 'dog:flag', messageKey: 'go', messageName: 'go', wait: true}]}};
+    const opened = [];
+    const {container, draw} = render(t, {view: 'graph', data, onOpenScript: item => opened.push(item)});
+    const source = 'script:["cat","flag"]';
+    const foreign = 'script:["dog","flag"]';
+    const calls = [...container.querySelectorAll('path[data-edge][data-script-relation="function"]')]
         .map(edge => edge.getAttribute('data-edge')).sort();
-    assert.deepEqual(calls, ['dog:flag>dog:producer', 'flag>dog:global']);
-    assert.equal(container.querySelector('[data-edge="dog:flag>dog:global"]'), null,
-        'the foreign script with the same raw id never takes this target’s call');
+    assert.deepEqual(calls, [`${foreign}>dog:producer`, `${source}>dog:global`].sort());
+    const receiver = container.querySelector<HTMLButtonElement>(`[data-script-key='${foreign}']`);
+    act(() => receiver.click());
+    assert.equal(opened[0].id, 'flag');
+    assert.equal(opened[0].targetId, 'dog');
+    const before = [...container.querySelectorAll('.tw-sprite-functions__nodes > li')].map(node => node.getAttribute('style'));
+    const path = container.querySelector('[data-edge][data-script-relation="function"]').getAttribute('d');
+    draw({defaultSettings: undefined, data});
+    // Settings are restored on a fresh mount, while controlled direction/filter props remain separate.
+    const hidden = render(t, {view: 'graph', data, defaultSettings: {showMessages: false}}).container;
+    assert.equal(hidden.querySelector('[data-edge][data-script-relation="message"]'), null);
+    assert.deepEqual([...hidden.querySelectorAll('.tw-sprite-functions__nodes > li')].map(node => node.getAttribute('style')), before);
+    assert.equal(hidden.querySelector('[data-edge][data-script-relation="function"]').getAttribute('d'), path);
+    assert.equal(hidden.querySelectorAll('[data-script-key]').length, 3, 'unmatched local scripts remain present');
+    const controlled = render(t, {view: 'graph', data, defaultSettings: {showCalls: false, showMessages: false},
+        relationVisibility: {function: true, message: true}}).container;
+    assert.ok(controlled.querySelector('path[data-edge][data-script-relation="function"]'));
+    assert.ok(controlled.querySelector('path[data-edge][data-script-relation="message"]'),
+        'new controlled relation filters override legacy saved arrow settings');
 });
 
-test('call and message arrows between the same nodes keep distinct keys and paths when messages are hidden', t => {
-    const {container} = render(t, {
-        view: 'graph',
-        data: {targetId: 'cat', isStage: false,
-            functions: [fn('source', 'source', 0, 0, {callees: ['destination']}), fn('destination', 'destination', 0, 0)],
-            messageGraph: {scripts: [], edges: [
-                {from: 'source', to: 'destination', messageKey: 'go', messageName: 'go', wait: false}
-            ]}}
-    });
-    const call = container.querySelector('[data-edge][data-relation="call"]');
-    const message = container.querySelector('[data-edge][data-relation="message"]');
-    assert.ok(call);
-    assert.ok(message);
-    assert.notEqual(call.getAttribute('data-edge'), message.getAttribute('data-edge'));
-    assert.notEqual(call.getAttribute('d'), message.getAttribute('d'), 'parallel relationships have separate routes');
-    const callPath = call.getAttribute('d');
-    const messageToggle = container.querySelector<HTMLButtonElement>('[data-edge-toggle="messages"]');
-    assert.equal(messageToggle.getAttribute('aria-pressed'), 'true');
-    act(() => messageToggle.click());
-    assert.equal(messageToggle.getAttribute('aria-pressed'), 'false');
-    assert.equal(container.querySelector('[data-edge][data-relation="message"]'), null);
-    assert.equal(container.querySelectorAll('[data-edge][data-relation="call"]').length, 1);
-    assert.equal(container.querySelector('[data-edge="source>destination"]').getAttribute('d'), callPath,
-        'hiding messages leaves the call arrow and its position unchanged');
-    assert.equal(container.querySelector('.tw-sprite-functions__edge-label'), null);
+test('external function labels contain the function once and their nodes contain only the target', t => {
+    const endpoint = (targetId, scriptId) => ({targetId, scriptId, blockId: scriptId});
+    const remote = fn('dog:bark', 'bark', 0, 0, {owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark', thumbnailUrl: 'data:image/svg+xml,dog'}});
+    const stage = fn('stage:log', 'log', 0, 0, {owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log', thumbnailUrl: 'data:image/svg+xml,stage'}});
+    const opened = [];
+    const {container} = render(t, {view: 'graph', onOpenFunction: item => opened.push(item),
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)], globals: [remote, stage],
+            scriptRelations: [remote, stage].map(fn => ({kind: 'function', source: endpoint('cat', 'jump'),
+                destination: endpoint(fn.owner.targetId, fn.owner.functionId), label: fn.proccode, wait: false}))}});
+    for (const [item, owner] of [[remote, 'Dog'], [stage, '背景']]) {
+        const label = container.querySelector(`[data-edge="jump>${item.id}"].tw-sprite-functions__edge-label`);
+        assert.deepEqual([...label.querySelectorAll('text')].map(node => node.textContent), [item.proccode]);
+        const node = container.querySelector<HTMLButtonElement>(`[data-function-key="${item.id}"]`);
+        assert.equal(node.querySelector('.tw-sprite-functions__name').textContent, owner);
+        assert.equal(node.getAttribute('aria-label'), `${owner} · ${item.proccode}`);
+        assert.match(node.title, new RegExp(item.proccode));
+        const image = node.querySelector('img');
+        assert.equal(image.getAttribute('src'), item.owner.thumbnailUrl);
+        assert.equal(image.getAttribute('alt'), '');
+        assert.equal(image.draggable, false);
+        act(() => node.click());
+        assert.equal(opened.at(-1).owner.targetId, item.owner.targetId);
+    }
 });
 
-test('self-broadcasts and messages in opposite directions keep their labels on separate routes', t => {
-    const {container} = render(t, {
-        view: 'graph',
-        data: {targetId: 'cat', isStage: false, functions: [], messageGraph: {
-            scripts: [{id: 'receive', targetId: 'cat', targetName: 'Cat', isStage: false,
-                scriptId: 'receive', opcode: 'event_whenbroadcastreceived', receivedMessage: 'go', x: 0, y: 0}],
-            edges: [false, true].map(wait => ({from: 'receive', to: 'receive', messageKey: 'go', messageName: 'go', wait}))
-        }}
-    });
-    const labels = [...container.querySelectorAll('.tw-sprite-functions__edge-label')];
-    assert.equal(labels.length, 2);
-    assert.notEqual(labels[0].getAttribute('y'), labels[1].getAttribute('y'),
-        'a normal self-send and a waiting self-send never print their names on top of each other');
+test('scanner data keeps self-sends and reverse messages readable while explicit endpoint data stays authoritative', t => {
+    const scripts = ['a', 'b'].map(id => ({id, targetId: 'cat', targetName: 'Cat', isStage: false,
+        scriptId: id, opcode: 'event_whenbroadcastreceived', receivedMessage: id, x: 0, y: 0}));
     for (const direction of ['LR', 'TD']) {
-        const {container} = render(t, {
-            view: 'graph', defaultSettings: {direction},
-            data: {targetId: 'cat', isStage: false, functions: [], messageGraph: {
-                scripts: ['a', 'b'].map(id => ({id, targetId: 'cat', targetName: 'Cat', isStage: false,
-                    scriptId: id, opcode: 'event_whenbroadcastreceived', receivedMessage: id, x: 0, y: 0})),
-                edges: [{from: 'a', to: 'b', messageKey: 'go', messageName: 'go', wait: false},
-                    {from: 'b', to: 'a', messageKey: 'back', messageName: 'back', wait: false}]
-            }}
-        });
-        assert.equal(container.querySelectorAll('[data-edge][data-kind="back"]').length, 1);
-        const labels = [...container.querySelectorAll('.tw-sprite-functions__edge-label')];
-        assert.equal(labels.length, 2);
-        const axis = direction === 'LR' ? 'y' : 'x';
-        assert.notEqual(labels[0].getAttribute(axis), labels[1].getAttribute(axis),
-            `${direction}: forward and back labels follow different routes`);
+        const messageGraph = {scripts, edges: [
+            {from: 'a', to: 'b', messageKey: 'go', messageName: 'go', wait: false},
+            {from: 'b', to: 'a', messageKey: 'back', messageName: 'back', wait: false},
+            ...[false, true].map(wait => ({from: 'a', to: 'a', messageKey: 'self', messageName: 'self', wait}))
+        ]};
+        const data = {targetId: 'cat', isStage: false, functions: [], messageGraph};
+        const {container} = render(t, {view: 'graph', defaultSettings: {direction}, data});
+        assert.equal(container.querySelectorAll('path[data-edge][data-kind="back"]').length, 1);
+        assert.equal(container.querySelectorAll('.tw-sprite-functions__edge-label-row[data-message-name="self"]').length, 1);
+        assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 1);
+        const transforms = [...container.querySelectorAll('.tw-sprite-functions__edge-label')].map(node => node.getAttribute('transform'));
+        assert.equal(new Set(transforms).size, 3, 'forward, reverse, and self labels occupy distinct receiving positions');
+        const explicit = render(t, {view: 'graph', data: {...data, scripts: scripts.map(script => ({...script, label: script.id})),
+            scriptRelations: []}}).container;
+        assert.equal(explicit.querySelectorAll('.tw-sprite-functions__node').length, 0,
+            'scanner nodes never override the explicit relation filter and endpoint list');
+    }
+});
+
+test('readTargetFunctions preserves the shared message scanner and describeScript callback', () => {
+    const target = {id: 'cat', variables: {go: {name: 'Start', type: 'broadcast_msg'}}, blocks: {_blocks: {
+        receive: {id: 'receive', opcode: 'event_whenbroadcastreceived', topLevel: true,
+            fields: {BROADCAST_OPTION: {id: 'go', value: 'Start'}}}
+    }}};
+    const data = readTargetFunctions(target, {describeScript: (targetId, scriptId) => `${targetId}/${scriptId}`});
+    assert.equal(data.messageGraph.scripts[0].label, 'cat/receive');
+    assert.equal(data.messageGraph.scripts[0].receivedMessage, 'Start');
+    assert.deepEqual(data.messageGraph.edges, []);
+});
+
+
+test('script names and target names use separate complete rows and long names grow all graph geometry', t => {
+    const endpoint = (scriptId: string) => ({targetId: 'cat', scriptId, blockId: scriptId});
+    const normal = {targetId: 'cat', scriptId: 'flag', label: '緑の旗が押されたとき', targetName: 'スプライト1'};
+    const data = {targetId: 'cat', isStage: false, functions: [fn('worker', 'worker', 0, 0)], scripts: [normal],
+        scriptRelations: [{kind: 'function', source: endpoint('flag'), destination: endpoint('worker'), label: 'worker', wait: false}]};
+    const {container, draw} = render(t, {view: 'graph', direction: 'LR', data});
+    const script = () => container.querySelector<HTMLElement>('[data-script-key]');
+    assert.equal(script().querySelector('.tw-sprite-functions__name').textContent, normal.label);
+    assert.equal(script().querySelector('.tw-sprite-functions__name').children.length, 1);
+    assert.equal(script().querySelector('.tw-sprite-functions__owner').textContent, normal.targetName);
+    assert.equal(script().parentElement.style.height, '44px');
+    const long = {...normal, label: normal.label.repeat(4), targetName: normal.targetName.repeat(5)};
+    for (const direction of ['LR', 'TD']) {
+        draw({direction, data: {...data, scripts: [long]}});
+        assert.equal(script().querySelector('.tw-sprite-functions__name').textContent, long.label);
+        assert.equal(script().querySelector('.tw-sprite-functions__owner').textContent, long.targetName);
+        const height = parseFloat(script().parentElement.style.height);
+        assert.ok(height > 44);
+        for (const node of container.querySelectorAll<HTMLElement>('.tw-sprite-functions__nodes > li')) {
+            assert.equal(parseFloat(node.style.height), height);
+        }
+        for (const node of container.querySelectorAll<SVGRectElement>('.tw-sprite-functions__minimap rect[data-node-key]')) {
+            assert.equal(Number(node.getAttribute('height')), height);
+        }
+        const values = container.querySelector('path[data-edge]').getAttribute('d').match(/-?[\d.]+/g).map(Number);
+        const source = script().parentElement;
+        assert.equal(values[1], parseFloat(source.style.top) + (direction === 'LR' ? height / 2 : height));
     }
 });
