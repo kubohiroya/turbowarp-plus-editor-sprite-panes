@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test, {type TestContext} from 'node:test';
 import {JSDOM} from 'jsdom';
 import React, {act} from 'react';
-import {callGraphHighlight, callGraphNodeSize, FunctionFlowToggle, FunctionRelationToggles, functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane} from '../dist/sprite-function-pane.js';
+import {callGraphHighlight, callGraphNodeSize, FunctionFlowToggle, FunctionRelationToggles, functionLabel, layoutCallGraph, orderFunctions, readTargetFunctions, SpriteFunctionPane, wrapTextLines} from '../dist/sprite-function-pane.js';
 
 (globalThis as {IS_REACT_ACT_ENVIRONMENT?: boolean}).IS_REACT_ACT_ENVIRONMENT = true;
 const dom = new JSDOM('<main></main>', {pretendToBeVisual: true});
@@ -1114,5 +1114,22 @@ test('script names and target names use separate complete rows and long names gr
         const values = container.querySelector('path[data-edge]').getAttribute('d').match(/-?[\d.]+/g).map(Number);
         const source = script().parentElement;
         assert.equal(values[1], parseFloat(source.style.top) + (direction === 'LR' ? height / 2 : height));
+    }
+});
+
+test('call graph text breaks English between words, and only a too-long word or text without spaces between characters', () => {
+    const width = (char: string) => char.charCodeAt(0) > 255 ? 14 : 8;
+    // 146px holds 18 single-byte characters: "when green flag clicked" no longer becomes "when green flag c" / "licked".
+    assert.deepEqual(wrapTextLines('when green flag clicked', 146, width), ['when green flag', 'clicked']);
+    assert.deepEqual(wrapTextLines('when space key pressed', 146, width), ['when space key', 'pressed']);
+    assert.deepEqual(wrapTextLines('when I receive landed', 146, width), ['when I receive', 'landed']);
+    assert.deepEqual(wrapTextLines('jump', 146, width), ['jump']);
+    // A word wider than the line still breaks inside it, so the text stays in the box.
+    assert.deepEqual(wrapTextLines('averyveryverylongfunctionname', 146, width), ['averyveryverylongf', 'unctionname']);
+    // Japanese has no spaces between words and breaks between characters, as before.
+    assert.deepEqual(wrapTextLines('スペース キーが押されたとき', 146, width), ['スペース キーが押さ', 'れたとき']);
+    assert.deepEqual(wrapTextLines('line one\nline two', 146, width), ['line one', 'line two']);
+    for (const text of ['when green flag clicked', 'スペース キーが押されたとき', 'averyveryverylongfunctionname']) {
+        for (const line of wrapTextLines(text, 146, width)) assert.ok([...line].reduce((sum, char) => sum + width(char), 0) <= 146, line);
     }
 });
