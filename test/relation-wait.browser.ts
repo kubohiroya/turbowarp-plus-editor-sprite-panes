@@ -7,6 +7,7 @@ import {test} from 'node:test';
 import {chromium} from '@playwright/test';
 
 const require = createRequire(import.meta.url);
+const messageScanner = require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/project-messages');
 
 async function openPane(t) {
     const browser = await chromium.launch({headless: true});
@@ -21,6 +22,9 @@ async function openPane(t) {
     ]);
     await page.route(origin + '/**', async route => {
         const pathname = new URL(route.request().url()).pathname;
+        if (pathname === '/project-messages.js') return route.fulfill({contentType: 'application/javascript', body: await readFile(messageScanner)});
+        if (pathname === '/message-call-graph.js') return route.fulfill({contentType: 'application/javascript',
+            body: (await readFile(new URL('../dist/message-call-graph.js', import.meta.url), 'utf8')).replace("'@kubohiroya/turbowarp-plus-editor-project-model/project-messages'", "'/project-messages.js'")});
         if (pathname === '/') return route.fulfill({contentType: 'text/html', body: `<!doctype html><html lang="ja">
             <link rel="stylesheet" href="/pane.css"><style>#root{width:600px;height:400px}</style><div id="root"></div>
             <script src="/react-umd.js"></script><script src="/react-dom-umd.js"></script>

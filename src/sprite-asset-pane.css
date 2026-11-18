@@ -1435,6 +1435,14 @@
     overflow-wrap: normal;
 }
 
+.tw-sprite-functions__target-thumbnail {
+    flex: none;
+    inline-size: 22px;
+    block-size: 22px;
+    object-fit: contain;
+    pointer-events: none;
+}
+
 .tw-sprite-functions__node[data-unused] {
     border-style: dashed;
     opacity: .75;
@@ -1976,7 +1984,7 @@
     background: #8a8f98;
 }
 
-.tw-sprite-functions__node[data-owner] {
+.tw-sprite-functions__node[data-owner][aria-disabled="true"] {
     cursor: default;
 }
 
@@ -2369,4 +2377,15 @@ button.tw-sprite-messages__source:focus-visible {
 .tw-sprite-messages__menu-item:focus-visible {
     color: #fff;
     background: var(--message-accent);
+}
+
+/* Message scripts retain their distinct node style when supplied by either graph API. */
+.tw-sprite-functions__node[data-kind="script"] {
+    border-color: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    color: var(--text-primary, CanvasText);
+    background: var(--ui-white, Canvas);
+}
+
+.tw-sprite-functions__graph[data-highlighting] .tw-sprite-functions__edge-label:not([data-highlight]) {
+    opacity: .25;
 }

@@ -7,6 +7,7 @@ import {test} from 'node:test';
 import {chromium, expect} from '@playwright/test';
 
 const require = createRequire(import.meta.url);
+const messageScanner = require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/project-messages');
 const origin = 'http://sprite-panes.test';
 const toolbar = '/example/sprite-editor-toolbar.html';
 const files = new Map([
@@ -27,6 +28,9 @@ async function openExample(t) {
     const page = await browser.newPage({viewport: {width: 900, height: 600}});
     await page.route(origin + '/**', async route => {
         const pathname = new URL(route.request().url()).pathname;
+        if (pathname === '/project-messages.js') return route.fulfill({contentType: 'application/javascript', body: await readFile(messageScanner)});
+        if (pathname === '/dist/message-call-graph.js') return route.fulfill({contentType: 'application/javascript',
+            body: (await readFile(new URL('../dist/message-call-graph.js', import.meta.url), 'utf8')).replace("'@kubohiroya/turbowarp-plus-editor-project-model/project-messages'", "'/project-messages.js'")});
         if (pathname === '/example/react.js') {
             return route.fulfill({contentType: 'application/javascript', body: 'export default window.React;'});
         }

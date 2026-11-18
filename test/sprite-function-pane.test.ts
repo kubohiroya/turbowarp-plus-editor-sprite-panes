@@ -381,9 +381,9 @@ test('each node pair has one edge per kind, with receiver-side message names, wa
         assert.deepEqual(rows.map(row => row.querySelectorAll('.tw-sprite-functions__relation-wait').length), [0, 1, 1]);
         assert.equal(rows[2].querySelector('title').textContent, 'Mixed Signal · 送る / 送って待つ');
         const visible = [...container.querySelectorAll('.tw-sprite-functions__edge-label text')].map(node => node.textContent);
-        assert.ok(visible.includes('Robot Sprite'));
+        assert.ok(container.textContent.includes('Robot Sprite'));
         assert.ok(visible.includes('remote_task'));
-        assert.ok(visible.includes('背景'));
+        assert.ok(container.textContent.includes('背景'));
         assert.ok(visible.includes('💬 Backdrop Ready'));
         assert.equal(visible.includes('Stage BG'), false, 'the stage is named as the background in Japanese');
     }
@@ -513,13 +513,13 @@ test('global functions of other sprites join the reading with the links into and
         ...defineFunction('wag', 'wag', 'sprite'),
         ...callFunction('wag-meow', 'meow', 'wag')
     }}};
-    const data = readTargetFunctions(cat, {others: [cat, stage, dog]});
+    const data = readTargetFunctions(cat, {others: [cat, stage, dog], getTargetThumbnail: id => `preview:${id}`});
     assert.deepEqual(data.functions.find(fn => fn.id === 'def').callees, ['stage:log']);
     assert.deepEqual(data.globals.map(fn => ({id: fn.id, name: fn.proccode, owner: fn.owner, callees: fn.callees,
         calls: fn.calls, scriptCalls: fn.scriptCalls})).sort((a, b) => a.id < b.id ? -1 : 1), [
-        {id: 'dog:bark', name: 'bark', owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark'},
+        {id: 'dog:bark', name: 'bark', owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark', thumbnailUrl: 'preview:dog'},
             callees: ['meow'], calls: 0, scriptCalls: 0},
-        {id: 'stage:log', name: 'log', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log'},
+        {id: 'stage:log', name: 'log', owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log', thumbnailUrl: 'preview:stage'},
             callees: [], calls: 2, scriptCalls: 1}
     ], 'only the global functions linked to this sprite, counted by its own calls');
     assert.equal(readTargetFunctions(cat).globals, undefined, 'without the other targets nothing else is read');
@@ -548,17 +548,20 @@ test('the call graph draws global functions grey, naming the sprite of one defin
     const node = (id: string) => container.querySelector<HTMLButtonElement>(`[data-function-key="${id}"]`);
     assert.deepEqual(['jump', 'meow', 'stage:log', 'dog:bark'].map(id => node(id).getAttribute('data-scope')),
         [null, 'global', 'global', 'global'], 'every global function is grey, this sprite\'s too');
-    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__owner').textContent, 'ステージ');
-    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__owner').textContent, 'Dog');
+    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__name').textContent, '背景');
+    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__name').textContent, 'Dog');
+    assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__owner'), null);
+    assert.equal(node('dog:bark').getAttribute('aria-label'), 'Dog · bark');
+    assert.match(node('dog:bark').title, /bark/);
     assert.equal(node('meow').querySelector('.tw-sprite-functions__owner'), null);
     assert.match(node('dog:bark').title, /^Dog のグローバル関数/);
     assert.deepEqual([...container.querySelectorAll('[data-edge]')].map(edge => edge.getAttribute('data-edge')).sort(),
         ['dog:bark>meow', 'jump>stage:log']);
-    // A function of another sprite does not open here; this sprite's do.
+    // The host opens a foreign function using the original owner metadata.
     act(() => node('dog:bark').click());
     act(() => node('meow').click());
-    assert.deepEqual(opened, ['meow']);
-    assert.equal(node('dog:bark').getAttribute('aria-disabled'), 'true');
+    assert.deepEqual(opened, ['dog:bark', 'meow']);
+    assert.equal(node('dog:bark').getAttribute('aria-disabled'), null);
     // meow is called from the dog, and the dog's bark is counted there, so neither reads as unused.
     assert.equal(node('meow').hasAttribute('data-unused'), false);
     assert.equal(node('dog:bark').hasAttribute('data-unused'), false);
@@ -981,4 +984,101 @@ test('hand-placed graph positions restore per target and direction and survive h
     draw({data, relationVisibility: {function: true, message: true}});
     assert.deepEqual(point(), positions.cat.LR.worker);
     assert.deepEqual(data, snapshot, 'diagram settings do not modify the script block positions');
+});
+
+
+test('the 0.9 messageGraph API preserves foreign ownership, unmatched scripts, and arrow-only settings', t => {
+    const script = (id, targetId = 'cat', patch = {}) => ({id, targetId, targetName: targetId === 'cat' ? 'Cat' : 'Dog',
+        isStage: false, scriptId: id.split(':').at(-1), opcode: 'event_whenbroadcastreceived', receivedMessage: 'go', x: 0, y: 0, ...patch});
+    const data = {targetId: 'cat', isStage: false, functions: [],
+        globals: [fn('dog:global', 'global', 0, 0, {kind: 'named', scope: 'global',
+            owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'global'}, uses: [{block: 'call', script: 'flag'}]})],
+        messageGraph: {scripts: [script('flag'), script('dog:flag', 'dog'), script('unmatched'),
+            script('dog:producer', 'dog', {definition: fn('producer', 'produce', 0, 0,
+                {uses: [{block: 'foreign-call', script: 'flag'}]})})],
+            edges: [{from: 'flag', to: 'dog:flag', messageKey: 'go', messageName: 'go', wait: true}]}};
+    const opened = [];
+    const {container, draw} = render(t, {view: 'graph', data, onOpenScript: item => opened.push(item)});
+    const source = 'script:["cat","flag"]';
+    const foreign = 'script:["dog","flag"]';
+    const calls = [...container.querySelectorAll('path[data-edge][data-script-relation="function"]')]
+        .map(edge => edge.getAttribute('data-edge')).sort();
+    assert.deepEqual(calls, [`${foreign}>dog:producer`, `${source}>dog:global`].sort());
+    const receiver = container.querySelector<HTMLButtonElement>(`[data-script-key='${foreign}']`);
+    act(() => receiver.click());
+    assert.equal(opened[0].id, 'flag');
+    assert.equal(opened[0].targetId, 'dog');
+    const before = [...container.querySelectorAll('.tw-sprite-functions__nodes > li')].map(node => node.getAttribute('style'));
+    const path = container.querySelector('[data-edge][data-script-relation="function"]').getAttribute('d');
+    draw({defaultSettings: undefined, data});
+    // Settings are restored on a fresh mount, while controlled direction/filter props remain separate.
+    const hidden = render(t, {view: 'graph', data, defaultSettings: {showMessages: false}}).container;
+    assert.equal(hidden.querySelector('[data-edge][data-script-relation="message"]'), null);
+    assert.deepEqual([...hidden.querySelectorAll('.tw-sprite-functions__nodes > li')].map(node => node.getAttribute('style')), before);
+    assert.equal(hidden.querySelector('[data-edge][data-script-relation="function"]').getAttribute('d'), path);
+    assert.equal(hidden.querySelectorAll('[data-script-key]').length, 3, 'unmatched local scripts remain present');
+    const controlled = render(t, {view: 'graph', data, defaultSettings: {showCalls: false, showMessages: false},
+        relationVisibility: {function: true, message: true}}).container;
+    assert.ok(controlled.querySelector('path[data-edge][data-script-relation="function"]'));
+    assert.ok(controlled.querySelector('path[data-edge][data-script-relation="message"]'),
+        'new controlled relation filters override legacy saved arrow settings');
+});
+
+test('external function labels contain the function once and their nodes contain only the target', t => {
+    const endpoint = (targetId, scriptId) => ({targetId, scriptId, blockId: scriptId});
+    const remote = fn('dog:bark', 'bark', 0, 0, {owner: {targetId: 'dog', name: 'Dog', isStage: false, functionId: 'bark', thumbnailUrl: 'data:image/svg+xml,dog'}});
+    const stage = fn('stage:log', 'log', 0, 0, {owner: {targetId: 'stage', name: 'Stage', isStage: true, functionId: 'log', thumbnailUrl: 'data:image/svg+xml,stage'}});
+    const opened = [];
+    const {container} = render(t, {view: 'graph', onOpenFunction: item => opened.push(item),
+        data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)], globals: [remote, stage],
+            scriptRelations: [remote, stage].map(fn => ({kind: 'function', source: endpoint('cat', 'jump'),
+                destination: endpoint(fn.owner.targetId, fn.owner.functionId), label: fn.proccode, wait: false}))}});
+    for (const [item, owner] of [[remote, 'Dog'], [stage, '背景']]) {
+        const label = container.querySelector(`[data-edge="jump>${item.id}"].tw-sprite-functions__edge-label`);
+        assert.deepEqual([...label.querySelectorAll('text')].map(node => node.textContent), [item.proccode]);
+        const node = container.querySelector<HTMLButtonElement>(`[data-function-key="${item.id}"]`);
+        assert.equal(node.querySelector('.tw-sprite-functions__name').textContent, owner);
+        assert.equal(node.getAttribute('aria-label'), `${owner} · ${item.proccode}`);
+        assert.match(node.title, new RegExp(item.proccode));
+        const image = node.querySelector('img');
+        assert.equal(image.getAttribute('src'), item.owner.thumbnailUrl);
+        assert.equal(image.getAttribute('alt'), '');
+        assert.equal(image.draggable, false);
+        act(() => node.click());
+        assert.equal(opened.at(-1).owner.targetId, item.owner.targetId);
+    }
+});
+
+test('scanner data keeps self-sends and reverse messages readable while explicit endpoint data stays authoritative', t => {
+    const scripts = ['a', 'b'].map(id => ({id, targetId: 'cat', targetName: 'Cat', isStage: false,
+        scriptId: id, opcode: 'event_whenbroadcastreceived', receivedMessage: id, x: 0, y: 0}));
+    for (const direction of ['LR', 'TD']) {
+        const messageGraph = {scripts, edges: [
+            {from: 'a', to: 'b', messageKey: 'go', messageName: 'go', wait: false},
+            {from: 'b', to: 'a', messageKey: 'back', messageName: 'back', wait: false},
+            ...[false, true].map(wait => ({from: 'a', to: 'a', messageKey: 'self', messageName: 'self', wait}))
+        ]};
+        const data = {targetId: 'cat', isStage: false, functions: [], messageGraph};
+        const {container} = render(t, {view: 'graph', defaultSettings: {direction}, data});
+        assert.equal(container.querySelectorAll('path[data-edge][data-kind="back"]').length, 1);
+        assert.equal(container.querySelectorAll('.tw-sprite-functions__edge-label-row[data-message-name="self"]').length, 1);
+        assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 1);
+        const transforms = [...container.querySelectorAll('.tw-sprite-functions__edge-label')].map(node => node.getAttribute('transform'));
+        assert.equal(new Set(transforms).size, 3, 'forward, reverse, and self labels occupy distinct receiving positions');
+        const explicit = render(t, {view: 'graph', data: {...data, scripts: scripts.map(script => ({...script, label: script.id})),
+            scriptRelations: []}}).container;
+        assert.equal(explicit.querySelectorAll('.tw-sprite-functions__node').length, 0,
+            'scanner nodes never override the explicit relation filter and endpoint list');
+    }
+});
+
+test('readTargetFunctions preserves the shared message scanner and describeScript callback', () => {
+    const target = {id: 'cat', variables: {go: {name: 'Start', type: 'broadcast_msg'}}, blocks: {_blocks: {
+        receive: {id: 'receive', opcode: 'event_whenbroadcastreceived', topLevel: true,
+            fields: {BROADCAST_OPTION: {id: 'go', value: 'Start'}}}
+    }}};
+    const data = readTargetFunctions(target, {describeScript: (targetId, scriptId) => `${targetId}/${scriptId}`});
+    assert.equal(data.messageGraph.scripts[0].label, 'cat/receive');
+    assert.equal(data.messageGraph.scripts[0].receivedMessage, 'Start');
+    assert.deepEqual(data.messageGraph.edges, []);
 });
