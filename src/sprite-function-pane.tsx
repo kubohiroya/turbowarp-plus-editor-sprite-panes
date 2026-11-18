@@ -1087,16 +1087,9 @@ interface EdgeLabel {
     height: number;
 }
 
-const labelTextWidth = (value: string) => [...value].reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 12 : 8), 0);
-function labelLines(value: string) {
-    const lines: string[] = [];
-    let line = '';
-    for (const char of value) {
-        if (line && labelTextWidth(line + char) > 208) { lines.push(line); line = ''; }
-        line += char;
-    }
-    return [...lines, line];
-}
+const labelCharWidth = (char: string) => char.charCodeAt(0) > 255 ? 12 : 8;
+const labelTextWidth = (value: string) => [...value].reduce((width, char) => width + labelCharWidth(char), 0);
+const labelLines = (value: string) => wrapTextLines(value, 208, labelCharWidth);
 
 function graphEdgeLabels(relations: Map<string, ScriptRelation[]>, targetId: string) {
     const result = new Map<string, EdgeLabel[]>();
@@ -1366,24 +1359,50 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-/** Conservative character widths keep all text inside the 176px node, including unbroken names. */
-function nodeTextLines(value: string, width: number) {
+/**
+ * Lines of `value` that each fit in `width`. Text in scripts written with spaces, such as English, breaks between words;
+ * a word wider than a line, and text without spaces such as Japanese, breaks between characters. A line break in
+ * `value` always starts a new line.
+ */
+export function wrapTextLines(value: string, width: number, advance: (char: string) => number) {
     const lines: string[] = [];
     let line = '';
     let used = 0;
-    for (const char of value) {
-        const advance = char.charCodeAt(0) > 255 ? 14 : /[MW@#%&mw]/.test(char) ? 13 : /[A-Z]/.test(char) ? 10 : 8;
-        if (char === '\n' || line && used + advance > width) {
-            lines.push(line);
-            line = '';
-            used = 0;
-            if (char === '\n') continue;
+    const measure = (text: string) => [...text].reduce((sum, char) => sum + advance(char), 0);
+    const flush = () => {
+        lines.push(line.trimEnd());
+        line = '';
+        used = 0;
+    };
+    // Words of single-byte text keep their spaces; each wide character, such as a kana or kanji, is a word by itself.
+    for (const part of value.split('\n').map((text, index) => [index, text] as const)) {
+        if (part[0] > 0) flush();
+        for (const word of part[1].match(/[^\s\u0100-\uffff]+\s*|\s+|[\u0100-\uffff]\s*/gu) ?? []) {
+            const size = measure(word);
+            const visible = measure(word.trimEnd());
+            if (line && used + visible > width) flush();
+            if (!line && word.trim() === '') continue;
+            if (visible <= width) {
+                line += word;
+                used += size;
+                continue;
+            }
+            for (const char of word) {
+                const step = advance(char);
+                if (line && used + step > width) flush();
+                if (!line && char.trim() === '') continue;
+                line += char;
+                used += step;
+            }
         }
-        line += char;
-        used += advance;
     }
-    return [...lines, line];
+    lines.push(line.trimEnd());
+    return lines;
 }
+
+/** Conservative character widths keep all text inside the 176px node, including unbroken names. */
+const nodeCharWidth = (char: string) => char.charCodeAt(0) > 255 ? 14 : /[MW@#%&mw]/.test(char) ? 13 : /[A-Z]/.test(char) ? 10 : 8;
+const nodeTextLines = (value: string, width: number) => wrapTextLines(value, width, nodeCharWidth);
 
 function graphNodeText(fn: CallGraphItem, script: GraphScript | undefined, labels: Labels) {
     const label = script?.label ?? functionLabel(fn);
