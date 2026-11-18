@@ -72,8 +72,6 @@ test('the sprite toolbar selects one section and searches in the active section'
         return tab.width === 28 && tab.height === 28 && tab.x + tab.width <= panel.x &&
             tab.x === tabBounds[0].x && (!previous || Math.abs(tab.y - previous.y - previous.height - step) < 0.1);
     }));
-    const lastTab = tabBounds.at(-1);
-    assert.ok(lastTab.y + lastTab.height < rail.y + rail.height - 40, 'the rail is not divided among its buttons');
     await selected.hover();
     await expect(tooltip).toHaveText('自由配置');
     assert.ok((await tooltip.boundingBox()).x >= panel.x);
@@ -142,6 +140,7 @@ test('the sprite toolbar selects one section and searches in the active section'
 
 test('rail controls change graph direction and independently filter function and message relations by keyboard', {timeout: 30_000}, async t => {
     const page = await openExample(t);
+    await page.setViewportSize({width: 900, height: 1000});
     await page.goto(origin + toolbar);
     await page.evaluate(async () => {
         const {SpriteEditorToolbar} = await import('/dist/sprite-editor-toolbar.js');
@@ -168,7 +167,7 @@ test('rail controls change graph direction and independently filter function and
                     destination: {targetId: 'cat', blockId: 'jump', scriptId: 'jump'}, label: 'jump', wait: true},
                     {kind: 'message', source: {targetId: 'cat', blockId: 'send', scriptId: 'flag'},
                         destination: {targetId: 'cat', blockId: 'receive', scriptId: 'receive'}, label: 'ready', wait: false}]};
-            return React.createElement('div', {className: 'tw-plus-sprite-tab-slot--split', style: {height: 180}},
+            return React.createElement('div', {className: 'tw-plus-sprite-tab-slot--split', style: {height: 320}},
                 React.createElement('div', {className: 'tw-plus-sprite-tab-toolbar'},
                     React.createElement(SpriteEditorToolbar, {viewId: 'flow', locale: 'en', section,
                         onSectionChange: setSection, sectionControls: section === 'calls' ?
@@ -177,7 +176,7 @@ test('rail controls change graph direction and independently filter function and
                                 React.createElement(FunctionRelationToggles, {locale: 'en', value: visibility, onChange: setVisibility})) : null})),
                 React.createElement('div', {className: 'tw-plus-sprite-tab-body'},
                     React.createElement(SpriteFunctionPane, {kind: 'functions', locale: 'en', editable: true,
-                        view: 'graph', direction, relationVisibility: visibility, data})));
+                        view: 'graph', direction, relationVisibility: visibility, data, onCreate: async () => undefined})));
         }
         ReactDOM.createRoot(container).render(React.createElement(Example));
     });
@@ -192,13 +191,32 @@ test('rail controls change graph direction and independently filter function and
     const controls = root.locator('.tw-plus-sprite-toolbar-section-controls');
     await expect(toggle).toHaveAttribute('data-direction', 'LR');
     await expect(toggle).toHaveText('LR|TD');
-    await expect(toggle).toHaveCSS('width', '36px');
+    await expect(toggle).toHaveCSS('width', '32px');
+    await expect(toggle).toHaveCSS('height', '48px');
+    await expect(functions).toHaveCSS('height', '40px');
+    await expect(messages).toHaveCSS('height', '40px');
+    const directions = await toggle.locator('span:not([aria-hidden])').evaluateAll(nodes => nodes.map(node => {
+        const box = node.getBoundingClientRect();
+        return {x: box.x, y: box.y, width: box.width, height: box.height};
+    }));
+    assert.ok(Math.abs(directions[0].x - directions[1].x) < 1 &&
+        directions[0].y + directions[0].height < directions[1].y, 'LR and TD are clearly stacked vertically');
     await expect(graph).toHaveAttribute('data-direction', 'LR');
     assert.equal(await tabs.locator('button:not([role="tab"])').count(), 0);
     const rail = await root.locator('.tw-plus-sprite-toolbar-rail').boundingBox();
     let bounds = await controls.boundingBox();
+    const controlsTop = bounds.y;
     assert.ok(bounds.x >= rail.x && bounds.x + bounds.width <= rail.x + rail.width);
-    assert.ok(rail.y + rail.height - bounds.y - bounds.height <= 1, 'pinned to the rail foot');
+    const lowest = await functions.boundingBox();
+    const add = await root.locator('.tw-sprite-functions__add').boundingBox();
+    assert.ok(Math.abs(lowest.y + lowest.height - add.y - add.height) <= 1,
+        'the lowest button aligns with the Add function button');
+    const flowBounds = await toggle.boundingBox();
+    const messageBounds = await messages.boundingBox();
+    assert.ok(Math.abs(flowBounds.y + flowBounds.height - messageBounds.y) <= 1 &&
+        Math.abs(messageBounds.y + messageBounds.height - lowest.y) <= 1, 'segments meet without gaps');
+    await expect(controls).toHaveCSS('border-radius', '5px');
+    await expect(functions).toHaveCSS('border-radius', '0px');
     await toggle.focus();
     await toggle.press('Enter');
     await expect(graph).toHaveAttribute('data-direction', 'TD');
@@ -235,9 +253,31 @@ test('rail controls change graph direction and independently filter function and
     await expect(nodes).toHaveCount(3);
     await messages.click();
     await expect(nodes).toHaveCount(4);
+    await root.evaluate(element => {element.style.setProperty('--looks-secondary', '#2463bc');});
+    await expect(messages).toHaveCSS('background-color', 'rgb(36, 99, 188)');
+    await expect(functions).toHaveCSS('background-color', 'rgb(36, 99, 188)');
+    await expect(functions).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await expect(functions.locator('svg')).toHaveCSS('color', 'rgb(255, 255, 255)');
+    await root.evaluate(element => {element.style.setProperty('--looks-secondary', '#bc4530');});
+    await expect(messages).toHaveCSS('background-color', 'rgb(188, 69, 48)');
+    await functions.click();
+    await expect(functions).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+    await functions.click();
+    const addAfterThemeChange = await root.locator('.tw-sprite-functions__add').boundingBox();
+    const lowestAfterThemeChange = await functions.boundingBox();
+    assert.ok(Math.abs(lowestAfterThemeChange.y + lowestAfterThemeChange.height - addAfterThemeChange.y - addAfterThemeChange.height) <= 1,
+        'the bottom button and Add function share their bottom edge');
     await tabs.evaluate(element => {element.scrollTop = element.scrollHeight;});
     bounds = await controls.boundingBox();
-    assert.ok(rail.y + rail.height - bounds.y - bounds.height <= 1, 'tab scrolling leaves the controls at the foot');
+    assert.ok(Math.abs(bounds.y - controlsTop) <= 1, 'tab scrolling leaves the group in place');
+    await root.locator('.tw-plus-sprite-tab-slot--split').evaluate(element => {element.style.height = '180px';});
+    await messages.scrollIntoViewIfNeeded();
+    await expect(messages).toHaveCSS('min-height', '40px');
+    assert.ok(await messages.evaluate(button => {
+        const box = button.getBoundingClientRect();
+        const hit = button.ownerDocument.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return hit?.closest('button') === button;
+    }), 'the last control remains reachable in a short pane');
     await root.getByRole('tab', {name: 'Calls', exact: true}).focus();
     await root.getByRole('tab', {name: 'Calls', exact: true}).press('Home');
     await expect(root.getByRole('tab', {name: 'Free layout', exact: true})).toBeFocused();

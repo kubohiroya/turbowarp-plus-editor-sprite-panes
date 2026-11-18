@@ -315,9 +315,9 @@ test('function and message graph filters retain only the nodes needed by their v
     act(() => container.querySelector<HTMLButtonElement>('[data-function-key="main"]').click());
     assert.deepEqual(functions, ['main']);
     assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 1);
-    const shared = [...container.querySelectorAll<SVGPathElement>('[data-edge="main>draw"]')];
+    const shared = [...container.querySelectorAll<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge="main>draw"]')];
     assert.equal(shared.length, 2);
-    assert.notEqual(shared[0].getAttribute('transform'), shared[1].getAttribute('transform'), 'different relation kinds have separate lanes');
+    assert.notEqual(shared[0].getAttribute('d'), shared[1].getAttribute('d'), 'different relation kinds have separate lanes');
 
     draw({relationVisibility: {function: true, message: false}});
     assert.equal(mainEdges('function').length, 2);
@@ -347,6 +347,42 @@ test('a message-only graph can show scripts without any function definitions', t
     assert.equal(container.querySelectorAll('[data-script-key]').length, 2);
     assert.equal(container.querySelectorAll('[data-function-key]').length, 0);
     assert.equal(container.querySelector('.tw-sprite-functions__notice'), null);
+});
+
+test('each node pair has one edge per kind, with receiver-side message names, wait modes, and foreign owners', t => {
+    const endpoint = (targetId: string, scriptId: string) => ({targetId, scriptId, blockId: scriptId});
+    const send = (name: string, wait = false) => ({kind: 'message', label: name, wait,
+        source: endpoint('cat', 'entry'), destination: endpoint('cat', 'worker')});
+    const {container, draw} = render(t, {view: 'graph', direction: 'LR',
+        data: {targetId: 'cat', isStage: false, functions: [fn('entry', 'entry', 0, 0), fn('worker', 'worker', 0, 0)],
+            scripts: [{targetId: 'other', scriptId: 'remote', label: 'remote_task', targetName: 'Robot Sprite'},
+                {targetId: 'stage', scriptId: 'backdrop', label: 'Backdrop Ready', targetName: 'Stage BG', isStage: true}],
+            scriptRelations: [
+                {kind: 'function', label: 'worker', wait: true, source: endpoint('cat', 'entry'), destination: endpoint('cat', 'worker')},
+                send('Start Signal'), send('Start Signal'), send('Finish Signal', true), send('Mixed Signal'), send('Mixed Signal', true),
+                {kind: 'function', label: 'remote_task', wait: true, source: endpoint('cat', 'entry'), destination: endpoint('other', 'remote')},
+                {kind: 'message', label: 'Backdrop Ready', wait: true, source: endpoint('cat', 'entry'), destination: endpoint('stage', 'backdrop')}
+            ]}});
+    for (const direction of ['LR', 'TD']) {
+        draw({direction});
+        const paths = [...container.querySelectorAll<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge="entry>worker"]')];
+        assert.equal(paths.length, 2);
+        assert.deepEqual(paths.map(path => path.getAttribute('data-script-relation')), ['function', 'message']);
+        assert.notEqual(paths[0].getAttribute('d'), paths[1].getAttribute('d'));
+        const label = container.querySelector('.tw-sprite-functions__edge-label[data-edge="entry>worker"]');
+        assert.equal(label.getAttribute('data-script-relation'), 'message');
+        const rows = [...label.querySelectorAll('.tw-sprite-functions__edge-label-row')];
+        assert.deepEqual(rows.map(row => row.getAttribute('data-message-name')), ['Start Signal', 'Finish Signal', 'Mixed Signal']);
+        assert.deepEqual(rows.map(row => row.querySelector('text').textContent), ['💬 Start Signal', '💬 Finish Signal', '💬 Mixed Signal']);
+        assert.deepEqual(rows.map(row => row.querySelectorAll('.tw-sprite-functions__relation-wait').length), [0, 1, 1]);
+        assert.equal(rows[2].querySelector('title').textContent, 'Mixed Signal · 送る / 送って待つ');
+        const visible = [...container.querySelectorAll('.tw-sprite-functions__edge-label text')].map(node => node.textContent);
+        assert.ok(visible.includes('Robot Sprite'));
+        assert.ok(visible.includes('remote_task'));
+        assert.ok(visible.includes('背景'));
+        assert.ok(visible.includes('💬 Backdrop Ready'));
+        assert.equal(visible.includes('Stage BG'), false, 'the stage is named as the background in Japanese');
+    }
 });
 
 test('graph filter buttons are independent and their tooltips explain the current action', t => {

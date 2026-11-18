@@ -1017,7 +1017,7 @@
     block-size: 100%;
     min-block-size: 0;
     min-inline-size: 0;
-    padding: .6rem;
+    padding: var(--tw-sprite-functions-panel-padding, .6rem);
     overflow: auto;
     color: var(--text-primary, #273146);
     background: var(--ui-white, #fff);
@@ -1355,11 +1355,47 @@
     fill: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
 }
 
-.tw-sprite-functions__relation-wait {
-    fill: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
-    font: 12px sans-serif;
-    text-anchor: middle;
+.tw-sprite-functions__edge-label {
+    --tw-relation-label-stroke: var(--tw-script-function-stroke, light-dark(#7051c7, #c9abff));
     pointer-events: none;
+}
+
+.tw-sprite-functions__edge-label[data-script-relation="message"] {
+    --tw-relation-label-stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+}
+
+.tw-sprite-functions__edge-label > rect {
+    fill: var(--ui-primary, Canvas);
+    fill-opacity: .96;
+    stroke: var(--tw-relation-label-stroke);
+    stroke-width: 1;
+}
+
+.tw-sprite-functions__edge-label text {
+    fill: var(--text-primary, CanvasText);
+    font: 12px sans-serif;
+}
+
+.tw-sprite-functions__edge-label .tw-sprite-functions__edge-label-owner {
+    font-weight: 600;
+}
+
+.tw-sprite-functions__relation-wait {
+    pointer-events: visiblePainted;
+}
+
+.tw-sprite-functions__relation-wait rect {
+    fill: var(--ui-primary, Canvas);
+    stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    stroke-width: 1;
+}
+
+.tw-sprite-functions__relation-wait .tw-sprite-functions__relation-wait-glyph {
+    fill: none;
+    stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .tw-sprite-functions__nodes {
@@ -1788,7 +1824,7 @@
 /* The bottom left corner of the call graph, across from the zoom buttons. */
 .tw-sprite-functions__corner {
     position: absolute;
-    inset-block-end: 8px;
+    inset-block-end: var(--tw-sprite-functions-corner-inset, 8px);
     inset-inline-start: 8px;
     cursor: default;
 }
@@ -1822,41 +1858,55 @@
 /* A single control fits the section rail; the selected direction remains visible. */
 .tw-sprite-functions__flow-toggle {
     display: inline-flex;
+    flex-direction: column;
     box-sizing: border-box;
     align-items: center;
     justify-content: center;
     flex: none;
-    gap: 1px;
-    inline-size: 36px;
-    block-size: 28px;
-    padding: 2px;
-    border: 1px solid var(--ui-black-transparent, #c6cfda);
-    border-radius: 6px;
-    background: var(--ui-white, light-dark(#fff, #111));
+    gap: 2px;
+    inline-size: 32px;
+    block-size: 48px;
+    padding: 4px;
+    border: 0;
+    border-radius: 0;
+    border-block-end: 1px solid var(--ui-black-transparent, #ccd5e2);
+    background: var(--ui-white, Canvas);
     color: var(--text-primary, CanvasText);
-    font: 10px sans-serif;
+    font: 12px/16px sans-serif;
     cursor: pointer;
 }
 
 .tw-sprite-functions__flow-toggle [data-selected] {
-    border-radius: 3px;
-    background: var(--looks-light-transparent, light-dark(#e6dff3, #493e63));
-    color: var(--looks-secondary, light-dark(#7051c7, #c9abff));
+    color: var(--looks-secondary, Highlight);
     font-weight: 700;
 }
 
-.tw-sprite-functions__flow-divider { opacity: .5; }
+.tw-sprite-functions__flow-toggle > span:not(.tw-sprite-functions__flow-divider) {
+    inline-size: 24px;
+    text-align: center;
+}
+
+.tw-sprite-functions__flow-divider {
+    flex: none;
+    inline-size: 18px;
+    block-size: 1px;
+    overflow: hidden;
+    background: currentColor;
+    opacity: .4;
+    font-size: 0;
+}
 
 .tw-sprite-functions__flow-toggle:focus-visible {
-    outline: 2px solid var(--looks-secondary, #855cd6);
-    outline-offset: 1px;
+    outline: 2px solid var(--looks-secondary, Highlight);
+    outline-offset: -3px;
 }
 
 .tw-sprite-functions__relation-toggles {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    inline-size: 36px;
+    flex: none;
+    gap: 0;
+    inline-size: 32px;
 }
 
 .tw-sprite-functions__relation-toggles button {
@@ -1864,34 +1914,31 @@
     align-items: center;
     justify-content: center;
     box-sizing: border-box;
-    inline-size: 36px;
-    block-size: 28px;
-    padding: 3px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
+    inline-size: 32px;
+    flex: none;
+    block-size: 40px;
+    min-block-size: 40px;
+    padding: 6px;
+    border: 0;
+    border-radius: 0;
+    background: var(--ui-white, Canvas);
     color: var(--text-primary, CanvasText);
-    opacity: .5;
     cursor: pointer;
 }
 
 .tw-sprite-functions__relation-toggles button[aria-pressed="true"] {
-    border-color: var(--ui-black-transparent, #c6cfda);
-    background: var(--ui-white, light-dark(#fff, #111));
-    opacity: 1;
+    background: var(--looks-secondary, Highlight);
+    color: var(--tw-plus-accent-text, #fff);
 }
 
-.tw-sprite-functions__relation-toggles button[data-relation-kind="function"] {
-    color: var(--tw-script-function-stroke, light-dark(#7051c7, #c9abff));
+.tw-sprite-functions__relation-toggles button + button {
+    border-block-start: 1px solid var(--ui-black-transparent, #ccd5e2);
 }
 
-.tw-sprite-functions__relation-toggles button[data-relation-kind="message"] {
-    color: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
-}
-
-.tw-sprite-functions__relation-toggles svg {
-    inline-size: 16px;
-    block-size: 16px;
+.tw-sprite-functions__relation-toggles button svg {
+    inline-size: 20px;
+    block-size: 20px;
+    color: inherit;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.4;
@@ -1901,7 +1948,7 @@
 
 .tw-sprite-functions__relation-toggles button:focus-visible {
     outline: 2px solid currentColor;
-    outline-offset: 1px;
+    outline-offset: -3px;
 }
 
 .tw-sprite-functions__corner .tw-sprite-functions__add {

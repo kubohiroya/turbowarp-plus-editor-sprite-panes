@@ -480,8 +480,6 @@ function relationGraph(data: FunctionPaneData, visibility: FunctionRelationVisib
 
 export const callGraphNodeSize = {width: 176, height: 44};
 const graphPadding = 24;
-const layerGap = 64;
-const siblingGap = 18;
 // Wider than the bend of a back edge under the lowest row, so the isolated functions stand apart.
 const isolatedGap = 72;
 const isolatedMinColumns = 4;
@@ -494,7 +492,9 @@ const isolatedMinColumns = 4;
  * apart from the rest, whichever the direction.
  */
 export function layoutCallGraph(all: readonly SpriteFunction[], direction: CallGraphDirection,
-    order: FunctionOrder = 'name', locale = 'en'): CallGraphLayout {
+    order: FunctionOrder = 'name', locale = 'en', spacing: {layerGap?: number; siblingGap?: number} = {}): CallGraphLayout {
+    const layerGap = spacing.layerGap ?? 64;
+    const siblingGap = spacing.siblingGap ?? 18;
     const known = new Set(all.map(fn => fn.id));
     const linked = new Set(all.flatMap(fn => {
         const callees = fn.callees.filter(id => known.has(id));
@@ -639,6 +639,8 @@ const english = {
     editor: 'Code of %1',
     readOnly: 'Click this view to edit.',
     graph: 'Script relationships',
+    sendAndWait: 'Send and wait',
+    sendMessage: 'Send',
     openCode: 'Open the code of %1',
     zoom: 'Zoom',
     zoomOut: 'Zoom out',
@@ -692,6 +694,8 @@ const japanese: typeof english = {
     editor: '%1 のコード',
     readOnly: 'このビューをクリックすると編集できます。',
     graph: '呼び出し関係',
+    sendAndWait: '送って待つ',
+    sendMessage: '送る',
     openCode: '%1 のコードを開く',
     zoom: '拡大・縮小',
     zoomOut: '縮小',
@@ -765,7 +769,7 @@ export function FunctionRelationToggles({locale, value, onChange}: {
         `${value[kind] ? 'Hide' : 'Show'} ${kind === 'function' ? 'function calls' : 'message sends and receivers'}`;
     return <div className="tw-sprite-functions__relation-toggles" role="group"
         aria-label={ja ? '呼び出し関係の表示' : 'Visible relations'}>
-        {(['function', 'message'] as const).map(kind => <button key={kind} type="button"
+        {(['message', 'function'] as const).map(kind => <button key={kind} type="button"
             data-relation-kind={kind} aria-label={labels[kind]} title={tooltip(kind)} aria-pressed={value[kind]}
             onClick={() => onChange({...value, [kind]: !value[kind]})}
             onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
@@ -916,45 +920,141 @@ function FunctionDialog({labels, fn, children, onClose}: {
     </dialog>;
 }
 
-function edgePath(from: CallGraphNode, to: CallGraphNode, kind: CallGraphEdge['kind'], direction: CallGraphDirection) {
+function edgePath(from: CallGraphNode, to: CallGraphNode, kind: CallGraphEdge['kind'], direction: CallGraphDirection, lane = 0) {
     const {width, height} = callGraphNodeSize;
     if (kind === 'self') {
-        const x = from.x + width - 24;
+        const x = from.x + (lane < 0 ? 24 : width - 24);
         const y = from.y;
         // Stay within the graph padding above the first row.
         return `M${x} ${y} C${x} ${y - 20}, ${x + 32} ${y - 20}, ${x + 20} ${y}`;
     }
     if (direction === 'LR') {
         if (kind === 'back') {
-            const sx = from.x + width / 2;
+            const sx = from.x + width / 2 + lane;
             const sy = from.y + height;
-            const tx = to.x + width / 2;
+            const tx = to.x + width / 2 + lane;
             const ty = to.y + height;
-            const bend = Math.max(sy, ty) + 36;
+            const bend = Math.max(sy, ty) + 36 + Math.abs(lane) + (lane < 0 ? 12 : 0);
             return `M${sx} ${sy} C${sx} ${bend}, ${tx} ${bend}, ${tx} ${ty}`;
         }
         const sx = from.x + width;
-        const sy = from.y + height / 2;
+        const sy = from.y + height / 2 + lane;
         const tx = to.x;
-        const ty = to.y + height / 2;
+        const ty = to.y + height / 2 + lane;
         const middle = (sx + tx) / 2;
         return `M${sx} ${sy} C${middle} ${sy}, ${middle} ${ty}, ${tx} ${ty}`;
     }
     if (kind === 'back') {
         const sx = from.x + width;
-        const sy = from.y + height / 2;
+        const sy = from.y + height / 2 + lane;
         const tx = to.x + width;
-        const ty = to.y + height / 2;
-        const bend = Math.max(sx, tx) + 36;
+        const ty = to.y + height / 2 + lane;
+        const bend = Math.max(sx, tx) + 36 + Math.abs(lane) + (lane < 0 ? 12 : 0);
         return `M${sx} ${sy} C${bend} ${sy}, ${bend} ${ty}, ${tx} ${ty}`;
     }
-    const sx = from.x + width / 2;
+    const sx = from.x + width / 2 + lane;
     const sy = from.y + height;
-    const tx = to.x + width / 2;
+    const tx = to.x + width / 2 + lane;
     const ty = to.y;
     const middle = (sy + ty) / 2;
     return `M${sx} ${sy} C${sx} ${middle}, ${tx} ${middle}, ${tx} ${ty}`;
 }
+
+interface EdgeLabel {
+    kind: ScriptRelation['kind'];
+    owner: string[];
+    rows: {name: string; lines: string[]; wait: boolean; ordinary: boolean}[];
+    width: number;
+    height: number;
+}
+
+const labelTextWidth = (value: string) => [...value].reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 12 : 8), 0);
+function labelLines(value: string) {
+    const lines: string[] = [];
+    let line = '';
+    for (const char of value) {
+        if (line && labelTextWidth(line + char) > 208) { lines.push(line); line = ''; }
+        line += char;
+    }
+    return [...lines, line];
+}
+
+function graphEdgeLabels(relations: Map<string, ScriptRelation[]>, functions: readonly SpriteFunction[],
+    scripts: Map<string, GraphScript>, targetId: string, stage: string) {
+    const byId = new Map(functions.map(fn => [fn.id, fn]));
+    const result = new Map<string, EdgeLabel[]>();
+    for (const [key, values] of relations) {
+        const kinds: EdgeLabel[] = [];
+        for (const kind of ['function', 'message'] as const) {
+            const matching = values.filter(value => value.kind === kind);
+            if (!matching.length) continue;
+            const names = new Map<string, {wait: boolean; ordinary: boolean}>();
+            for (const value of matching) {
+                const modes = names.get(value.label) ?? {wait: false, ordinary: false};
+                if (kind === 'message' && value.wait) modes.wait = true;
+                else modes.ordinary = true;
+                names.set(value.label, modes);
+            }
+            const foreign = matching[0].destination.targetId !== targetId ? matching[0].destination :
+                matching[0].source.targetId !== targetId ? matching[0].source : undefined;
+            const own = foreign && (scripts.get(`script:${JSON.stringify([foreign.targetId, foreign.scriptId])}`) ??
+                [...byId.values()].find(fn => fn.owner?.targetId === foreign.targetId && fn.owner.functionId === foreign.scriptId)?.owner);
+            const ownerName = foreign && (own?.isStage ? stage :
+                (own && ('targetName' in own ? own.targetName : 'name' in own ? own.name : undefined)) ?? foreign.targetId);
+            const owner = ownerName ? labelLines(ownerName) : [];
+            const rows = kind === 'function' && !foreign ? [] : [...names].map(([name, modes]) =>
+                ({name, ...modes, lines: labelLines(`${kind === 'message' ? '💬 ' : ''}${name}`)}));
+            const width = rows.length ? Math.max(56, ...owner.map(line => labelTextWidth(line) + 12),
+                ...rows.flatMap(row => row.lines.map(line => labelTextWidth(line) + 12 + (row.wait ? 26 : 0))))
+                : 0;
+            const height = rows.length ? 12 + owner.length * 18 + rows.reduce((height, row) => height + row.lines.length * 24, 0) : 0;
+            kinds.push({kind, owner, rows, width, height});
+        }
+        result.set(key, kinds);
+    }
+    return result;
+}
+
+function edgeLabelBox(edge: CallGraphEdge, from: CallGraphNode, to: CallGraphNode, label: EdgeLabel,
+    direction: CallGraphDirection, index: number, count: number) {
+    const side = count > 1 ? index === 0 ? -1 : 1 : direction === 'LR' ? -1 : 1;
+    const lane = count > 1 ? index === 0 ? -16 : 16 : 0;
+    const path = edgePath(from, to, edge.kind, direction, lane);
+    const values = path.match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
+    const tx = values[6];
+    const ty = values[7];
+    if (edge.kind === 'self') return {x: to.x + callGraphNodeSize.width + 24,
+        y: to.y + index * (label.height + 12), width: label.width, height: label.height};
+    if (edge.kind === 'back') return direction === 'LR' ?
+        {x: tx + (side < 0 ? -12 - label.width : 12), y: ty + 12, width: label.width, height: label.height} :
+        {x: tx + 12, y: ty + (side < 0 ? -12 - label.height : 12), width: label.width, height: label.height};
+    return direction === 'LR' ?
+        {x: tx - 12 - label.width, y: ty + (side < 0 ? -12 - label.height : 12), width: label.width, height: label.height} :
+        {x: tx + (side < 0 ? -12 - label.width : 12), y: ty - 12 - label.height, width: label.width, height: label.height};
+}
+
+/** Reserve room for concrete edge labels in both the graph's fitting bounds and its node spacing. */
+function labelledGraph(functions: readonly SpriteFunction[], direction: CallGraphDirection, labels: Map<string, EdgeLabel[]>) {
+    const entries = [...labels.values()].flat().filter(label => label.width);
+    if (!entries.length) return layoutCallGraph(functions, direction, 'name');
+    const maxWidth = Math.max(...entries.map(label => label.width));
+    const maxHeight = Math.max(...entries.map(label => label.height));
+    const layout = layoutCallGraph(functions, direction, 'name', 'en', {
+        layerGap: Math.max(64, (direction === 'LR' ? maxWidth : maxHeight) + 48),
+        siblingGap: Math.max(18, 2 * (direction === 'LR' ? maxHeight : maxWidth) + 32)
+    });
+    const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
+    const boxes = layout.edges.flatMap(edge => (labels.get(`${edge.from}>${edge.to}`) ?? []).flatMap((label, index, variants) =>
+        label.width ? [edgeLabelBox(edge, byId.get(edge.from), byId.get(edge.to), label, direction, index, variants.length)] : []));
+    const shiftX = Math.max(0, 24 - Math.min(24, ...boxes.map(box => box.x)));
+    const shiftY = Math.max(0, 24 - Math.min(24, ...boxes.map(box => box.y)));
+    return {...layout, nodes: layout.nodes.map(node => ({...node, x: node.x + shiftX, y: node.y + shiftY})),
+        width: Math.max(layout.width, ...boxes.map(box => box.x + box.width + 24)) + shiftX,
+        height: Math.max(layout.height, ...boxes.map(box => box.y + box.height + 24)) + shiftY};
+}
+
+// Keep the same sixteen-unit hourglass as the code area's relation badge.
+const relationWaitGlyph = 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12';
 
 /** How an edge or a node relates to the function under the pointer. */
 export interface CallGraphHighlight {
@@ -1053,12 +1153,13 @@ function ZoomIcon({action}: {action: 'out' | 'in' | 'reset'}) {
     return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d={path} /></svg>;
 }
 
-function CallGraph({labels, idPrefix, functions, scripts, relations, settings, selectedId, corner, notice, onOpen, onOpenScript}: {
+function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, settings, selectedId, corner, notice, onOpen, onOpenScript}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
     scripts: Map<string, GraphScript>;
     relations: Map<string, ScriptRelation[]>;
+    targetId: string;
     settings: FunctionPaneSettings;
     selectedId?: string;
     /** Drawn in the bottom left corner, over the graph. */
@@ -1069,8 +1170,10 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, settings, s
     onOpenScript?(endpoint: ScriptEndpoint): void;
 }) {
     // Functions in the same column or row follow their names.
-    const layout = React.useMemo(() => layoutCallGraph(functions, settings.direction, 'name'),
-        [functions, settings.direction]);
+    const edgeLabels = React.useMemo(() => graphEdgeLabels(relations, functions, scripts, targetId, labels === japanese ? '背景' : labels.stage),
+        [relations, functions, scripts, targetId, labels.stage]);
+    const layout = React.useMemo(() => labelledGraph(functions, settings.direction, edgeLabels),
+        [functions, settings.direction, edgeLabels]);
     const byId = new Map(layout.nodes.map(node => [node.fn.id, node]));
     // A global function of another sprite may call one here; the uses of one there are not counted here.
     const called = React.useMemo(() => new Set(layout.edges.filter(edge => edge.from !== edge.to).map(edge => edge.to)),
@@ -1250,30 +1353,50 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, settings, s
     const paths = (withMarkers: boolean) => edges.flatMap(edge => {
         const key = `${edge.from}>${edge.to}`;
         const kind = highlight?.edges.get(key);
-        const variants = new Map<string, {kind: ScriptRelation['kind']; label: string; wait: boolean; count: number}>();
-        for (const relation of relations.get(key) ?? []) {
-            const id = JSON.stringify([relation.kind, relation.label, relation.wait]);
-            const existing = variants.get(id);
-            if (existing) existing.count++;
-            else variants.set(id, {...relation, count: 1});
-        }
-        if (!variants.size) variants.set('function', {kind: 'function', label: '', wait: true, count: 1});
-        return [...variants].map(([variant, relation], index) => <React.Fragment key={`${key}:${variant}`}><path
-            data-edge={withMarkers ? key : undefined} data-kind={edge.kind} data-highlight={kind}
-            data-script-relation={relation.kind} data-count={relation.count}
-            data-wait={relation.kind === 'message' && relation.wait || undefined}
-            transform={variants.size > 1 ? settings.direction === 'LR' ?
-                `translate(0 ${(index - (variants.size - 1) / 2) * 6})` :
-                `translate(${(index - (variants.size - 1) / 2) * 6} 0)` : undefined}
-            markerEnd={withMarkers ? edgeMarker(kind, relation.kind) : undefined}
-            d={edgePath(byId.get(edge.from), byId.get(edge.to), edge.kind, settings.direction)}>
-            {relation.label && <title>{relation.label}{relation.kind === 'message' && relation.wait ? ' ⏳' : ''}
-                {relation.count > 1 ? ` ×${relation.count}` : ''}</title>}
-        </path>{withMarkers && relation.kind === 'message' && relation.wait &&
-            <text className="tw-sprite-functions__relation-wait" aria-hidden="true"
-                x={(byId.get(edge.from).x + byId.get(edge.to).x + callGraphNodeSize.width) / 2}
-                y={(byId.get(edge.from).y + byId.get(edge.to).y + callGraphNodeSize.height) / 2 - 6}>⏳</text>}
-        </React.Fragment>);
+        const variants = edgeLabels.get(key) ?? [{kind: 'function' as const, owner: [], rows: [], width: 0, height: 0}];
+        return variants.map((label, index) => {
+            const from = byId.get(edge.from);
+            const to = byId.get(edge.to);
+            const lane = variants.length > 1 ? index === 0 ? -16 : 16 : 0;
+            const matching = (relations.get(key) ?? []).filter(relation => relation.kind === label.kind);
+            return <path key={`${key}:${label.kind}`} data-edge={withMarkers ? key : undefined}
+                data-kind={edge.kind} data-highlight={kind} data-script-relation={label.kind} data-count={matching.length || 1}
+                data-wait={label.rows.some(row => row.wait) || undefined}
+                markerEnd={withMarkers ? edgeMarker(kind, label.kind) : undefined}
+                d={edgePath(from, to, edge.kind, settings.direction, lane)}>
+                {matching.length > 0 && <title>{[...new Set(matching.map(relation => relation.label))].join(', ')}</title>}
+            </path>;
+        });
+    });
+    const concreteLabels = edges.flatMap(edge => {
+        const key = `${edge.from}>${edge.to}`;
+        return (edgeLabels.get(key) ?? []).flatMap((label, index, variants) => {
+            if (!label.width) return [];
+            const box = edgeLabelBox(edge, byId.get(edge.from), byId.get(edge.to), label, settings.direction, index, variants.length);
+            let offset = 6 + label.owner.length * 18;
+            return [<g key={`${key}:${label.kind}`} className="tw-sprite-functions__edge-label"
+                data-edge={key} data-script-relation={label.kind} data-highlight={highlight?.edges.get(key)}
+                transform={`translate(${box.x} ${box.y})`}>
+                <rect width={box.width} height={box.height} rx="4" />
+                {label.owner.map((line, ownerIndex) => <text key={`owner:${ownerIndex}`}
+                    className="tw-sprite-functions__edge-label-owner" x="6" y={18 + ownerIndex * 18}>{line}</text>)}
+                {label.rows.map(row => {
+                    const rowY = offset;
+                    offset += row.lines.length * 24;
+                    return <g key={row.name} className="tw-sprite-functions__edge-label-row" data-message-name={label.kind === 'message' ? row.name : undefined}
+                        transform={`translate(0 ${rowY})`}>
+                        <title>{row.name}{row.wait ? ` · ${row.ordinary ? `${labels.sendMessage} / ` : ''}${labels.sendAndWait}` : ''}</title>
+                        {row.lines.map((line, lineIndex) => <text key={lineIndex} x="6" y={16 + lineIndex * 24}>{line}</text>)}
+                        {row.wait && <g className="tw-sprite-functions__relation-wait" aria-label={labels.sendAndWait}
+                            transform={`translate(${box.width - 14} 12) scale(${1 / Math.max(1, view.scale)})`}>
+                            <title>{labels.sendAndWait}</title>
+                            <rect x="-10" y="-10" width="20" height="20" rx="4" />
+                            <path className="tw-sprite-functions__relation-wait-glyph" d={relationWaitGlyph} transform="translate(-8 -8)" />
+                        </g>}
+                    </g>;
+                })}
+            </g>];
+        });
     });
     const area = scrollArea(view, size, layout);
     const mapSize = {
@@ -1308,6 +1431,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, settings, s
                         data-highlight={suffix.slice(1) || undefined}><path d="M0 0 10 5 0 10Z" /></marker>))}
                 </defs>
                 {paths(true)}
+                {concreteLabels}
             </svg>
             <ul className="tw-sprite-functions__nodes">
                 {reading.map(node => {
@@ -1595,7 +1719,7 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         </div>}
         {/* Without functions the graph stays, blank, and points to the button that makes one. */}
         {mode === 'graph' ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graph.functions}
-            scripts={graph.scripts} relations={graph.relations} settings={settings} selectedId={graphSelection ?? added}
+            scripts={graph.scripts} relations={graph.relations} targetId={data.targetId} settings={settings} selectedId={graphSelection ?? added}
             corner={addButton} notice={graph.functions.length || !visibility.function ? undefined : emptyText('graph')}
             onOpen={fn => setDialogId(fn.id)} onOpenScript={onOpenRelationScript} /> :
             !hats.length && !ordered.length ? <p className="tw-sprite-functions__empty">{emptyText('list')}</p> :
