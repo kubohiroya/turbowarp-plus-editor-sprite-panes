@@ -193,6 +193,8 @@ export interface SpriteFunctionPaneProps {
     onOpenScript?(hat: SpriteHatScript, options?: OpenScriptOptions): void;
     /** The function or hat script shown beside the pane, which the list highlights. */
     selectedId?: string;
+    /** Change this request to center and emphasize the selected script in the graph. */
+    focusRequest?: number;
     /**
      * Show only the list or only the call graph, without the switch between them, as when each is a section
      * of its own. The pane otherwise shows the view in its settings.
@@ -520,7 +522,8 @@ function scannedRelations(data: FunctionPaneData, japanese: boolean): FunctionPa
 }
 
 /** Adapt script endpoints to the existing graph layout, keeping script navigation separate from functions. */
-function relationGraph(data: FunctionPaneData, visibility: FunctionRelationVisibility, scanned = false): RelationGraph {
+function relationGraph(data: FunctionPaneData, visibility: FunctionRelationVisibility, scanned = false,
+    focusId?: string, focusLabel = focusId): RelationGraph {
     const functions = [...data.functions, ...(data.globals ?? [])];
     const scripts = new Map<string, GraphScript>();
     const relations = new Map<string, ScriptRelation[]>();
@@ -528,6 +531,11 @@ function relationGraph(data: FunctionPaneData, visibility: FunctionRelationVisib
     const key = (targetId: string, scriptId: string) => JSON.stringify([targetId, scriptId]);
     const definitions = new Map(functions.map(fn => [key(fn.owner?.targetId ?? data.targetId, fn.owner?.functionId ?? fn.id), fn]));
     const descriptions = new Map((data.scripts ?? []).map(script => [key(script.targetId, script.scriptId), script]));
+    if (focusId && !descriptions.has(key(data.targetId, focusId))) {
+        const hat = data.hats?.find(hat => hat.id === focusId);
+        descriptions.set(key(data.targetId, focusId), {targetId: data.targetId, scriptId: focusId,
+            label: hat?.label ?? focusLabel, isStage: data.isStage, x: hat?.x ?? 0, y: hat?.y ?? 0});
+    }
     const nodes = new Map<string, SpriteFunction>();
     if (visibility.function) for (const fn of functions) nodes.set(fn.id, {...fn, callees: []});
     function node(endpoint: ScriptEndpoint) {
@@ -551,6 +559,7 @@ function relationGraph(data: FunctionPaneData, visibility: FunctionRelationVisib
     if (visibility.message && scanned) for (const script of data.scripts ?? []) {
         node({targetId: script.targetId, scriptId: script.scriptId, blockId: script.scriptId});
     }
+    if (focusId) node({targetId: data.targetId, scriptId: focusId, blockId: focusId});
     for (const relation of data.scriptRelations) {
         if (!visibility[relation.kind] || !scanned && relation.source.targetId !== data.targetId &&
             relation.destination?.targetId !== data.targetId) continue;
@@ -1418,7 +1427,7 @@ function graphNodeText(fn: CallGraphItem, script: GraphScript | undefined, label
 }
 
 function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, settings, positions, onPositionsChange,
-    selectedId, corner, notice, onOpen, onOpenScript, canOpenExternal}: {
+    selectedId, focusRequest, corner, notice, onOpen, onOpenScript, canOpenExternal}: {
     labels: Labels;
     idPrefix: string;
     functions: readonly SpriteFunction[];
@@ -1429,6 +1438,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     positions: GraphNodePositions;
     onPositionsChange(positions: GraphNodePositions): void;
     selectedId?: string;
+    focusRequest?: number;
     /** Drawn in the bottom left corner, over the graph. */
     corner?: React.ReactNode;
     /** Shown over the middle of the graph, as when it has no functions. */
@@ -1688,10 +1698,21 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     // Bring the function shown beside the pane, such as one just added, into view.
     const selectedNode = selectedId ? byId.get(selectedId) : undefined;
     React.useEffect(() => {
-        if (selectedNode && size.width && !nodeDraft && !nodeGesture.current) reveal(selectedNode);
-    }, [selectedNode?.fn.id, selectedNode?.x, selectedNode?.y, selectedNode?.height, size.width > 0]);
+        if (!selectedNode || !size.width || !size.height || nodeDraft || nodeGesture.current) return;
+        if (focusRequest === undefined) {reveal(selectedNode); return;}
+        const view = current.current.view;
+        const centered = {...view, preserve: true,
+            x: size.width / 2 - (selectedNode.x + callGraphNodeSize.width / 2) * view.scale,
+            y: size.height / 2 - (selectedNode.y + (selectedNode.height ?? callGraphNodeSize.height) / 2) * view.scale};
+        frame.current.scrollLeft = 0;
+        frame.current.scrollTop = 0;
+        current.current = {...current.current, view: centered};
+        setMoved(centered);
+    }, [selectedNode?.fn.id, focusRequest === undefined ? selectedNode?.x : 0,
+        focusRequest === undefined ? selectedNode?.y : 0, selectedNode?.height, size.width > 0, focusRequest,
+        focusRequest === undefined ? 0 : size.width, focusRequest === undefined ? 0 : size.height]);
 
-    const highlightId = nodeDraft?.id ?? pointed ?? focused;
+    const highlightId = nodeDraft?.id ?? pointed ?? focused ?? (focusRequest !== undefined ? selectedId : undefined);
     const visibleKind = (kind: 'function' | 'message') => settings.relationVisibility ||
         (kind === 'function' ? settings.showCalls !== false : settings.showMessages !== false);
     const visibleEdges = layout.edges.filter(edge => (edgeLabels.get(`${edge.from}>${edge.to}`) ?? [{kind: 'function' as const}])
@@ -1963,7 +1984,7 @@ function AddDialog({labels, kind: initialKind, onKind, onCreate, onClose}: {
 }
 
 export function SpriteFunctionPane({locale, editable, data, defaultSettings: initial, onSettingsChange, mountEditor,
-    onCreate, onOpenFunction, onOpenScript, onOpenRelationScript, view, selectedId, direction, relationVisibility}:
+    onCreate, onOpenFunction, onOpenScript, onOpenRelationScript, view, selectedId, focusRequest, direction, relationVisibility}:
     SpriteFunctionPaneProps) {
     const labels = /^ja(?:-|$)/i.test(locale) ? japanese : english;
     const [storedSettings, setSettings] = React.useState<FunctionPaneSettings>(() => ({...defaultSettings, ...initial}));
@@ -2059,8 +2080,11 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
     </ul>;
 
     // Scripts join only the relation graph; the function list and its editors keep their existing data.
-    const graph = React.useMemo(() => relationGraph(scannedRelations(data, labels === japanese), visibility, !data.scriptRelations && Boolean(data.messageGraph)),
-        [data.targetId, data.functions, data.globals, data.scriptRelations, data.scripts, data.messageGraph, labels, visibility.function, visibility.message]);
+    const focusId = focusRequest !== undefined ? selectedId : undefined;
+    const graph = React.useMemo(() => relationGraph(scannedRelations(data, labels === japanese), visibility,
+        !data.scriptRelations && Boolean(data.messageGraph), focusId, labels.looseScript),
+        [data.targetId, data.functions, data.globals, data.scriptRelations, data.scripts, data.hats, data.messageGraph, labels,
+            visibility.function, visibility.message, focusId]);
     const graphSelection = selectedId && (graph.functions.some(fn => fn.id === selectedId) ? selectedId :
         [...graph.scripts].find(([, script]) => script.targetId === data.targetId && script.scriptId === selectedId)?.[0]);
     const hint = !editable && ordered.length > 0;
@@ -2079,6 +2103,7 @@ export function SpriteFunctionPane({locale, editable, data, defaultSettings: ini
         {/* Without functions the graph stays, blank, and points to the button that makes one. */}
         {mode === 'graph' ? <CallGraph labels={labels} idPrefix={idPrefix} functions={graph.functions}
             scripts={graph.scripts} relations={graph.relations} targetId={data.targetId} settings={settings} selectedId={graphSelection ?? added}
+            focusRequest={focusRequest}
             positions={settings.graphPositions?.[data.targetId]?.[settings.direction] ?? {}}
             onPositionsChange={positions => change({graphPositions: {...settings.graphPositions,
                 [data.targetId]: {...settings.graphPositions?.[data.targetId], [settings.direction]: positions}}})}

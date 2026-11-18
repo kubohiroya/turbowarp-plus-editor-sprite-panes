@@ -53,9 +53,26 @@ const glyphs: Record<SpriteEditorSection | 'search', string> = {
     search: 'M10 10l3 3M11 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z'
 };
 
-function Icon({kind}: {kind: keyof typeof glyphs}) {
-    return <svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"
-        strokeLinecap="round" strokeLinejoin="round"><path d={glyphs[kind]} /></svg>;
+const iconAttributes = {'aria-hidden': true, focusable: false, viewBox: '0 0 16 16', fill: 'none',
+    stroke: 'currentColor', strokeWidth: 1.4, strokeLinecap: 'round', strokeLinejoin: 'round'} as const;
+
+function Icon({kind, className}: {kind: keyof typeof glyphs; className?: string}) {
+    return <svg {...iconAttributes} className={className} style={{strokeWidth: iconAttributes.strokeWidth}}>
+        <path d={glyphs[kind]} /></svg>;
+}
+
+export {Icon as SpriteEditorSectionIcon};
+
+/** Native menus and the React section rail share the same glyph and drawing attributes. */
+export function createSpriteEditorSectionIcon(document: Document, kind: SpriteEditorSection) {
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const [name, value] of Object.entries(iconAttributes)) icon.setAttribute(
+        name === 'viewBox' ? name : name.replace(/[A-Z]/g, letter => '-' + letter.toLowerCase()), String(value));
+    icon.style.strokeWidth = String(iconAttributes.strokeWidth);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', glyphs[kind]);
+    icon.append(path);
+    return icon;
 }
 
 function SearchBox({viewId, section, japanese, search}: {

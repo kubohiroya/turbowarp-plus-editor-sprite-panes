@@ -88,6 +88,14 @@ window.mountLabelPane = (direction, long = false) => {
         onSettingsChange: settings => window.changes.push(settings)})));
     return {hat, own, foreign, worker: worker.proccode};
 };
+const focusedData = {targetId: 'cat', isStage: false,
+    functions: Array.from({length: 12}, (_, i) => fn('step-' + i)),
+    hats: [{id: 'idle-hat', label: 'Unconnected hat', x: 0, y: 0}], scripts: [],
+    scriptRelations: Array.from({length: 11}, (_, i) => ({kind: 'function', label: 'step-' + (i + 1), wait: false,
+        source: {targetId: 'cat', scriptId: 'step-' + i, blockId: 'step-' + i},
+        destination: {targetId: 'cat', scriptId: 'step-' + (i + 1), blockId: 'step-' + (i + 1)}}))};
+window.focusScript = (selectedId, focusRequest) => ReactDOM.flushSync(() => root.render(React.createElement(SpriteFunctionPane,
+    {key: 'focused-graph', locale: 'en', editable: true, view: 'graph', data: focusedData, selectedId, focusRequest})));
 </script>`;
 
 async function openPage(t: TestContext): Promise<Page> {
@@ -314,4 +322,32 @@ test('hat and owner labels use complete separate rows and long names resize conn
         assert.ok(await message.getAttribute('transform'));
         await screenshot(page, `node-label-long-${direction}`);
     }
+});
+
+test('requested scripts center in the graph, retain their relations, and can be focused again after panning', async t => {
+    const page = await openPage(t);
+    await page.evaluate(() => (window as any).focusScript('step-11', 1));
+    const graph = page.locator('.tw-sprite-functions__graph');
+    const selected = page.locator('.tw-sprite-functions__node[aria-current="true"]');
+    const distance = async () => {
+        const node = await selected.boundingBox(), frame = await graph.boundingBox();
+        return Math.hypot(node.x + node.width / 2 - frame.x - frame.width / 2,
+            node.y + node.height / 2 - frame.y - frame.height / 2);
+    };
+    await expect(selected).toHaveAttribute('data-function-key', 'step-11');
+    await expect(selected).toHaveAttribute('data-highlight', 'self');
+    await expect.poll(distance).toBeLessThan(2);
+    await expect(graph.locator('[data-edge="step-10>step-11"]')).toHaveCount(1);
+    await graph.hover({position: {x: 20, y: 20}});
+    await page.mouse.wheel(100, 70);
+    await expect.poll(distance).toBeGreaterThan(20);
+    await page.mouse.move(740, 520);
+    await page.evaluate(() => (window as any).focusScript('step-11', 2));
+    await expect.poll(distance).toBeLessThan(2);
+    await page.evaluate(() => {document.querySelector('main').style.width = '420px';});
+    await expect.poll(distance).toBeLessThan(2);
+    await page.evaluate(() => (window as any).focusScript('idle-hat', 3));
+    await expect(selected).toHaveText('Unconnected hat');
+    await expect(selected).toHaveAttribute('data-highlight', 'self');
+    await expect.poll(distance).toBeLessThan(2);
 });
