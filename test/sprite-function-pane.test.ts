@@ -318,7 +318,7 @@ test('function and message graph filters retain only the nodes needed by their v
     assert.deepEqual(functions, [], 'script hats never enter the function editor');
     act(() => container.querySelector<HTMLButtonElement>('[data-function-key="main"]').click());
     assert.deepEqual(functions, ['main']);
-    assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 1);
+    assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 0);
     const shared = [...container.querySelectorAll<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge="main>draw"]')];
     assert.equal(shared.length, 2);
     assert.notEqual(shared[0].getAttribute('d'), shared[1].getAttribute('d'), 'different relation kinds have separate lanes');
@@ -353,7 +353,7 @@ test('a message-only graph can show scripts without any function definitions', t
     assert.equal(container.querySelector('.tw-sprite-functions__notice'), null);
 });
 
-test('each node pair has one edge per kind, with receiver-side message names, wait modes, and foreign owners', t => {
+test('node pairs separate function and message modes, with receiver-side names and foreign owners', t => {
     const endpoint = (targetId: string, scriptId: string) => ({targetId, scriptId, blockId: scriptId});
     const send = (name: string, wait = false) => ({kind: 'message', label: name, wait,
         source: endpoint('cat', 'entry'), destination: endpoint('cat', 'worker')});
@@ -370,15 +370,17 @@ test('each node pair has one edge per kind, with receiver-side message names, wa
     for (const direction of ['LR', 'TD']) {
         draw({direction});
         const paths = [...container.querySelectorAll<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge="entry>worker"]')];
-        assert.equal(paths.length, 2);
-        assert.deepEqual(paths.map(path => path.getAttribute('data-script-relation')), ['function', 'message']);
+        assert.equal(paths.length, 3);
+        assert.deepEqual(paths.map(path => path.getAttribute('data-script-relation')), ['function', 'message', 'message']);
+        assert.deepEqual(paths.slice(1).map(path => path.getAttribute('data-wait')), ['false', 'true']);
+        assert.notEqual(paths[1].getAttribute('d'), paths[2].getAttribute('d'));
         assert.notEqual(paths[0].getAttribute('d'), paths[1].getAttribute('d'));
         const label = container.querySelector('.tw-sprite-functions__edge-label[data-edge="entry>worker"]');
         assert.equal(label.getAttribute('data-script-relation'), 'message');
         const rows = [...label.querySelectorAll('.tw-sprite-functions__edge-label-row')];
         assert.deepEqual(rows.map(row => row.getAttribute('data-message-name')), ['Start Signal', 'Finish Signal', 'Mixed Signal']);
         assert.deepEqual(rows.map(row => row.querySelector('text').textContent), ['💬 Start Signal', '💬 Finish Signal', '💬 Mixed Signal']);
-        assert.deepEqual(rows.map(row => row.querySelectorAll('.tw-sprite-functions__relation-wait').length), [0, 1, 1]);
+        assert.deepEqual(rows.map(row => row.querySelectorAll('.tw-sprite-functions__relation-wait').length), [0, 0, 0]);
         assert.equal(rows[2].querySelector('title').textContent, 'Mixed Signal · 送る / 送って待つ');
         const visible = [...container.querySelectorAll('.tw-sprite-functions__edge-label text')].map(node => node.textContent);
         assert.ok(container.textContent.includes('Robot Sprite'));
@@ -1065,7 +1067,7 @@ test('scanner data keeps self-sends and reverse messages readable while explicit
         const {container} = render(t, {view: 'graph', defaultSettings: {direction}, data});
         assert.equal(container.querySelectorAll('path[data-edge][data-kind="back"]').length, 1);
         assert.equal(container.querySelectorAll('.tw-sprite-functions__edge-label-row[data-message-name="self"]').length, 1);
-        assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 1);
+        assert.equal(container.querySelectorAll('.tw-sprite-functions__relation-wait').length, 0);
         const transforms = [...container.querySelectorAll('.tw-sprite-functions__edge-label')].map(node => node.getAttribute('transform'));
         assert.equal(new Set(transforms).size, 3, 'forward, reverse, and self labels occupy distinct receiving positions');
         const explicit = render(t, {view: 'graph', data: {...data, scripts: scripts.map(script => ({...script, label: script.id})),
