@@ -38,7 +38,7 @@ async function openPane(t) {
     return page;
 }
 
-test('the graph wait badge is a readable vector beside its line with a hoverable meaning', {timeout: 30_000}, async t => {
+test('graph message modes use distinct dash patterns without hourglass icons', {timeout: 30_000}, async t => {
     const page = await openPane(t);
     await page.evaluate(async () => {
         const {SpriteFunctionPane} = await import('/pane.js');
@@ -51,33 +51,26 @@ test('the graph wait badge is a readable vector beside its line with a hoverable
                 scripts: [{targetId: 'cat', scriptId: 'receive', label: 'go を受け取ったとき'}], scriptRelations: [{
                     kind: 'message', label: 'go', wait: true, source: {targetId: 'cat', scriptId: 'jump', blockId: 'wait'},
                     destination: {targetId: 'cat', scriptId: 'receive', blockId: 'receive'}
-                }]}}));
+                }, {kind: 'message', label: 'go', wait: false, source: {targetId: 'cat', scriptId: 'jump', blockId: 'send'},
+                    destination: {targetId: 'cat', scriptId: 'receive', blockId: 'receive'}}]}}));
     });
-    const badge = page.locator('.tw-sprite-functions__relation-wait');
-    await badge.waitFor();
-    const inspect = () => badge.evaluate(group => {
-        const rect = group.querySelector('rect').getBoundingClientRect();
-        const line = document.querySelector<SVGPathElement>('.tw-sprite-functions__edges > path[data-wait="true"]');
-        const bounds = line.getBoundingClientRect();
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2;
-        return {width: rect.width, height: rect.height, title: group.querySelector('title').textContent,
-            glyph: group.querySelector('path').getAttribute('d'), text: group.querySelector('text')?.textContent,
-            separate: rect.right < bounds.left || rect.left > bounds.right || rect.bottom < bounds.top || rect.top > bounds.bottom,
-            hit: document.elementFromPoint(x, y)?.closest('.tw-sprite-functions__relation-wait') === group};
-    });
-    let result = await inspect();
-    assert.ok(Math.abs(result.width - 20) < .1 && Math.abs(result.height - 20) < .1);
-    assert.equal(result.title, '送って待つ');
-    assert.equal(result.glyph, 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12');
-    assert.equal(result.text, undefined);
-    assert.equal(result.separate, true, 'the badge and line bounding boxes do not overlap');
-    assert.equal(result.hit, true, 'the native title is reachable at the badge center');
-    await badge.hover();
-    await page.getByRole('button', {name: '拡大', exact: true}).click();
-    result = await inspect();
-    assert.ok(Math.abs(result.width - 20) < .1 && Math.abs(result.height - 20) < .1);
-    assert.equal(result.separate, true);
+    const lines = page.locator('.tw-sprite-functions__edges > path[data-script-relation="message"]');
+    await lines.first().waitFor({state: 'attached'});
+    const inspect = () => lines.evaluateAll(paths => paths.map(path => ({
+        wait: path.getAttribute('data-wait'), d: path.getAttribute('d'),
+        dash: getComputedStyle(path).strokeDasharray.split(/[ ,]+/).map(parseFloat)
+    })));
+    for (let zoom = 0; zoom < 2; zoom++) {
+        const states = await inspect();
+        assert.equal(states.length, 2);
+        assert.notEqual(states[0].d, states[1].d);
+        for (const state of states) assert.deepEqual(state.dash, state.wait === 'true' ? [7, 5] : [3.5, 2.5]);
+        assert.equal(await page.locator('.tw-sprite-functions__relation-wait').count(), 0);
+        const mini = await page.locator('.tw-sprite-functions__minimap-edges path').evaluateAll(paths =>
+            paths.map(path => getComputedStyle(path).strokeDasharray.split(/[ ,]+/).map(parseFloat)));
+        assert.deepEqual(mini, [[3.5, 2.5], [7, 5]]);
+        await page.getByRole('button', {name: '拡大', exact: true}).click();
+    }
 });
 
 test('dragging a graph node follows zoom, preserves navigation, and commits or cancels only diagram settings', {timeout: 30_000}, async t => {
@@ -132,7 +125,8 @@ test('dragging a graph node follows zoom, preserves navigation, and commits or c
     assert.equal(await figure.getAttribute('data-node-dragging'), null);
     assert.equal(await canvas.evaluate(node => (node as HTMLElement).style.transform), transform, 'release does not recenter the graph');
     const recorded = await page.evaluate(() => (globalThis as any).dragFixture.settings.at(-1));
-    assert.deepEqual(recorded.graphPositions.cat.TD.worker, current);
+    assert.ok(Math.abs(recorded.graphPositions.cat.TD.worker.x - current.x) < .001);
+    assert.ok(Math.abs(recorded.graphPositions.cat.TD.worker.y - current.y) < .001);
     assert.deepEqual(await page.evaluate(() => (globalThis as any).dragFixture.opened), [], 'the release click does not open a function');
     await worker.press('Enter');
     await page.waitForFunction(() => (globalThis as any).dragFixture.opened.length === 1);

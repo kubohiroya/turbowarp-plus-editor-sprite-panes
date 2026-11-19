@@ -1118,7 +1118,7 @@ function graphEdgeLabels(relations: Map<string, ScriptRelation[]>, targetId: str
                 matching[0].source.targetId !== targetId ? matching[0].source : undefined;
             const rows = kind === 'function' && !foreign ? [] : [...names].map(([name, modes]) =>
                 ({name, ...modes, lines: labelLines(`${kind === 'message' ? '💬 ' : ''}${name}`)}));
-            const width = rows.length ? Math.max(56, ...rows.flatMap(row => row.lines.map(line => labelTextWidth(line) + 12 + (row.wait ? 26 : 0))))
+            const width = rows.length ? Math.max(56, ...rows.flatMap(row => row.lines.map(line => labelTextWidth(line) + 12)))
                 : 0;
             const height = rows.length ? 12 + rows.reduce((height, row) => height + row.lines.length * 24, 0) : 0;
             kinds.push({kind, rows, width, height});
@@ -1236,8 +1236,12 @@ function labelledGraph(functions: readonly SpriteFunction[], direction: CallGrap
         height: Math.max(layout.height, ...boxes.map(box => box.y + box.height + 24)) + shiftY};
 }
 
-// Keep the same sixteen-unit hourglass as the code area's relation badge.
-const relationWaitGlyph = 'M1 1h14M1 15h14M2 1v3l12 8v3M14 1v3l-12 8v3M2 4h12M2 12h12';
+/** Preserve both message modes when the same scripts exchange ordinary and waiting sends. */
+function relationLanes(label: EdgeLabel, lane: number) {
+    const modes: (boolean | undefined)[] = label.kind === 'message' ?
+        [false, true].filter(wait => label.rows.some(row => wait ? row.wait : row.ordinary)) : [undefined];
+    return modes.map(wait => ({wait, lane: lane + (modes.length > 1 ? wait ? 6 : -6 : 0)}));
+}
 
 /** A hand-placed node may cross the origin; include its paths and labels in navigation bounds. */
 function positionedGraph(base: CallGraphLayout, positions: GraphNodePositions, direction: CallGraphDirection,
@@ -1252,7 +1256,8 @@ function positionedGraph(base: CallGraphLayout, positions: GraphNodePositions, d
     boxes.push(...graphLabelBoxes(nodes, base.edges, direction, labels).values());
     for (const edge of base.edges) {
         const variants = labels.get(`${edge.from}>${edge.to}`) ?? [];
-        const lanes = variants.length > 1 ? [-16, 16] : [0];
+        const lanes = variants.length ? variants.flatMap((label, index) =>
+            relationLanes(label, variants.length > 1 ? index === 0 ? -16 : 16 : 0).map(item => item.lane)) : [0];
         for (const lane of lanes) {
             const coordinates = edgePath(byId.get(edge.from), byId.get(edge.to), edge.kind, direction, lane)
                 .match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
@@ -1733,13 +1738,16 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
             const to = byId.get(edge.to);
             const lane = variants.length > 1 ? index === 0 ? -16 : 16 : 0;
             const matching = (relations.get(key) ?? []).filter(relation => relation.kind === label.kind);
-            return <path key={`${key}:${label.kind}`} data-edge={withMarkers ? key : undefined}
-                data-kind={edge.kind} data-highlight={kind} data-script-relation={label.kind} data-count={matching.length || 1}
-                data-wait={label.rows.some(row => row.wait) || undefined}
-                markerEnd={withMarkers ? edgeMarker(kind, label.kind) : undefined}
-                d={edgePath(from, to, edge.kind, settings.direction, lane)}>
-                {matching.length > 0 && <title>{[...new Set(matching.map(relation => relation.label))].join(', ')}</title>}
-            </path>;
+            return relationLanes(label, lane).map(({wait, lane: messageLane}) => {
+                const messages = matching.filter(relation => wait === undefined || Boolean(relation.wait) === wait);
+                return <path key={`${key}:${label.kind}:${wait}`} data-edge={withMarkers ? key : undefined}
+                    data-kind={edge.kind} data-highlight={kind} data-script-relation={label.kind} data-count={messages.length || 1}
+                    data-wait={wait}
+                    markerEnd={withMarkers ? edgeMarker(kind, label.kind) : undefined}
+                    d={edgePath(from, to, edge.kind, settings.direction, messageLane)}>
+                    {messages.length > 0 && <title>{[...new Set(messages.map(relation => relation.label))].join(', ')}</title>}
+                </path>;
+            });
         });
     });
     const labelBoxes = graphLabelBoxes(layout.nodes, layout.edges, settings.direction, edgeLabels);
@@ -1760,12 +1768,6 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
                         transform={`translate(0 ${rowY})`}>
                         <title>{row.name}{row.wait ? ` · ${row.ordinary ? `${labels.sendMessage} / ` : ''}${labels.sendAndWait}` : ''}</title>
                         {row.lines.map((line, lineIndex) => <text key={lineIndex} x="6" y={16 + lineIndex * 24}>{line}</text>)}
-                        {row.wait && <g className="tw-sprite-functions__relation-wait" aria-label={labels.sendAndWait}
-                            transform={`translate(${box.width - 14} 12) scale(${1 / Math.max(1, view.scale)})`}>
-                            <title>{labels.sendAndWait}</title>
-                            <rect x="-10" y="-10" width="20" height="20" rx="4" />
-                            <path className="tw-sprite-functions__relation-wait-glyph" d={relationWaitGlyph} transform="translate(-8 -8)" />
-                        </g>}
                     </g>;
                 })}
             </g>];

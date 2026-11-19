@@ -294,7 +294,7 @@ test('hat and owner labels use complete separate rows and long names resize conn
         await expect(page.locator('.tw-sprite-functions__edge-label-owner')).toHaveCount(0);
         const message = page.locator('.tw-sprite-functions__edge-label[data-script-relation="message"]');
         await expect(message.locator('text')).toHaveText('💬 go');
-        await expect(message.locator('.tw-sprite-functions__relation-wait')).toHaveCount(1);
+        await expect(message.locator('.tw-sprite-functions__relation-wait')).toHaveCount(0);
         const geometry = await page.locator('figure').evaluate(graph => {
             const nodes = [...graph.querySelectorAll('.tw-sprite-functions__node')];
             const worker = nodes.find(node => node.getAttribute('data-function-key') === 'worker').parentElement as HTMLElement;
