@@ -218,6 +218,7 @@ const english = {
     threadDescription: 'Thread variables of the Temporary Variables extension. Each running script has its own values, which disappear when the script ends.',
     runtimeDescription: 'Runtime variables of the Temporary Variables extension. The whole project shares them, and they are cleared when the project starts or stops.',
     temporaryNotPaused: 'Pause the project with the debugger to see the values at that moment.',
+    temporaryDynamicNames: 'Variables whose names change dynamically are not shown here.',
     temporaryEmpty: 'No names are written as fixed text in the code.',
     temporaryUnset: 'Not set', dynamicName: 'Built at run time',
     dynamicNameTitle: 'The code does not name this variable with fixed text. It exists at this pause.',
@@ -264,6 +265,7 @@ const japanese: typeof english = {
     threadDescription: '一時変数拡張のスレッド変数です。実行中のスクリプトごとに別々の値を持ち、スクリプトが終わると消えます。',
     runtimeDescription: '一時変数拡張のランタイム変数です。作品全体で共有され、作品の開始・停止で消えます。',
     temporaryNotPaused: 'デバッガーで一時停止すると、その時点の値を表示します。',
+    temporaryDynamicNames: '変数名が動的に変化するものはここには表示されません',
     temporaryEmpty: 'コード中で名前を固定テキストで書いたものはありません。',
     temporaryUnset: '未定義', dynamicName: '実行時の名前',
     dynamicNameTitle: 'コード中で固定テキストとして書かれていない名前です。この一時停止の時点で存在しています。',
@@ -730,6 +732,7 @@ function TemporaryVariableSection({scope, variables, paused, labels, locale, col
         <div className="tw-sprite-variables__intro">
             <h3>{title}</h3>
             <p>{scope === 'thread' ? labels.threadDescription : labels.runtimeDescription}</p>
+            <p className="tw-sprite-variables__temporary-hint">{labels.temporaryDynamicNames}</p>
             {!paused && <p className="tw-sprite-variables__temporary-hint">{labels.temporaryNotPaused}</p>}
         </div>
         {sorted.length ? <table className="tw-sprite-variables__table">
