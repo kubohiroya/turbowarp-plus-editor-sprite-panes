@@ -385,12 +385,12 @@ test('node pairs separate function and message modes, with receiver-side names a
         const visible = [...container.querySelectorAll('.tw-sprite-functions__edge-label text')].map(node => node.textContent);
         assert.ok(container.textContent.includes('Robot Sprite'));
         assert.ok(visible.includes('remote_task'));
-        assert.ok(container.textContent.includes('背景'));
+        assert.ok(container.textContent.includes('ステージ'));
         assert.ok(visible.includes('💬 Backdrop Ready'));
         assert.equal(visible.includes('Stage BG'), false, 'target names are shown only in nodes');
         assert.equal(container.querySelector('.tw-sprite-functions__edge-label-owner'), null);
         assert.equal(visible.includes('Robot Sprite'), false);
-        assert.equal(visible.includes('背景'), false);
+        assert.equal(visible.includes('ステージ'), false);
     }
 });
 
@@ -553,7 +553,7 @@ test('the call graph draws global functions grey, naming the sprite of one defin
     const node = (id: string) => container.querySelector<HTMLButtonElement>(`[data-function-key="${id}"]`);
     assert.deepEqual(['jump', 'meow', 'stage:log', 'dog:bark'].map(id => node(id).getAttribute('data-scope')),
         [null, 'global', 'global', 'global'], 'every global function is grey, this sprite\'s too');
-    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__name').textContent, '背景');
+    assert.equal(node('stage:log').querySelector('.tw-sprite-functions__name').textContent, 'ステージ');
     assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__name').textContent, 'Dog');
     assert.equal(node('dog:bark').querySelector('.tw-sprite-functions__owner'), null);
     assert.equal(node('dog:bark').getAttribute('aria-label'), 'Dog · bark');
@@ -709,7 +709,7 @@ test('in the call graph the add button sits in the bottom left corner, and a new
     // The list points below, to its own button.
     draw({view: 'list', data: {targetId: 'stage', isStage: true, functions: []}});
     assert.equal(container.querySelector('.tw-sprite-functions__empty').textContent,
-        '背景には関数がありません。下の「＋ 新しい関数を追加」から作れます。');
+        'ステージには関数がありません。下の「＋ 新しい関数を追加」から作れます。');
 });
 
 test('with a host opener the call graph opens functions there instead of in its dialog', async t => {
@@ -1038,7 +1038,7 @@ test('external function labels contain the function once and their nodes contain
         data: {targetId: 'cat', isStage: false, functions: [fn('jump', 'jump', 0, 0)], globals: [remote, stage],
             scriptRelations: [remote, stage].map(fn => ({kind: 'function', source: endpoint('cat', 'jump'),
                 destination: endpoint(fn.owner.targetId, fn.owner.functionId), label: fn.proccode, wait: false}))}});
-    for (const [item, owner] of [[remote, 'Dog'], [stage, '背景']]) {
+    for (const [item, owner] of [[remote, 'Dog'], [stage, 'ステージ']]) {
         const label = container.querySelector(`[data-edge="jump>${item.id}"].tw-sprite-functions__edge-label`);
         assert.deepEqual([...label.querySelectorAll('text')].map(node => node.textContent), [item.proccode]);
         const node = container.querySelector<HTMLButtonElement>(`[data-function-key="${item.id}"]`);

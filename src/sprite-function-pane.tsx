@@ -779,9 +779,9 @@ const japanese: typeof english = {
     order: '並べ方',
     orders: {name: '名前順', z: 'Z順（行ごと）', n: 'N順（列ごと）'},
     empty: 'このスプライトには関数がありません。「ブロック定義」の「ブロックを作る」で作れます。',
-    emptyStage: '背景には関数がありません。「ブロック定義」の「ブロックを作る」で作れます。',
+    emptyStage: 'ステージには関数がありません。「ブロック定義」の「ブロックを作る」で作れます。',
     none: 'このスプライトには関数がありません。',
-    noneStage: '背景には関数がありません。',
+    noneStage: 'ステージには関数がありません。',
     addFrom: {graph: '左下の「＋ 新しい関数を追加」から作れます。', list: '下の「＋ 新しい関数を追加」から作れます。'},
     calls: (count: number) => count === 0 ? '未使用' : `${count}か所で使用`,
     fromScripts: '関数以外のスクリプトから呼ばれる',
@@ -1420,7 +1420,7 @@ const nodeTextLines = (value: string, width: number) => wrapTextLines(value, wid
 
 function graphNodeText(fn: CallGraphItem, script: GraphScript | undefined, labels: Labels) {
     const label = script?.label ?? functionLabel(fn);
-    const stageName = labels === japanese ? '背景' : labels.stage;
+    const stageName = labels.stage;
     const owner = script ? script.isStage ? stageName : script.targetName : fn.owner && (fn.owner.isStage ? stageName : fn.owner.name);
     const foreignFunction = !script && Boolean(fn.owner);
     const thumbnail = foreignFunction && fn.owner.thumbnailUrl;
