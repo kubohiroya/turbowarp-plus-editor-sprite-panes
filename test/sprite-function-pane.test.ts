@@ -709,7 +709,7 @@ test('in the call graph the add button sits in the bottom left corner, and a new
     // The list points below, to its own button.
     draw({view: 'list', data: {targetId: 'stage', isStage: true, functions: []}});
     assert.equal(container.querySelector('.tw-sprite-functions__empty').textContent,
-        'ステージには関数がありません。下の「＋ 新しい関数を追加」から作れます。');
+        '背景には関数がありません。下の「＋ 新しい関数を追加」から作れます。');
 });
 
 test('with a host opener the call graph opens functions there instead of in its dialog', async t => {
