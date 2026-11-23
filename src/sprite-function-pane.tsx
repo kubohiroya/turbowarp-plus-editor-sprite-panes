@@ -1420,7 +1420,7 @@ const nodeTextLines = (value: string, width: number) => wrapTextLines(value, wid
 
 function graphNodeText(fn: CallGraphItem, script: GraphScript | undefined, labels: Labels) {
     const label = script?.label ?? functionLabel(fn);
-    const stageName = labels === japanese ? '背景' : labels.stage;
+    const stageName = labels.stage;
     const owner = script ? script.isStage ? stageName : script.targetName : fn.owner && (fn.owner.isStage ? stageName : fn.owner.name);
     const foreignFunction = !script && Boolean(fn.owner);
     const thumbnail = foreignFunction && fn.owner.thumbnailUrl;

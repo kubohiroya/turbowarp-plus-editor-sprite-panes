@@ -320,7 +320,7 @@ test('the runtime variables show the functions that define, read and rewrite the
         ['変数名', '定義した関数', '参照している関数', '書き換えている関数']);
     // The reading and rewriting columns lead with how many functions they name; uses outside any
     // function are not counted.
-    assert.deepEqual(rows(section), [['score', 'Catreset score', '0背景関数の外', '1Catadd (points)Cat関数の外']]);
+    assert.deepEqual(rows(section), [['score', 'Catreset score', '0ステージ関数の外', '1Catadd (points)Cat関数の外']]);
     const badges = [...section.querySelectorAll('.tw-sprite-variables__temporary-count')];
     assert.deepEqual(badges.map(badge => [badge.closest('td').getAttribute('data-column'), badge.getAttribute('aria-label')]),
         [['readers', '関数 0 個'], ['writers', '関数 1 個']]);

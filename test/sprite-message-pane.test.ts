@@ -164,7 +164,7 @@ test('the pane splits what the sprite sends from what it receives, each tab with
     // The sending tab draws only the messages the sprite sends, with every receiver of them.
     const sending = panels[0].querySelector('.tw-sprite-messages__diagram');
     assert.equal(sending.querySelector('figcaption'), null, 'the diagram has no visible heading');
-    assert.equal(sending.getAttribute('aria-label'), 'スプライト・背景とメッセージの関係');
+    assert.equal(sending.getAttribute('aria-label'), 'スプライト・ステージとメッセージの関係');
     assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__headings span')), ['送信元', '受信先']);
     assert.deepEqual(text(sending.querySelectorAll('.tw-sprite-messages__edge [data-message-key]')), ['go']);
     assert.deepEqual([...sending.querySelectorAll('.tw-sprite-messages__node img')].map(img => img.getAttribute('src')),

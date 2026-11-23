@@ -78,21 +78,21 @@ const japanese: typeof english = {
     projectWide: 'メッセージの名前を変えると、作品全体で変わります。',
     noSends: 'このスプライトはメッセージを送っていません。',
     noReceives: 'このスプライトはメッセージを受け取っていません。',
-    noSendsStage: '背景はメッセージを送っていません。',
-    noReceivesStage: '背景はメッセージを受け取っていません。',
+    noSendsStage: 'ステージはメッセージを送っていません。',
+    noReceivesStage: 'ステージはメッセージを受け取っていません。',
     emptyName: 'メッセージ名を入力してください。',
     duplicateName: '同じ名前のメッセージがすでにあります。',
     unavailable: 'このメッセージの名前を変更できなくなりました。',
     sendOnly: '受け取るブロックがありません',
     receiveOnly: '送るブロックがありません',
-    diagram: 'スプライト・背景とメッセージの関係',
+    diagram: 'スプライト・ステージとメッセージの関係',
     senders: '送信元',
     receivers: '受信先',
-    stage: '背景',
+    stage: 'ステージ',
     openBlock: 'このブロックを開く',
     menu: '「%1」の操作',
     openTarget: 'このスプライトを開く',
-    openStage: '背景を開く'
+    openStage: 'ステージを開く'
 };
 
 type Labels = typeof english;

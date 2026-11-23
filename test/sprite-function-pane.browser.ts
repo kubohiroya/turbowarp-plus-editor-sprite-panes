@@ -234,7 +234,7 @@ test('Japanese and English relationship controls retain descriptive tooltips out
 test('foreign function nodes show costume thumbnails and only target names while labels and navigation keep the functions', async t => {
     const page = await openPage(t);
     await page.evaluate(() => (window as any).mountPane({locale: 'ja', foreignFunctions: true}));
-    for (const [id, owner] of [['dog', 'Dog'], ['stage', '背景']]) {
+    for (const [id, owner] of [['dog', 'Dog'], ['stage', 'ステージ']]) {
         const node = page.locator(`[data-function-key="${id}:global"]`);
         await expect(node.locator('.tw-sprite-functions__name')).toHaveText(owner);
         await expect(node.locator('.tw-sprite-functions__owner')).toHaveCount(0);
