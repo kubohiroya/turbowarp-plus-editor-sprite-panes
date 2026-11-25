@@ -44,3 +44,9 @@ Ordinary relationship nodes put the full hat or function name above the target n
 ## Editor-controlled relation filter coverage (Editor #741)
 
 `test/sprite-function-pane.browser.ts` includes two controlled `relationVisibility` cases, using scanned messages and Editor-style `scriptRelations`. They cover all four function/message states, hidden labels, updates on the same graph node and restored settings after remounting. The existing MPL-2.0 fixture and browser CI run without a GUI checkout, VM or conditional skip. Editor retains real-VM, toolbar and cross-target script navigation wiring. Product code, dependencies, version and CI settings stay unchanged. Restore the Editor coverage using the current DOM before reverting the added tests and documentation.
+
+## Migrated variable table and list editing tests
+
+`test/editor-variable-details.browser.ts` retains Editor #741 case 29's mixed-row preview/sort checks and list dialog interactions as two standalone tests. Original expectations and interactions are preserved; callback checks additionally require no write on cancel and one write with the edited numeric/string list on save. The existing two asset-pane test bodies and HTML remain unchanged and share `test/asset-pane-browser-host.ts`. The public `SpriteAssetPane` and its CSS run without a GUI checkout, VM, Editor build or environment-variable skip in the existing browser CI.
+
+The migrated tests retain GPL-3.0-or-later in `test/LICENSE.GPL-3.0`; the extracted host retains MPL-2.0. Tests, the host and the test-only license are excluded from the npm archive. Product source, dependencies, version and CI settings stay unchanged. After successful upstream CI and Squash Merge, Editor reduces case 29 from 112 to 78 lines, retaining real VM access counts, sprite/clone/global list writes and monitor wiring. Restore the Editor case before reverting these tests, host extraction, test-only license and documentation.
