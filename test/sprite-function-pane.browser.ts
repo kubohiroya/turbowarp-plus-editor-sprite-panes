@@ -38,11 +38,21 @@ const root = ReactDOM.createRoot(document.querySelector('#pane'));
 window.opened = [];
 window.changes = [];
 let mountCount = 0;
-window.mountPane = ({locale = 'en', messagesOnly = false, foreignFunctions = false, defaultSettings} = {}) => {
+window.mountPane = ({locale = 'en', messagesOnly = false, foreignFunctions = false, defaultSettings, controlled = false, staticRelations = false} = {}) => {
     const sender = messagesOnly ? {...send, id: 'flag', scriptId: 'flag',
         opcode: 'event_whenflagclicked', label: 'When green flag clicked', definition: undefined} : send;
     const data = {targetId: 'cat', isStage: false, functions: messagesOnly ? [] : [alpha, beta],
         messageGraph: {scripts: [sender, receive], edges: [{...edge, from: sender.id}]}};
+    if (staticRelations) {
+        const endpoint = (targetId, scriptId) => ({targetId, scriptId, blockId: scriptId});
+        data.scriptRelations = [
+            {kind: 'function', source: endpoint('cat', 'alpha'), destination: endpoint('cat', 'beta'), label: 'beta', wait: false},
+            {kind: 'message', source: endpoint('cat', 'alpha'), destination: endpoint('dog', 'receive'), label: 'go', wait: false}
+        ];
+        data.scripts = [{targetId: 'cat', scriptId: 'alpha', label: 'alpha', targetName: 'Cat'},
+            {targetId: 'cat', scriptId: 'beta', label: 'beta', targetName: 'Cat'},
+            {targetId: 'dog', scriptId: 'receive', label: 'When I receive go', targetName: 'Dog'}];
+    }
     if (foreignFunctions) {
         data.functions = [{...alpha, callees: ['beta', 'dog:global', 'stage:global']}, beta];
         data.globals = ['dog', 'stage'].map(id => ({...fn(id + ':global'), proccode: id + '_task',
@@ -51,12 +61,18 @@ window.mountPane = ({locale = 'en', messagesOnly = false, foreignFunctions = fal
     }
     let saved = {...defaultSettings};
     const render = () => ReactDOM.flushSync(() => {
+        const visibility = saved.relationVisibility ?? {function: saved.showCalls !== false, message: saved.showMessages !== false};
         controlsRoot.render(React.createElement(React.Fragment, null,
             React.createElement(FunctionFlowToggle, {locale, value: saved.direction ?? 'LR', onChange: direction => {saved = {...saved, direction}; render();}}),
-            React.createElement(FunctionRelationToggles, {locale, value: {function: saved.showCalls !== false, message: saved.showMessages !== false},
-                onChange: value => {mountCount++; saved = {...saved, showCalls: value.function, showMessages: value.message}; window.changes.push(saved); render();}})));
+            React.createElement(FunctionRelationToggles, {locale, value: visibility,
+                onChange: value => {
+                    if (controlled) saved = {...saved, relationVisibility: value};
+                    else {mountCount++; saved = {...saved, showCalls: value.function, showMessages: value.message};}
+                    window.changes.push(saved); render();
+                }})));
         root.render(React.createElement(SpriteFunctionPane, {
         key: mountCount, kind: 'functions', view: 'graph', locale, editable: true, data, defaultSettings: saved, direction: saved.direction,
+        ...(controlled ? {relationVisibility: visibility} : {}),
         onSettingsChange: settings => window.changes.push(settings),
         onOpenFunction: item => window.opened.push({kind: 'function', id: item.id}),
         onOpenScript: item => window.opened.push({kind: 'script', id: item.id, targetId: item.targetId})
@@ -168,6 +184,36 @@ test('the two arrow toggles cover all four states and keep their settings when r
     await expect(relation(page, 'message')).toHaveCount(1);
     await expect(page.locator('.tw-sprite-functions__edge-label')).toContainText('💬 go');
     await screenshot(page, 'call-graph-en');
+});
+
+for (const staticRelations of [false, true]) test(`controlled relation filters hide their own arrows and labels without remounting (${staticRelations ? 'Editor relations' : 'scanned messages'})`, async t => {
+    const page = await openPage(t);
+    await page.evaluate(staticRelations => (window as any).mountPane({controlled: true, staticRelations}), staticRelations);
+    const graph = page.locator('figure');
+    await graph.evaluate(node => { (node as any).controlledFixtureIdentity = true; });
+    const calls = page.getByRole('button', {name: 'Functions', exact: true});
+    const messages = page.getByRole('button', {name: 'Messages', exact: true});
+    const verify = async (functions: boolean, broadcasts: boolean) => {
+        await expect(calls).toHaveAttribute('aria-pressed', String(functions));
+        await expect(messages).toHaveAttribute('aria-pressed', String(broadcasts));
+        await expect(relation(page, 'call')).toHaveCount(Number(functions));
+        await expect(relation(page, 'message')).toHaveCount(Number(broadcasts));
+        await expect(page.locator('.tw-sprite-functions__edge-label')).toHaveCount(Number(broadcasts));
+        assert.equal(await graph.evaluate(node => Boolean((node as any).controlledFixtureIdentity)), true);
+    };
+    await verify(true, true);
+    await calls.click();
+    await verify(false, true);
+    await messages.click();
+    await verify(false, false);
+    await calls.click();
+    await verify(true, false);
+    await page.evaluate(staticRelations => (window as any).mountPane({controlled: true, staticRelations,
+        defaultSettings: (window as any).changes.at(-1)}), staticRelations);
+    await graph.evaluate(node => { (node as any).controlledFixtureIdentity = true; });
+    await verify(true, false);
+    await messages.click();
+    await verify(true, true);
 });
 
 test('hidden message arrows do not highlight their receiver and controls still change flow and zoom', async t => {
