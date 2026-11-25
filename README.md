@@ -40,3 +40,7 @@ The existing `readTargetFunctions(target, {others, describeScript})` API still r
 Supply `readTargetFunctions` with `getTargetThumbnail(targetId)` to put the owner's current costume or backdrop before its name. The URL is stored in `GlobalFunctionOwner.thumbnailUrl`; hosts without a thumbnail keep the text-only node.
 
 Ordinary relationship nodes put the full hat or function name above the target name. Long names wrap, expanding the diagram’s shared node height; endpoints, labels, the minimap, and drag bounds follow that height. Foreign function nodes retain only their thumbnail and target name. Arrow labels omit repeated target names and keep just function or message names without hourglass icons. Waiting sends keep the 7/5 dash pattern; ordinary sends use 3.5/2.5 dashes. Both modes have separate paths when they connect the same nodes, including in the minimap.
+
+## Editor-controlled relation filter coverage (Editor #741)
+
+`test/sprite-function-pane.browser.ts` includes two controlled `relationVisibility` cases, using scanned messages and Editor-style `scriptRelations`. They cover all four function/message states, hidden labels, updates on the same graph node and restored settings after remounting. The existing MPL-2.0 fixture and browser CI run without a GUI checkout, VM or conditional skip. Editor retains real-VM, toolbar and cross-target script navigation wiring. Product code, dependencies, version and CI settings stay unchanged. Restore the Editor coverage using the current DOM before reverting the added tests and documentation.

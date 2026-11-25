@@ -50,3 +50,7 @@ MPL-2.0。`@kubohiroya/turbowarp-plus-editor-layout` から切り出したペイ
 外部関数ノードには、`readTargetFunctions` の `getTargetThumbnail(targetId)` で渡した現在のコスチューム・背景を名前の前に添える。画像は `GlobalFunctionOwner.thumbnailUrl` に保持し、画像を渡さないホストでは名前だけを表示する。
 
 関係図の通常ノードは、上段にハット・関数の名前、下段に対象の名前を分けて表示する。長い名前は省略せず折り返し、図内共通のノード高さを必要な行数へ広げる。矢印の端点・受信側ラベル・ミニマップ・手動配置の表示範囲も同じ高さへ追従する。灰色の外部関数ノードはサムネイルと対象名だけを表示し、長い対象名も折り返す。
+
+## Editor と同じ呼び出し図フィルターの検証（Editor #741）
+
+`test/sprite-function-pane.browser.ts` は制御された `relationVisibility` の回帰確認を2件含む。既存の scanned message と Editor と同じ `scriptRelations` の双方で、関数/メッセージの4状態、非表示のラベル、同じ図ノードでの更新、再マウント後の保持を確認する。既存の MPL-2.0 fixture を拡張し、既存 browser CI が GUI checkout・VM なし、skip なしで実行する。Editor は実 VM・操作欄・他 target の受信 script の接続確認を保持する。製品コード・依存・版・CI 設定は変更しない。切り戻しは Editor の元の確認範囲を現行 DOM のまま先に戻してから、追加テストと文書を revert する。
