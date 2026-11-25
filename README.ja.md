@@ -62,3 +62,11 @@ MPL-2.0。`@kubohiroya/turbowarp-plus-editor-layout` から切り出したペイ
 既存 asset pane browser 2件の本文とHTMLは内容不変で、経路設定と headless browser の起動だけを `test/asset-pane-browser-host.ts` に抽出した。元の Editor テストは GPL-3.0-or-later を保持し、`test/LICENSE.GPL-3.0` にライセンスを置く。共通hostは既存のMPL-2.0。テスト・host・テスト用ライセンスはnpm配布物に含めない。既存 `npm run test:browser` とCIが、GUI checkout・VM・Editorビルド・環境変数なしで新2件を実行する。製品ソース・依存・版・CI設定は変更しない。
 
 上流CI成功・Squash Merge後にEditorを112行から78行へ縮小する。Editorには実VMの参照数、スプライト/クローン/グローバルリストの更新、monitorの接続を残す。切り戻すときはEditorの元ケースを先に復元してから、この追加テスト・host抽出・テスト用ライセンス・文書をrevertする。
+
+## Editor から移すクローン切替の検証（#741）
+
+`test/editor-clone-pagination.browser.ts` は分類31番のクローン切替を単独browser2件で検証する。0体では非表示、5体までは番号ボタン、6体から選択欄になる境界、8体まで増えた際の選択保持、前/次の移動と端での無効化、矢印の丸形・枠・20px SVG・40px幅・間隔を確認する。選択していないcloneの削除でIDを保持して番号を更新し、選択したcloneの削除で元のスプライトへ復帰、停止時に非表示、再生成時に元のスプライトを選択することも確認する。元のpagination期待値・geometryとGPL-3.0-or-laterを保持し、bounding boxの存在確認を補う。
+
+公開 `SpriteCloneInspector`・`SpriteClonePagination` と `sprite-editor-toolbar.css` を使う。hostはtargetのデータと追加/削除/停止の通知だけを渡し、選択・ページングは公開部品が処理する。既存のbrowser hostへmodule/CSSの2経路だけを追加し、既存browser4件・unit4件の本文は変更しない。既存 `npm run test:browser` とCIがGUI checkout・実VM・Editorビルド・環境変数なしで新2件を実行する。製品ソース・依存・版・CI設定は変更しない。テスト・host・既存の `test/LICENSE.GPL-3.0` はnpm配布物に含めない。
+
+上流CI成功・Squash Merge後にEditorを136行から115行へ縮小する。Editorは実VMのclone編集、定義追加、monitor、clone消滅時の復帰と停止の接続を保持する。切り戻しはEditorの元の確認範囲とケース名を先に戻し、必要なら上流の追加テスト・hostの2経路・文書をrevertする。Editorで修正するmonitorの現行アクセシブル名は保持する。

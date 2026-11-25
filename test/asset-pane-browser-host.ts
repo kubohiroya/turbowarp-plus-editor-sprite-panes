@@ -16,6 +16,8 @@ export async function openAssetPane(t: TestContext, html: string): Promise<Page>
     const routes = new Map<string, string | URL>([
         ['/pen-icon.js', new URL('../dist/pen-icon.js', import.meta.url)],
         ['/sprite-asset-pane.js', new URL('../dist/sprite-asset-pane.js', import.meta.url)],
+        ['/sprite-clone-inspector.js', new URL('../dist/sprite-clone-inspector.js', import.meta.url)],
+        ['/sprite-editor-toolbar.css', new URL('../src/sprite-editor-toolbar.css', import.meta.url)],
         ['/block-image.js', new URL('../dist/block-image.js', import.meta.url)],
         ['/pane-dialog.js', new URL('../dist/pane-dialog.js', import.meta.url)],
         ['/sprite-variable-edit.js', require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit')],
