@@ -24,6 +24,7 @@ export async function openAssetPane(t: TestContext, html: string): Promise<Page>
         ['/native-tile-title.js', new URL('../dist/native-tile-title.js', import.meta.url)],
         ['/sprite-properties.js', new URL('../dist/sprite-properties.js', import.meta.url)],
         ['/sprite-asset-pane.css', new URL('../src/sprite-asset-pane.css', import.meta.url)],
+        ['/dialog-styles.css', require.resolve('@kubohiroya/turbowarp-plus-editor-windows/styles.css')],
         ...['react', 'react-dom'].map(name => [
             `/${name}.umd.js`, path.join(path.dirname(require.resolve(name + '/package.json')), 'umd', name + '.development.js')
         ] as const)
