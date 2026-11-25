@@ -54,3 +54,11 @@ MPL-2.0。`@kubohiroya/turbowarp-plus-editor-layout` から切り出したペイ
 ## Editor と同じ呼び出し図フィルターの検証（Editor #741）
 
 `test/sprite-function-pane.browser.ts` は制御された `relationVisibility` の回帰確認を2件含む。既存の scanned message と Editor と同じ `scriptRelations` の双方で、関数/メッセージの4状態、非表示のラベル、同じ図ノードでの更新、再マウント後の保持を確認する。既存の MPL-2.0 fixture を拡張し、既存 browser CI が GUI checkout・VM なし、skip なしで実行する。Editor は実 VM・操作欄・他 target の受信 script の接続確認を保持する。製品コード・依存・版・CI 設定は変更しない。切り戻しは Editor の元の確認範囲を現行 DOM のまま先に戻してから、追加テストと文書を revert する。
+
+## Editor から移す変数テーブルとリスト編集の検証（#741）
+
+`test/editor-variable-details.browser.ts` は、Editor の分類29番にあった種類アイコン・リストの先頭5項目と残数・参照数・読み取り/変更/種類による並べ替えと、編集ボタンの hover・ダイアログの背景・キャンセル・項目の移動/削除/追加とフォーカスを2件に切り出す。元の期待値と操作を保持し、保存で数値変換した配列を1回だけ `onWrite` に返し、キャンセルでは返さないことも確かめる。公開 `SpriteAssetPane` と `sprite-asset-pane.css` を直接使う。
+
+既存 asset pane browser 2件の本文とHTMLは内容不変で、経路設定と headless browser の起動だけを `test/asset-pane-browser-host.ts` に抽出した。元の Editor テストは GPL-3.0-or-later を保持し、`test/LICENSE.GPL-3.0` にライセンスを置く。共通hostは既存のMPL-2.0。テスト・host・テスト用ライセンスはnpm配布物に含めない。既存 `npm run test:browser` とCIが、GUI checkout・VM・Editorビルド・環境変数なしで新2件を実行する。製品ソース・依存・版・CI設定は変更しない。
+
+上流CI成功・Squash Merge後にEditorを112行から78行へ縮小する。Editorには実VMの参照数、スプライト/クローン/グローバルリストの更新、monitorの接続を残す。切り戻すときはEditorの元ケースを先に復元してから、この追加テスト・host抽出・テスト用ライセンス・文書をrevertする。

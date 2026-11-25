@@ -1,12 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {readFile} from 'node:fs/promises';
-import {createRequire} from 'node:module';
-import path from 'node:path';
-import {chromium} from '@playwright/test';
+import {openAssetPane} from './asset-pane-browser-host.ts';
 
-const require = createRequire(import.meta.url);
-const origin = 'http://sprite-asset-pane.test';
 const html = `<!doctype html>
 <link rel="stylesheet" href="/sprite-asset-pane.css">
 <script src="/react.umd.js"></script>
@@ -66,39 +61,7 @@ window.variableEditing = (nextLocale = 'en') => { withEdit = true; locale = next
 render();
 </script>`;
 
-async function openPage(t) {
-    const browser = await chromium.launch({executablePath: process.env.SPRITE_PROPERTIES_CHROME});
-    t.after(() => browser.close());
-    const page = await browser.newPage({viewport: {width: 640, height: 480}});
-    const routes = new Map([
-        ['/pen-icon.js', new URL('../dist/pen-icon.js', import.meta.url)],
-        ['/sprite-asset-pane.js', new URL('../dist/sprite-asset-pane.js', import.meta.url)],
-        ['/block-image.js', new URL('../dist/block-image.js', import.meta.url)],
-        ['/pane-dialog.js', new URL('../dist/pane-dialog.js', import.meta.url)],
-        ['/sprite-variable-edit.js', require.resolve('@kubohiroya/turbowarp-plus-editor-project-model/sprite-variable-edit')],
-        ['/native-tile-title.js', new URL('../dist/native-tile-title.js', import.meta.url)],
-        ['/sprite-properties.js', new URL('../dist/sprite-properties.js', import.meta.url)],
-        ['/sprite-asset-pane.css', new URL('../src/sprite-asset-pane.css', import.meta.url)],
-        ...['react', 'react-dom'].map(name => [
-            `/${name}.umd.js`, path.join(path.dirname(require.resolve(name + '/package.json')), 'umd', name + '.development.js')
-        ])
-    ]);
-    await page.route(origin + '/**', async route => {
-        const {pathname} = new URL(route.request().url());
-        if (pathname === '/') return route.fulfill({contentType: 'text/html', body: html});
-        if (pathname === '/react.js') {
-            return route.fulfill({contentType: 'application/javascript', body: 'export const {useRef, useState} = window.React; export default window.React;'});
-        }
-        const source = routes.get(pathname);
-        if (!source) return route.fulfill({status: 404});
-        return route.fulfill({
-            contentType: pathname.endsWith('.css') ? 'text/css' : 'application/javascript',
-            body: await readFile(source)
-        });
-    });
-    await page.goto(origin);
-    return page;
-}
+const openPage = t => openAssetPane(t, html);
 
 test('assets keep selection and dimensions while inactive; variables retain and commit an edit once', async t => {
     const page = await openPage(t);
