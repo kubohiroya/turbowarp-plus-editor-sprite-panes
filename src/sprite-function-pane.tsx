@@ -102,8 +102,10 @@ export interface ScriptEndpoint {
     scriptId: string;
 }
 
+export type ScriptRelationKind = 'function' | 'message' | 'reference';
+
 export interface ScriptRelation {
-    kind: 'function' | 'message';
+    kind: ScriptRelationKind;
     source: ScriptEndpoint;
     destination?: ScriptEndpoint;
     label: string;
@@ -124,7 +126,12 @@ export interface GraphScript {
 export interface FunctionRelationVisibility {
     function: boolean;
     message: boolean;
+    /** References declared by extension blocks follow the other kinds when omitted. */
+    reference?: boolean;
 }
+
+const relationShown = (visibility: FunctionRelationVisibility, kind: ScriptRelationKind) =>
+    kind === 'reference' ? visibility.reference ?? (visibility.function || visibility.message) : visibility[kind];
 
 const allRelationKinds: FunctionRelationVisibility = {function: true, message: true};
 
@@ -561,7 +568,7 @@ function relationGraph(data: FunctionPaneData, visibility: FunctionRelationVisib
     }
     if (focusId) node({targetId: data.targetId, scriptId: focusId, blockId: focusId});
     for (const relation of data.scriptRelations) {
-        if (!visibility[relation.kind] || !scanned && relation.source.targetId !== data.targetId &&
+        if (!relationShown(visibility, relation.kind) || !scanned && relation.source.targetId !== data.targetId &&
             relation.destination?.targetId !== data.targetId) continue;
         const from = node(relation.source);
         if (!relation.destination) continue;
@@ -868,19 +875,28 @@ export function FunctionRelationToggles({locale, value, onChange}: {
     onChange(value: FunctionRelationVisibility): void;
 }) {
     const ja = /^ja(?:-|$)/i.test(locale);
-    const labels = ja ? {function: '関数', message: 'メッセージ'} : {function: 'Functions', message: 'Messages'};
-    const tooltip = (kind: 'function' | 'message') => ja ?
-        `${kind === 'function' ? '関数の呼び出し関係' : 'メッセージの送受信関係'}を${value[kind] ? '隠す' : '表示'}` :
-        `${value[kind] ? 'Hide' : 'Show'} ${kind === 'function' ? 'function calls' : 'message sends and receivers'}`;
+    const labels = ja ? {function: '関数', message: 'メッセージ', reference: '参照'} :
+        {function: 'Functions', message: 'Messages', reference: 'References'};
+    const subjects = ja ? {function: '関数の呼び出し関係', message: 'メッセージの送受信関係', reference: '拡張ブロックの参照関係'} :
+        {function: 'function calls', message: 'message sends and receivers', reference: 'extension block references'};
+    const tooltip = (kind: ScriptRelationKind) => ja ?
+        `${subjects[kind]}を${relationShown(value, kind) ? '隠す' : '表示'}` :
+        `${relationShown(value, kind) ? 'Hide' : 'Show'} ${subjects[kind]}`;
     return <div className="tw-sprite-functions__relation-toggles" role="group"
         aria-label={ja ? '呼び出し関係の表示' : 'Visible relations'}>
-        {(['function', 'message'] as const).map(kind => <button key={kind} type="button"
-            data-relation-kind={kind} aria-label={labels[kind]} title={tooltip(kind)} aria-pressed={value[kind]}
-            onClick={() => onChange({...value, [kind]: !value[kind]})}
+        {(['function', 'message', 'reference'] as const).map(kind => <button key={kind} type="button"
+            data-relation-kind={kind} aria-label={labels[kind]} title={tooltip(kind)} aria-pressed={relationShown(value, kind)}
+            // Turning a kind off or on keeps an omitted reference setting following the others.
+            onClick={() => onChange({...value, [kind]: !relationShown(value, kind)})}
             onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
-            {kind === 'function' ? <FunctionIcon /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                <path d="M3 3.5h10v7H8L5 13v-2.5H3Z" />
-            </svg>}
+            {kind === 'function' ? <FunctionIcon /> : kind === 'message' ?
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M3 3.5h10v7H8L5 13v-2.5H3Z" />
+                </svg> :
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor"
+                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1A2.5 2.5 0 0 1 4.5 9l1-1" />
+                </svg>}
         </button>)}
     </div>;
 }
@@ -1096,6 +1112,8 @@ interface EdgeLabel {
     height: number;
 }
 
+/** Relation kinds between the same nodes take lanes 32px apart around the direct path. */
+const variantLane = (index: number, count: number) => (index - (count - 1) / 2) * 32;
 const labelCharWidth = (char: string) => char.charCodeAt(0) > 255 ? 12 : 8;
 const labelTextWidth = (value: string) => [...value].reduce((width, char) => width + labelCharWidth(char), 0);
 const labelLines = (value: string) => wrapTextLines(value, 208, labelCharWidth);
@@ -1104,7 +1122,7 @@ function graphEdgeLabels(relations: Map<string, ScriptRelation[]>, targetId: str
     const result = new Map<string, EdgeLabel[]>();
     for (const [key, values] of relations) {
         const kinds: EdgeLabel[] = [];
-        for (const kind of ['function', 'message'] as const) {
+        for (const kind of ['function', 'message', 'reference'] as const) {
             const matching = values.filter(value => value.kind === kind);
             if (!matching.length) continue;
             const names = new Map<string, {wait: boolean; ordinary: boolean}>();
@@ -1131,7 +1149,7 @@ function graphEdgeLabels(relations: Map<string, ScriptRelation[]>, targetId: str
 function edgeLabelBox(edge: CallGraphEdge, from: CallGraphNode, to: CallGraphNode, label: EdgeLabel,
     direction: CallGraphDirection, index: number, count: number) {
     const side = count > 1 ? index === 0 ? -1 : 1 : direction === 'LR' ? -1 : 1;
-    const lane = count > 1 ? index === 0 ? -16 : 16 : 0;
+    const lane = variantLane(index, count);
     const path = edgePath(from, to, edge.kind, direction, lane);
     const values = path.match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
     const tx = values[6];
@@ -1174,7 +1192,7 @@ function graphLabelBoxes(nodes: readonly CallGraphNode[], edges: readonly CallGr
             const preferred = edgeLabelBox(edge, from, to, label, direction, index, variants.length);
             let chosen = preferred;
             if (manual) {
-                const lane = variants.length > 1 ? index === 0 ? -16 : 16 : 0;
+                const lane = variantLane(index, variants.length);
                 const coordinates = edgePath(from, to, edge.kind, direction, lane).match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
                 const tx = coordinates[6];
                 const ty = coordinates[7];
@@ -1257,7 +1275,7 @@ function positionedGraph(base: CallGraphLayout, positions: GraphNodePositions, d
     for (const edge of base.edges) {
         const variants = labels.get(`${edge.from}>${edge.to}`) ?? [];
         const lanes = variants.length ? variants.flatMap((label, index) =>
-            relationLanes(label, variants.length > 1 ? index === 0 ? -16 : 16 : 0).map(item => item.lane)) : [0];
+            relationLanes(label, variantLane(index, variants.length)).map(item => item.lane)) : [0];
         for (const lane of lanes) {
             const coordinates = edgePath(byId.get(edge.from), byId.get(edge.to), edge.kind, direction, lane)
                 .match(/-?(?:\d*\.?\d+)(?:e[+-]?\d+)?/gi).map(Number);
@@ -1718,8 +1736,9 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
         focusRequest === undefined ? 0 : size.width, focusRequest === undefined ? 0 : size.height]);
 
     const highlightId = nodeDraft?.id ?? pointed ?? focused ?? (focusRequest !== undefined ? selectedId : undefined);
-    const visibleKind = (kind: 'function' | 'message') => settings.relationVisibility ||
-        (kind === 'function' ? settings.showCalls !== false : settings.showMessages !== false);
+    const visibleKind = (kind: ScriptRelationKind) => settings.relationVisibility ||
+        (kind === 'function' ? settings.showCalls !== false : kind === 'message' ? settings.showMessages !== false :
+            settings.showCalls !== false || settings.showMessages !== false);
     const visibleEdges = layout.edges.filter(edge => (edgeLabels.get(`${edge.from}>${edge.to}`) ?? [{kind: 'function' as const}])
         .some(label => visibleKind(label.kind)));
     const highlight = highlightId && byId.has(highlightId) ? callGraphHighlight(visibleEdges, highlightId) : null;
@@ -1727,7 +1746,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
     const edges = highlight ? [...visibleEdges].sort((a, b) =>
         Number(highlight.edges.has(`${a.from}>${a.to}`)) - Number(highlight.edges.has(`${b.from}>${b.to}`))) : visibleEdges;
     const edgeMarker = (kind?: string, relation = 'function') =>
-        `url(#${marker}${relation === 'message' ? '-message' : ''}${kind === 'in' ? '-in' : kind ? '-out' : ''})`;
+        `url(#${marker}${relation === 'message' || relation === 'reference' ? `-${relation}` : ''}${kind === 'in' ? '-in' : kind ? '-out' : ''})`;
     const paths = (withMarkers: boolean) => edges.flatMap(edge => {
         const key = `${edge.from}>${edge.to}`;
         const kind = highlight?.edges.get(key);
@@ -1736,7 +1755,7 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
             if (!visibleKind(label.kind)) return [];
             const from = byId.get(edge.from);
             const to = byId.get(edge.to);
-            const lane = variants.length > 1 ? index === 0 ? -16 : 16 : 0;
+            const lane = variantLane(index, variants.length);
             const matching = (relations.get(key) ?? []).filter(relation => relation.kind === label.kind);
             return relationLanes(label, lane).map(({wait, lane: messageLane}) => {
                 const messages = matching.filter(relation => wait === undefined || Boolean(relation.wait) === wait);
@@ -1800,10 +1819,10 @@ function CallGraph({labels, idPrefix, functions, scripts, relations, targetId, s
             <svg className="tw-sprite-functions__edges" width={layout.width} height={layout.height} aria-hidden="true"
                 focusable="false">
                 <defs>
-                    {['', '-message'].flatMap(relation => ['', '-in', '-out'].map(suffix => <marker key={relation + suffix}
+                    {['', '-message', '-reference'].flatMap(relation => ['', '-in', '-out'].map(suffix => <marker key={relation + suffix}
                         id={marker + relation + suffix} viewBox="0 0 10 10" refX="9"
                         refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"
-                        data-script-relation={relation ? 'message' : 'function'}
+                        data-script-relation={relation ? relation.slice(1) : 'function'}
                         data-highlight={suffix.slice(1) || undefined}><path d="M0 0 10 5 0 10Z" /></marker>))}
                 </defs>
                 {paths(true)}

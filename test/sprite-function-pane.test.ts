@@ -421,6 +421,30 @@ test('graph filter buttons are independent and their tooltips explain the curren
     assert.equal(messages.getAttribute('title'), 'Show message sends and receivers');
 });
 
+test('the reference filter follows the other kinds until it is set, then stays independent', t => {
+    const container = window.document.createElement('div');
+    window.document.querySelector('main').append(container);
+    const root = createRoot(container);
+    const changes: object[] = [];
+    const draw = (value: object, locale = 'ja') =>
+        act(() => root.render(React.createElement(FunctionRelationToggles, {locale, value, onChange: next => changes.push(next)})));
+    t.after(() => {act(() => root.unmount()); container.remove();});
+    draw({function: true, message: false});
+    const references = () => container.querySelector<HTMLButtonElement>('[data-relation-kind="reference"]');
+    assert.equal(references().getAttribute('aria-label'), '参照');
+    assert.equal(references().getAttribute('aria-pressed'), 'true');
+    assert.equal(references().getAttribute('title'), '拡張ブロックの参照関係を隠す');
+    act(() => references().click());
+    assert.deepEqual(changes.at(-1), {function: true, message: false, reference: false});
+    draw({function: false, message: false});
+    assert.equal(references().getAttribute('aria-pressed'), 'false', 'an omitted setting follows the other kinds');
+    draw({function: false, message: false, reference: true}, 'en');
+    assert.equal(references().getAttribute('aria-pressed'), 'true');
+    assert.equal(references().getAttribute('title'), 'Hide extension block references');
+    act(() => container.querySelector<HTMLButtonElement>('[data-relation-kind="function"]').click());
+    assert.deepEqual(changes.at(-1), {function: true, message: false, reference: true});
+});
+
 test('controlled graph filters survive other settings changes without replacing the host value', t => {
     const settings: object[] = [];
     const visibility = {function: false, message: true};
@@ -1134,4 +1158,34 @@ test('call graph text breaks English between words, and only a too-long word or 
     for (const text of ['when green flag clicked', 'スペース キーが押されたとき', 'averyveryverylongfunctionname']) {
         for (const line of wrapTextLines(text, 146, width)) assert.ok([...line].reduce((sum, char) => sum + width(char), 0) <= 146, line);
     }
+});
+
+test('declared references draw their own edges and labels and follow the other kinds unless set', t => {
+    const endpoint = (targetId: string, scriptId: string, blockId = scriptId) => ({targetId, scriptId, blockId});
+    const scriptRelations = [
+        {kind: 'reference', label: 'story.yml', wait: true, source: endpoint('stage', 'root'), destination: endpoint('stage', 'story')},
+        {kind: 'reference', label: 'part.yml', wait: true, source: endpoint('stage', 'story', 'include'), destination: endpoint('stage', 'part')},
+        {kind: 'message', label: 'go', wait: false, source: endpoint('stage', 'story', 'send'), destination: endpoint('stage', 'part')}
+    ];
+    const {container, draw} = render(t, {view: 'graph', direction: 'LR',
+        data: {targetId: 'stage', isStage: true, functions: [], scriptRelations, scripts: [
+            {targetId: 'stage', scriptId: 'root', label: 'embedded YAML root'},
+            {targetId: 'stage', scriptId: 'story', label: 'embedded YAML story.yml'},
+            {targetId: 'stage', scriptId: 'part', label: 'embedded YAML part.yml'}]}});
+    const edges = (kind: string) => [...container.querySelectorAll<SVGPathElement>(`.tw-sprite-functions__edges > path[data-script-relation="${kind}"]`)];
+    assert.equal(edges('reference').length, 2);
+    assert.ok(edges('reference').every(path => /-reference\)$/.test(path.getAttribute('marker-end') ?? '')));
+    assert.ok(container.querySelector('.tw-sprite-functions__edges marker[data-script-relation="reference"]'));
+    const shared = [...container.querySelectorAll<SVGPathElement>('.tw-sprite-functions__edges > path[data-edge$=">script:[\\"stage\\",\\"part\\"]"]')];
+    assert.equal(new Set(shared.map(path => path.getAttribute('d'))).size, shared.length, 'reference and message lanes stay apart');
+    const labels = [...container.querySelectorAll('.tw-sprite-functions__edge-label[data-script-relation="reference"]')]
+        .map(label => [...label.querySelectorAll('text')].map(text => text.textContent).join(''));
+    assert.deepEqual(labels.sort(), ['part.yml', 'story.yml']);
+    draw({relationVisibility: {function: false, message: true}});
+    assert.equal(edges('reference').length, 2, 'references follow any visible kind');
+    draw({relationVisibility: {function: true, message: true, reference: false}});
+    assert.equal(edges('reference').length, 0);
+    assert.equal(edges('message').length, 1);
+    draw({relationVisibility: {function: false, message: false}});
+    assert.equal(edges('reference').length, 0);
 });
