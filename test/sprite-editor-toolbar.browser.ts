@@ -190,6 +190,7 @@ test('rail controls change graph direction and independently filter function and
     const graph = root.locator('figure');
     const functions = root.getByRole('button', {name: 'Functions', exact: true});
     const messages = root.getByRole('button', {name: 'Messages', exact: true});
+    const references = root.getByRole('button', {name: 'References', exact: true});
     const edges = (kind: string) => graph.locator(`.tw-sprite-functions__edges > path[data-script-relation="${kind}"]`);
     const nodes = graph.locator('.tw-sprite-functions__node');
     const controls = root.locator('.tw-plus-sprite-toolbar-section-controls');
@@ -205,6 +206,7 @@ test('rail controls change graph direction and independently filter function and
     await expect(td).toHaveCSS('height', '40px');
     await expect(functions).toHaveCSS('height', '40px');
     await expect(messages).toHaveCSS('height', '40px');
+    await expect(references).toHaveCSS('height', '40px');
     const directions = await toggle.locator('button').evaluateAll(nodes => nodes.map(node => {
         const box = node.getBoundingClientRect();
         return {x: box.x, y: box.y, width: box.width, height: box.height};
@@ -217,14 +219,16 @@ test('rail controls change graph direction and independently filter function and
     let bounds = await controls.boundingBox();
     const controlsTop = bounds.y;
     assert.ok(bounds.x >= rail.x && bounds.x + bounds.width <= rail.x + rail.width);
-    const lowest = await messages.boundingBox();
+    const lowest = await references.boundingBox();
+    const messageBounds = await messages.boundingBox();
     const add = await root.locator('.tw-sprite-functions__add').boundingBox();
     assert.ok(Math.abs(lowest.y + lowest.height - add.y - add.height) <= 1,
         'the lowest button aligns with the Add function button');
     const flowBounds = await toggle.boundingBox();
     const functionBounds = await functions.boundingBox();
     assert.ok(Math.abs(flowBounds.y + flowBounds.height + 21 - functionBounds.y) <= 1 &&
-        Math.abs(functionBounds.y + functionBounds.height - lowest.y) <= 1, 'the direction and relation groups have a half-button gap, and relation segments meet');
+        Math.abs(functionBounds.y + functionBounds.height - messageBounds.y) <= 1 &&
+        Math.abs(messageBounds.y + messageBounds.height - lowest.y) <= 1, 'the direction and relation groups have a half-button gap, and relation segments meet');
     await expect(controls).toHaveCSS('gap', '20px');
     await expect(toggle).toHaveCSS('border-radius', '5px');
     await expect(root.locator('.tw-sprite-functions__relation-toggles')).toHaveCSS('border-radius', '5px');
@@ -282,7 +286,7 @@ test('rail controls change graph direction and independently filter function and
     await expect(functions).toHaveCSS('background-color', 'rgb(255, 255, 255)');
     await functions.click();
     const addAfterThemeChange = await root.locator('.tw-sprite-functions__add').boundingBox();
-    const lowestAfterThemeChange = await messages.boundingBox();
+    const lowestAfterThemeChange = await references.boundingBox();
     assert.ok(Math.abs(lowestAfterThemeChange.y + lowestAfterThemeChange.height - addAfterThemeChange.y - addAfterThemeChange.height) <= 1,
         'the bottom button and Add function share their bottom edge');
     await tabs.evaluate(element => {element.scrollTop = element.scrollHeight;});

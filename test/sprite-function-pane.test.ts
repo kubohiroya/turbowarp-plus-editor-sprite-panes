@@ -421,6 +421,30 @@ test('graph filter buttons are independent and their tooltips explain the curren
     assert.equal(messages.getAttribute('title'), 'Show message sends and receivers');
 });
 
+test('the reference filter follows the other kinds until it is set, then stays independent', t => {
+    const container = window.document.createElement('div');
+    window.document.querySelector('main').append(container);
+    const root = createRoot(container);
+    const changes: object[] = [];
+    const draw = (value: object, locale = 'ja') =>
+        act(() => root.render(React.createElement(FunctionRelationToggles, {locale, value, onChange: next => changes.push(next)})));
+    t.after(() => {act(() => root.unmount()); container.remove();});
+    draw({function: true, message: false});
+    const references = () => container.querySelector<HTMLButtonElement>('[data-relation-kind="reference"]');
+    assert.equal(references().getAttribute('aria-label'), '参照');
+    assert.equal(references().getAttribute('aria-pressed'), 'true');
+    assert.equal(references().getAttribute('title'), '拡張ブロックの参照関係を隠す');
+    act(() => references().click());
+    assert.deepEqual(changes.at(-1), {function: true, message: false, reference: false});
+    draw({function: false, message: false});
+    assert.equal(references().getAttribute('aria-pressed'), 'false', 'an omitted setting follows the other kinds');
+    draw({function: false, message: false, reference: true}, 'en');
+    assert.equal(references().getAttribute('aria-pressed'), 'true');
+    assert.equal(references().getAttribute('title'), 'Hide extension block references');
+    act(() => container.querySelector<HTMLButtonElement>('[data-relation-kind="function"]').click());
+    assert.deepEqual(changes.at(-1), {function: true, message: false, reference: true});
+});
+
 test('controlled graph filters survive other settings changes without replacing the host value', t => {
     const settings: object[] = [];
     const visibility = {function: false, message: true};

@@ -875,19 +875,28 @@ export function FunctionRelationToggles({locale, value, onChange}: {
     onChange(value: FunctionRelationVisibility): void;
 }) {
     const ja = /^ja(?:-|$)/i.test(locale);
-    const labels = ja ? {function: '関数', message: 'メッセージ'} : {function: 'Functions', message: 'Messages'};
-    const tooltip = (kind: 'function' | 'message') => ja ?
-        `${kind === 'function' ? '関数の呼び出し関係' : 'メッセージの送受信関係'}を${value[kind] ? '隠す' : '表示'}` :
-        `${value[kind] ? 'Hide' : 'Show'} ${kind === 'function' ? 'function calls' : 'message sends and receivers'}`;
+    const labels = ja ? {function: '関数', message: 'メッセージ', reference: '参照'} :
+        {function: 'Functions', message: 'Messages', reference: 'References'};
+    const subjects = ja ? {function: '関数の呼び出し関係', message: 'メッセージの送受信関係', reference: '拡張ブロックの参照関係'} :
+        {function: 'function calls', message: 'message sends and receivers', reference: 'extension block references'};
+    const tooltip = (kind: ScriptRelationKind) => ja ?
+        `${subjects[kind]}を${relationShown(value, kind) ? '隠す' : '表示'}` :
+        `${relationShown(value, kind) ? 'Hide' : 'Show'} ${subjects[kind]}`;
     return <div className="tw-sprite-functions__relation-toggles" role="group"
         aria-label={ja ? '呼び出し関係の表示' : 'Visible relations'}>
-        {(['function', 'message'] as const).map(kind => <button key={kind} type="button"
-            data-relation-kind={kind} aria-label={labels[kind]} title={tooltip(kind)} aria-pressed={value[kind]}
-            onClick={() => onChange({...value, [kind]: !value[kind]})}
+        {(['function', 'message', 'reference'] as const).map(kind => <button key={kind} type="button"
+            data-relation-kind={kind} aria-label={labels[kind]} title={tooltip(kind)} aria-pressed={relationShown(value, kind)}
+            // Turning a kind off or on keeps an omitted reference setting following the others.
+            onClick={() => onChange({...value, [kind]: !relationShown(value, kind)})}
             onKeyDown={event => { if (event.key !== 'Tab') event.stopPropagation(); }}>
-            {kind === 'function' ? <FunctionIcon /> : <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                <path d="M3 3.5h10v7H8L5 13v-2.5H3Z" />
-            </svg>}
+            {kind === 'function' ? <FunctionIcon /> : kind === 'message' ?
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                    <path d="M3 3.5h10v7H8L5 13v-2.5H3Z" />
+                </svg> :
+                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false" fill="none" stroke="currentColor"
+                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M6.5 9.5 9.5 6.5M7 4.5l1-1a2.5 2.5 0 0 1 3.5 3.5l-1 1M9 11.5l-1 1A2.5 2.5 0 0 1 4.5 9l1-1" />
+                </svg>}
         </button>)}
     </div>;
 }
