@@ -1360,6 +1360,17 @@
     stroke-dasharray: 3.5 2.5;
 }
 
+.tw-sprite-functions__edges > path[data-script-relation="reference"],
+.tw-sprite-functions__minimap-edges path[data-script-relation="reference"] {
+    stroke: var(--tw-script-reference-stroke, light-dark(#00838f, #4dd8e6));
+    stroke-dasharray: 10 3 2 3;
+    stroke-width: 2.4;
+}
+
+.tw-sprite-functions__edges marker[data-script-relation="reference"] path {
+    fill: var(--tw-script-reference-stroke, light-dark(#00838f, #4dd8e6));
+}
+
 .tw-sprite-functions__edge-label {
     --tw-relation-label-stroke: var(--tw-script-function-stroke, light-dark(#7051c7, #c9abff));
     pointer-events: none;
@@ -1367,6 +1378,10 @@
 
 .tw-sprite-functions__edge-label[data-script-relation="message"] {
     --tw-relation-label-stroke: var(--tw-script-message-stroke, light-dark(#a85a00, #ffbd66));
+}
+
+.tw-sprite-functions__edge-label[data-script-relation="reference"] {
+    --tw-relation-label-stroke: var(--tw-script-reference-stroke, light-dark(#00838f, #4dd8e6));
 }
 
 .tw-sprite-functions__edge-label > rect {
